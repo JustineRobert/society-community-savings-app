@@ -1,9 +1,9 @@
 // src/pages/Dashboard.jsx
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../services/api';
 import { Menu, X } from 'lucide-react';
 
 const Dashboard = () => {
@@ -11,40 +11,79 @@ const Dashboard = () => {
   const navigate = useNavigate();
 
   const [groups, setGroups] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true); // overall loading for page
+  const [loadingGroups, setLoadingGroups] = useState(false);
   const [error, setError] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
+  const didFetchRef = useRef({ me: false, groups: false });
 
   /**
    * Fetch groups associated with the logged-in user
    */
-  const fetchUserGroups = async () => {
+  const fetchUser = useCallback(async () => {
+    if (didFetchRef.current.me) return null;
+    didFetchRef.current.me = true;
     try {
-      const token = localStorage.getItem('token');
-      const res = await axios.get('/api/groups/my-groups', {
-        headers: { Authorization: `Bearer ${token}` },
-        withCredentials: true,
-      });
-      setGroups(res.data);
+      const me = await api.get('/api/auth/me');
+      return me || null;
+    } catch (err) {
+      console.error('Fetch /api/auth/me error:', err);
+      if (err?.status === 401) {
+        try { await logout(); } catch {}
+      }
+      return null;
+    }
+  }, [logout]);
+
+  const fetchUserGroups = useCallback(async () => {
+    if (didFetchRef.current.groups) return;
+    didFetchRef.current.groups = true;
+    setLoadingGroups(true);
+    try {
+      const res = await api.get('/api/groups');
+      setGroups(res?.data || res?.data?.data || []);
     } catch (err) {
       console.error('Group fetch error:', err);
+      if (err?.status === 401) {
+        try { await logout(); } catch {}
+        navigate('/login');
+        return;
+      }
       setError('Failed to load groups.');
     } finally {
+      setLoadingGroups(false);
       setLoading(false);
     }
-  };
+  }, [logout, navigate]);
 
   /**
    * Redirects to login if not authenticated; otherwise fetch user groups
    */
+  // Fetch auth info and groups once (avoid React Strict double-fetch)
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      navigate('/login');
-    } else {
-      fetchUserGroups();
-    }
-  }, [navigate]);
+    let mounted = true;
+
+    const init = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) {
+          navigate('/login');
+          return;
+        }
+
+        await fetchUser();
+
+        if (mounted) await fetchUserGroups();
+      } catch (err) {
+        console.error('Initialization error:', err);
+        setError('Initialization failed.');
+      }
+    };
+
+    init();
+
+    return () => { mounted = false; };
+  }, [fetchUser, fetchUserGroups, navigate]);
 
   /**
    * Logs out user and navigates to login
@@ -52,6 +91,13 @@ const Dashboard = () => {
   const handleLogout = async () => {
     await logout();
     navigate('/login');
+  };
+
+  const handleRetry = async () => {
+    didFetchRef.current.groups = false;
+    setError('');
+    setLoading(true);
+    await fetchUserGroups();
   };
 
   return (
@@ -104,8 +150,13 @@ const Dashboard = () => {
 
         {/* Main content area */}
         <main className="flex-1 p-6">
-          {loading && <p className="text-blue-500">Loading groups...</p>}
-          {error && <p className="text-red-500">{error}</p>}
+          {(loading || loadingGroups) && <p className="text-blue-500">Loading groups...</p>}
+          {error && (
+            <div>
+              <p className="text-red-500">{error}</p>
+              <button onClick={handleRetry} className="mt-2 px-3 py-1 bg-yellow-400 rounded">Retry</button>
+            </div>
+          )}
 
           {!loading && groups.length > 0 && (
             <div>
@@ -118,10 +169,35 @@ const Dashboard = () => {
                     key={group._id}
                     className="bg-white p-4 rounded-xl shadow hover:shadow-lg"
                   >
-                    <h4 className="font-bold text-blue-800">{group.name}</h4>
-                    <p className="text-sm text-gray-600">
-                      Contributions: UGX {group.totalContributions}
-                    </p>
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <h4 className="font-bold text-blue-800">{group.name}</h4>
+                        <p className="text-sm text-gray-600">{group.description}</p>
+                        <div className="mt-2 text-sm text-gray-700">
+                          <strong>Members:</strong>{' '}
+                          {Array.isArray(group.members) ? (
+                            <>
+                              {group.members.slice(0,3).map((m, idx) => (
+                                <span key={idx}>{m.name || m.email || (m._id || m)}</span>
+                              )).reduce((acc, el, i) => i === 0 ? [el] : [...acc, ', ', el], [])}
+                              {group.members.length > 3 && ` and ${group.members.length - 3} more`}
+                            </>
+                          ) : (
+                            <span>{group.members?.length ?? 0} members</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="text-right text-sm text-gray-600">
+                        <div>
+                          <strong>Total:</strong> UGX {group.totalContributions ?? 0}
+                        </div>
+                        <div className="mt-1">
+                          <strong>Next:</strong>{' '}
+                          {group.nextContributionDate ? new Date(group.nextContributionDate).toLocaleDateString() : 'Not scheduled'}
+                        </div>
+                      </div>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -136,7 +212,6 @@ const Dashboard = () => {
     </div>
   );
 };       
-
 
 
 

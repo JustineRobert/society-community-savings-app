@@ -38,16 +38,7 @@ const Register = () => {
     setLoading(true);
     try {
       // Register user
-      const res = await fetch('http://localhost:5000/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ name, email, password }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Registration failed.');
-
+      const data = await (await import('../services/api')).default.post('/api/auth/register', { name, email, password });
       toast.success('Account created successfully!');
 
       // Automatically log the user in after registration

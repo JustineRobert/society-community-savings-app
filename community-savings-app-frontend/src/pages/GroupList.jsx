@@ -1,23 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
+import { useAuth } from '../context/AuthContext';
 
 const GroupList = () => {
   const [groups, setGroups] = useState([]);
   const [joining, setJoining] = useState(null); // Tracking which group the user is joining
+  const { user } = useAuth();
 
   // Fetch groups data
   useEffect(() => {
     const fetchGroups = async () => {
       try {
-        const res = await fetch('/api/groups', {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem('token')}`,
-          },
-        });
-
-        if (!res.ok) throw new Error('Failed to fetch groups');
-        const data = await res.json();
-        setGroups(data);
+        const api = (await import('../services/api')).default;
+        const res = await api.get('/api/groups');
+        // backend returns { message, data, pagination }
+        setGroups(res?.data?.data || []);
       } catch (err) {
         toast.error(`Error: ${err.message}`);
       }
@@ -26,23 +23,34 @@ const GroupList = () => {
     fetchGroups();
   }, []);
 
-  // Join group handler
+  // Join group handler with optimistic UI
   const joinGroup = async (groupId) => {
-    setJoining(groupId); // Set the group being joined to prevent multiple actions
-    try {
-      const res = await fetch(`/api/groups/join/${groupId}`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
-        },
-      });
+    setJoining(groupId);
+    const prevGroups = groups;
+    // optimistic update: mark group as joined and increment member count
+    const optimistic = groups.map((g) => {
+      if (g._id !== groupId) return g;
+      const members = Array.isArray(g.members) ? [...g.members] : [];
+      const userId = user?._id || user?.id || user?.userId;
+      // avoid duplicate
+      if (!members.find((m) => (m._id || m) === userId)) members.push({ _id: userId, name: user?.name || user?.email });
+      return { ...g, members, __joinedOptimistic: true };
+    });
+    setGroups(optimistic);
 
-      if (!res.ok) throw new Error('Failed to join group');
+    try {
+      const api = (await import('../services/api')).default;
+      await api.post(`/api/groups/join/${groupId}`);
       toast.success('Successfully joined the group!');
-      setJoining(null); // Reset joining state after success
+      // refresh list from server to ensure canonical state
+      const fresh = await api.get('/api/groups');
+      setGroups(fresh?.data?.data || fresh?.data || []);
     } catch (err) {
       toast.error(`Error: ${err.message}`);
-      setJoining(null); // Reset joining state in case of error
+      // rollback optimistic update
+      setGroups(prevGroups);
+    } finally {
+      setJoining(null);
     }
   };
 

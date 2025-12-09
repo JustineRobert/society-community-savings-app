@@ -16,10 +16,9 @@ const GroupDetails = () => {
   useEffect(() => {
     const fetchGroupData = async () => {
       try {
-        const response = await fetch(`/api/groups/${groupId}`);
-        if (!response.ok) throw new Error('Failed to fetch group details');
-        const data = await response.json();
-        setGroup(data);
+        const api = (await import('../services/api')).default;
+        const response = await api.get(`/api/groups/${groupId}`);
+        setGroup(response?.data?.data || null);
       } catch (err) {
         setError('Error: ' + err.message);
       } finally {
@@ -42,20 +41,10 @@ const GroupDetails = () => {
         setError('No token found. Please log in.');
         return;
       }
-
-      const response = await fetch(`/api/groups/${groupId}/contribute`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ amount: contributionAmount }),
-      });
-
-      if (!response.ok) throw new Error('Contribution failed');
-
-      const updatedGroup = await response.json();
-      setGroup(updatedGroup); // Update group data with new contribution
+      const api = (await import('../services/api')).default;
+      const response = await api.post(`/api/groups/${groupId}/contribute`, { amount: contributionAmount });
+      const updatedGroup = response?.data?.data || response?.data || response;
+      setGroup(updatedGroup);
       setContributionAmount('');
       setSuccessMessage('Contribution successful!');
       toast.success('Contribution successful!');

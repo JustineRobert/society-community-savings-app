@@ -4,7 +4,29 @@ const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
 async function request(path, options = {}) {
   const url = path.startsWith('http') ? path : `${API_BASE}${path.startsWith('/') ? '' : '/'}${path}`;
-  const res = await fetch(url, options);
+  // Attach token header automatically when available
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+  const headers = Object.assign({}, options.headers || {});
+  if (token && !headers['x-auth-token'] && !headers['Authorization']) {
+    headers['x-auth-token'] = token;
+  }
+
+  // prevent browser conditional GETs returning 304 by disabling cache for API calls
+  const opts = Object.assign({}, options, { headers, credentials: options.credentials || 'include', cache: 'no-store' });
+
+    // perform fetch, with optional retry on 304
+    let res = await fetch(url, opts);
+    // If we get a 304/204, try one forced-retry to get a fresh response
+    if ((res.status === 204 || res.status === 304) && !options._retried) {
+      try {
+        const forcedHeaders = Object.assign({}, headers, { 'Pragma': 'no-cache', 'Cache-Control': 'no-cache' });
+        const forcedOpts = Object.assign({}, opts, { headers: forcedHeaders, _retried: true });
+        res = await fetch(url, forcedOpts);
+      } catch (e) {
+        // ignore and fall through to original response handling
+      }
+  }
+
   if (!res.ok) {
     let errMsg = `Request failed: ${res.status}`;
     try {
@@ -15,6 +37,14 @@ async function request(path, options = {}) {
     }
     const error = new Error(errMsg);
     error.status = res.status;
+    // If unauthorized, redirect to login page to re-authenticate
+    if (res.status === 401 && typeof window !== 'undefined') {
+      try {
+        // clear token to avoid redirect loops
+        localStorage.removeItem('token');
+      } catch (e) {}
+      window.location.href = '/login';
+    }
     throw error;
   }
   // try to parse json, otherwise return text
