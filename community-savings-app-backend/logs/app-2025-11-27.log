@@ -1,0 +1,21 @@
+2025-11-27 19:01:13 [WARN]: ⚠️ MongoDB disconnected
+2025-11-27 19:01:13 [ERROR]: ❌ MongoDB connection failed: bad auth : Authentication failed.
+2025-11-27 19:01:13 [WARN]: 🔄 Retrying MongoDB connection in 5s... (Attempt 1/5)
+2025-11-27 19:01:13 [ERROR]: ❌ MongoDB error: bad auth : Authentication failed.
+2025-11-27 19:01:21 [WARN]: ⚠️ MongoDB disconnected
+2025-11-27 19:01:21 [ERROR]: ❌ MongoDB connection failed: bad auth : Authentication failed.
+2025-11-27 19:01:21 [WARN]: 🔄 Retrying MongoDB connection in 10s... (Attempt 2/5)
+2025-11-27 19:01:21 [ERROR]: ❌ MongoDB error: bad auth : Authentication failed.
+2025-11-27 19:01:33 [WARN]: ⚠️ MongoDB disconnected
+2025-11-27 19:01:33 [ERROR]: ❌ MongoDB connection failed: bad auth : Authentication failed.
+2025-11-27 19:01:33 [WARN]: 🔄 Retrying MongoDB connection in 15s... (Attempt 3/5)
+2025-11-27 19:01:33 [ERROR]: ❌ MongoDB error: bad auth : Authentication failed.
+2025-11-27 19:01:51 [WARN]: ⚠️ MongoDB disconnected
+2025-11-27 19:01:51 [ERROR]: ❌ MongoDB connection failed: bad auth : Authentication failed.
+2025-11-27 19:01:51 [WARN]: 🔄 Retrying MongoDB connection in 20s... (Attempt 4/5)
+2025-11-27 19:01:51 [ERROR]: ❌ MongoDB error: bad auth : Authentication failed.
+2025-11-27 19:02:15 [WARN]: ⚠️ MongoDB disconnected
+2025-11-27 19:02:15 [ERROR]: ❌ MongoDB connection failed: bad auth : Authentication failed.
+2025-11-27 19:02:15 [WARN]: 🔄 Retrying MongoDB connection in 25s... (Attempt 5/5)
+2025-11-27 19:02:15 [ERROR]: ❌ MongoDB error: bad auth : Authentication failed.
+2025-11-27 19:02:46 [WARN]: ⚠️ MongoDB disconnected

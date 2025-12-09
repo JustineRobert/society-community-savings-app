@@ -1,0 +1,56 @@
+2025-12-03 21:28:38 [ERROR]: ❌ MongoDB connection failed: bad auth : Authentication failed.
+2025-12-03 21:28:38 [ERROR]: ❌ MongoDB error: bad auth : Authentication failed.
+2025-12-03 21:28:46 [ERROR]: ❌ MongoDB connection failed: bad auth : Authentication failed.
+2025-12-03 21:28:46 [ERROR]: ❌ MongoDB error: bad auth : Authentication failed.
+2025-12-03 21:29:00 [ERROR]: ❌ MongoDB connection failed: bad auth : Authentication failed.
+2025-12-03 21:29:00 [ERROR]: ❌ MongoDB error: bad auth : Authentication failed.
+2025-12-03 21:29:18 [ERROR]: ❌ MongoDB connection failed: bad auth : Authentication failed.
+2025-12-03 21:29:18 [ERROR]: ❌ MongoDB error: bad auth : Authentication failed.
+2025-12-03 21:29:41 [ERROR]: ❌ MongoDB connection failed: bad auth : Authentication failed.
+2025-12-03 21:29:41 [ERROR]: ❌ MongoDB error: bad auth : Authentication failed.
+2025-12-03 21:30:09 [ERROR]: ❌ MongoDB connection failed: bad auth : Authentication failed.
+2025-12-03 21:40:02 [ERROR]: ❌ MongoDB connection failed: bad auth : Authentication failed.
+2025-12-03 21:40:02 [ERROR]: ❌ MongoDB error: bad auth : Authentication failed.
+2025-12-03 21:40:14 [ERROR]: ❌ MongoDB connection failed: bad auth : Authentication failed.
+2025-12-03 21:40:14 [ERROR]: ❌ MongoDB error: bad auth : Authentication failed.
+2025-12-03 21:40:28 [ERROR]: ❌ MongoDB connection failed: bad auth : Authentication failed.
+2025-12-03 21:40:28 [ERROR]: ❌ MongoDB error: bad auth : Authentication failed.
+2025-12-03 21:40:47 [ERROR]: ❌ MongoDB connection failed: bad auth : Authentication failed.
+2025-12-03 21:40:47 [ERROR]: ❌ MongoDB error: bad auth : Authentication failed.
+2025-12-03 21:41:11 [ERROR]: ❌ MongoDB connection failed: bad auth : Authentication failed.
+2025-12-03 21:41:11 [ERROR]: ❌ MongoDB error: bad auth : Authentication failed.
+2025-12-03 21:41:42 [ERROR]: ❌ MongoDB connection failed: bad auth : Authentication failed.
+2025-12-03 23:19:26 [ERROR]: ❌ MongoDB connection failed: Could not connect to any servers in your MongoDB Atlas cluster. One common reason is that you're trying to access the database from an IP that isn't whitelisted. Make sure your current IP address is on your Atlas cluster's IP whitelist: https://www.mongodb.com/docs/atlas/security-whitelist/
+2025-12-03 23:19:26 [ERROR]: ❌ MongoDB error: Server selection timed out after 5000 ms
+2025-12-03 23:19:39 [ERROR]: ❌ MongoDB connection failed: bad auth : Authentication failed.
+2025-12-03 23:19:39 [ERROR]: ❌ MongoDB error: bad auth : Authentication failed.
+2025-12-03 23:19:52 [ERROR]: ❌ MongoDB connection failed: bad auth : Authentication failed.
+2025-12-03 23:19:52 [ERROR]: ❌ MongoDB error: bad auth : Authentication failed.
+2025-12-03 23:20:47 [ERROR]: ❌ MongoDB connection failed: Could not connect to any servers in your MongoDB Atlas cluster. One common reason is that you're trying to access the database from an IP that isn't whitelisted. Make sure your current IP address is on your Atlas cluster's IP whitelist: https://www.mongodb.com/docs/atlas/security-whitelist/
+2025-12-03 23:20:47 [ERROR]: ❌ MongoDB error: Server selection timed out after 5000 ms
+2025-12-03 23:21:18 [ERROR]: ❌ MongoDB connection failed: bad auth : Authentication failed.
+2025-12-03 23:21:18 [ERROR]: ❌ MongoDB error: bad auth : Authentication failed.
+2025-12-03 23:22:09 [ERROR]: ❌ MongoDB connection failed: bad auth : Authentication failed.
+2025-12-03 23:22:09 [ERROR]: ❌ MongoDB error: bad auth : Authentication failed.
+2025-12-03 23:22:17 [ERROR]: ❌ MongoDB connection failed: bad auth : Authentication failed.
+2025-12-03 23:22:17 [ERROR]: ❌ MongoDB error: bad auth : Authentication failed.
+2025-12-03 23:22:43 [ERROR]: ❌ MongoDB connection failed: Could not connect to any servers in your MongoDB Atlas cluster. One common reason is that you're trying to access the database from an IP that isn't whitelisted. Make sure your current IP address is on your Atlas cluster's IP whitelist: https://www.mongodb.com/docs/atlas/security-whitelist/
+2025-12-03 23:22:43 [ERROR]: ❌ MongoDB error: Server selection timed out after 5000 ms
+2025-12-03 23:23:28 [ERROR]: ❌ MongoDB connection failed: Could not connect to any servers in your MongoDB Atlas cluster. One common reason is that you're trying to access the database from an IP that isn't whitelisted. Make sure your current IP address is on your Atlas cluster's IP whitelist: https://www.mongodb.com/docs/atlas/security-whitelist/
+2025-12-03 23:23:28 [ERROR]: ❌ MongoDB error: getaddrinfo ENOTFOUND ac-dhrylpe-shard-00-02.zzxihcc.mongodb.net
+2025-12-03 23:23:54 [ERROR]: ❌ MongoDB connection failed: Could not connect to any servers in your MongoDB Atlas cluster. One common reason is that you're trying to access the database from an IP that isn't whitelisted. Make sure your current IP address is on your Atlas cluster's IP whitelist: https://www.mongodb.com/docs/atlas/security-whitelist/
+2025-12-03 23:23:54 [ERROR]: ❌ MongoDB error: Server selection timed out after 5000 ms
+2025-12-03 23:24:42 [ERROR]: ❌ MongoDB connection failed: bad auth : Authentication failed.
+2025-12-03 23:24:42 [ERROR]: ❌ MongoDB error: bad auth : Authentication failed.
+2025-12-03 23:24:49 [ERROR]: ❌ MongoDB connection failed: bad auth : Authentication failed.
+2025-12-03 23:24:49 [ERROR]: ❌ MongoDB error: bad auth : Authentication failed.
+2025-12-03 23:25:04 [ERROR]: ❌ MongoDB connection failed: bad auth : Authentication failed.
+2025-12-03 23:25:04 [ERROR]: ❌ MongoDB error: bad auth : Authentication failed.
+2025-12-03 23:25:21 [ERROR]: ❌ MongoDB connection failed: bad auth : Authentication failed.
+2025-12-03 23:25:21 [ERROR]: ❌ MongoDB error: bad auth : Authentication failed.
+2025-12-03 23:25:40 [ERROR]: ❌ MongoDB connection failed: bad auth : Authentication failed.
+2025-12-03 23:25:40 [ERROR]: ❌ MongoDB error: bad auth : Authentication failed.
+2025-12-03 23:25:49 [ERROR]: ❌ MongoDB connection failed: bad auth : Authentication failed.
+2025-12-03 23:25:49 [ERROR]: ❌ MongoDB error: bad auth : Authentication failed.
+2025-12-03 23:26:04 [ERROR]: ❌ MongoDB connection failed: bad auth : Authentication failed.
+2025-12-03 23:26:04 [ERROR]: ❌ MongoDB error: bad auth : Authentication failed.

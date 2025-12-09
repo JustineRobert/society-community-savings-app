@@ -1,0 +1,29 @@
+{
+  "name": "community-savings-app",
+  "version": "1.0.0",
+  "description": "Community Savings App - MERN Stack Application",
+  "main": "community-savings-app-backend/server.js",
+  "scripts": {
+    "start": "concurrently \"npm --prefix community-savings-app-backend run dev\" \"npm --prefix community-savings-app-frontend start\"",
+    "backend": "npm --prefix community-savings-app-backend run dev",
+    "frontend": "npm --prefix community-savings-app-frontend start",
+    "build": "npm --prefix community-savings-app-frontend run build",
+    "test": "npm --prefix community-savings-app-backend test && npm --prefix community-savings-app-frontend test",
+    "install-all": "npm install && npm --prefix community-savings-app-backend install && npm --prefix community-savings-app-frontend install"
+  },
+  "keywords": [
+    "community",
+    "savings",
+    "group",
+    "contribution",
+    "loan"
+  ],
+  "author": "Igune Justine Robert, TITech Africa",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "dependencies": {
+    "mongodb": "^7.0.0"
+  }
+}

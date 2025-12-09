@@ -1,0 +1,88 @@
+/* src/pages/Dashboard.css */
+
+/* ===== Base Styling ===== */
+.dashboard-container {
+  max-width: 600px;
+  margin: 80px auto;
+  padding: 40px;
+  background-color: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  text-align: center;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.dashboard-container h2 {
+  font-size: 28px;
+  color: #1f2937;
+  margin-bottom: 20px;
+}
+
+.dashboard-container p {
+  font-size: 18px;
+  color: #4b5563;
+  margin-bottom: 30px;
+}
+
+/* ===== Button Styling ===== */
+.logout-btn {
+  padding: 12px 24px;
+  background-color: #1d4ed8;
+  color: white;
+  font-size: 16px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+.logout-btn:hover {
+  background-color: #2563eb;
+}
+
+/* ===== Responsive Design ===== */
+@media (max-width: 768px) {
+  .dashboard-container {
+    margin: 40px 20px;
+    padding: 30px 20px;
+  }
+
+  .dashboard-container h2 {
+    font-size: 24px;
+  }
+
+  .dashboard-container p {
+    font-size: 16px;
+  }
+
+  .logout-btn {
+    width: 100%;
+    font-size: 15px;
+    padding: 12px;
+  }
+}
+
+/* ===== Dark Theme Support ===== */
+/* Toggle dark mode by adding a .dark class to a parent element (e.g. <body className="dark">) */
+.dark .dashboard-container {
+  background-color: #1e293b;
+  color: #e2e8f0;
+  box-shadow: 0 4px 12px rgba(255, 255, 255, 0.05);
+}
+
+.dark .dashboard-container h2 {
+  color: #f1f5f9;
+}
+
+.dark .dashboard-container p {
+  color: #cbd5e1;
+}
+
+.dark .logout-btn {
+  background-color: #3b82f6;
+}
+
+.dark .logout-btn:hover {
+  background-color: #60a5fa;
+}
