@@ -1,1 +1,7 @@
 Community Savings App BooK/*.png
+
+node_modules/
+coverage/
+dist/
+build/
+.env
