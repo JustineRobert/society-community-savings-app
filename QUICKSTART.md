@@ -219,6 +219,29 @@ curl -X GET http://localhost:5000/api/auth/me \
    - `token`: (will be set after login)
 3. Test endpoints in order
 
+### Admin seed & automated Postman tests (Newman)
+
+- Create a local admin user quickly (backend):
+```powershell
+# from repo root
+cd community-savings-app-backend
+# set env variables OR ensure .env has MONGO_URI
+$env:ADMIN_EMAIL='admin@example.com'; $env:ADMIN_PASS='AdminPass123'; node scripts/seed-admin.js
+```
+
+- Run the Postman collection via Newman (installed as a dev dependency at root):
+```powershell
+# from repo root
+npm run postman:test
+# This runs the `postman/Community-auth-tests.postman_collection.json` collection
+# and writes a JSON report to `postman/newman-report.json`.
+```
+
+Notes about admin password policy and reports:
+- The seed script enforces a default admin password policy: minimum 12 characters, at least one lowercase, one uppercase, and one digit. If you provide `ADMIN_PASS` it must meet the policy or you must set `ADMIN_FORCE=true` to override (not recommended).
+- If you do not provide `ADMIN_PASS`, the seed script will generate a strong random password and print it to the console.
+- Newman JSON report location: `postman/reports/newman-report.json` (the `postman:test` script writes the report there).
+
 ---
 
 ## 🐛 Troubleshooting

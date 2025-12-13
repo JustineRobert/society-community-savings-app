@@ -22,159 +22,164 @@ const AuthContext = createContext({
   refreshToken: async () => {},
 });
 
-export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [token, setToken] = useState(null);
-  const [loading, setLoading] = useState(true);
+  // Create an axios instance we can attach interceptors to
+  const api = axios.create({ baseURL: API_BASE, withCredentials: true });
 
-  // Setup axios interceptor to include token in all requests
-  useEffect(() => {
-    const interceptor = axios.interceptors.request.use(
-      (config) => {
-        const storedToken = localStorage.getItem('token');
-        if (storedToken) {
-          config.headers['x-auth-token'] = storedToken;
-        }
-        return config;
-      },
-      (error) => Promise.reject(error)
-    );
+  export const AuthProvider = ({ children }) => {
+    const [user, setUser] = useState(null);
+    const [token, setToken] = useState(null);
+    const [loading, setLoading] = useState(true);
 
-    return () => axios.interceptors.request.eject(interceptor);
-  }, []);
-
-  // Refresh token helper
-  // Logout
-  const logout = useCallback(async () => {
-    try {
-      await axios.post(`${API_BASE}/api/auth/logout`, {}, {
-        withCredentials: true,
-      });
-    } catch (error) {
-      console.error('Logout error:', error.message);
-    } finally {
-      localStorage.removeItem('token');
-      setToken(null);
-      setUser(null);
-      toast.info('Logged out successfully');
-    }
-  }, []);
-
-  // Refresh token helper
-  const refreshAccessToken = useCallback(async () => {
-    try {
-      const response = await axios.post(`${API_BASE}/api/auth/refresh`, {}, {
-        withCredentials: true,
-      });
-      const newToken = response.data.token;
-      localStorage.setItem('token', newToken);
-      setToken(newToken);
-      return newToken;
-    } catch (error) {
-      console.error('Token refresh failed:', error.message);
-      logout();
-      throw error;
-    }
-  }, [logout]);
-
-  // Login with email and password
-  const login = useCallback(async (email, password) => {
-    try {
-      const response = await axios.post(
-        `${API_BASE}/api/auth/login`,
-        { email, password },
-        { withCredentials: true }
-      );
-
-      const { token: newToken, user: userData } = response.data;
-      localStorage.setItem('token', newToken);
-      setToken(newToken);
-      setUser(userData);
-      toast.success('Logged in successfully');
-      return userData;
-    } catch (error) {
-      const errorMsg = error.response?.data?.message || 'Login failed. Please try again.';
-      console.error('Login error:', errorMsg);
-      toast.error(errorMsg);
-      throw error;
-    }
-  }, []);
-
-  // Register new user
-  const register = useCallback(async (email, password, name) => {
-    try {
-      const response = await axios.post(
-        `${API_BASE}/api/auth/register`,
-        { email, password, name },
-        { withCredentials: true }
-      );
-
-      const { token: newToken, user: userData } = response.data;
-      localStorage.setItem('token', newToken);
-      setToken(newToken);
-      setUser(userData);
-      toast.success('Registration successful');
-      return userData;
-    } catch (error) {
-      const errorMsg = error.response?.data?.message || 'Registration failed. Please try again.';
-      console.error('Register error:', errorMsg);
-      toast.error(errorMsg);
-      throw error;
-    }
-  }, []);
-
-
-  // Initialize user on mount
-  useEffect(() => {
-    const initializeAuth = async () => {
-      try {
-        const storedToken = localStorage.getItem('token');
-        
-        if (storedToken) {
-          // Verify token is still valid by checking with backend
-          try {
-            const response = await axios.get(`${API_BASE}/api/auth/me`, {
-              headers: { 'x-auth-token': storedToken },
-            });
-            setUser(response.data);
-            setToken(storedToken);
-          } catch (error) {
-            // Token invalid or expired
-            localStorage.removeItem('token');
-            console.warn('Stored token is invalid, clearing...');
-          }
-        }
-      } catch (error) {
-        console.error('Auth initialization failed:', error.message);
-      } finally {
-        setLoading(false);
+    // Attach Authorization header when token changes
+    useEffect(() => {
+      if (token) {
+        api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+        localStorage.setItem('token', token);
+      } else {
+        delete api.defaults.headers.common['Authorization'];
+        localStorage.removeItem('token');
       }
-    };
+    }, [token]);
 
-    initializeAuth();
-  }, []);
+    // Response interceptor: on 401 try refresh once, then retry request
+    useEffect(() => {
+      const interceptor = api.interceptors.response.use(
+        (res) => res,
+        async (error) => {
+          const originalRequest = error.config;
+          if (!originalRequest || originalRequest._retry) return Promise.reject(error);
+          if (error.response?.status === 401) {
+            originalRequest._retry = true;
+            try {
+              const refreshRes = await api.post('/api/auth/refresh');
+              const newToken = refreshRes.data.token;
+              setToken(newToken);
+              originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
+              return api(originalRequest);
+            } catch (e) {
+              // Refresh failed
+              await doLogout();
+              return Promise.reject(e);
+            }
+          }
+          return Promise.reject(error);
+        }
+      );
 
-  const value = {
-    user,
-    token,
-    loading,
-    login,
-    logout,
-    register,
-    refreshToken: refreshAccessToken,
+      return () => api.interceptors.response.eject(interceptor);
+    }, []);
+
+    // core logout used internally
+    const doLogout = useCallback(async () => {
+      try {
+        await api.post('/api/auth/logout');
+      } catch (err) {
+        // ignore
+      } finally {
+        setToken(null);
+        setUser(null);
+        toast.info('Logged out');
+      }
+    }, []);
+
+    // Public logout
+    const logout = useCallback(async () => {
+      await doLogout();
+    }, [doLogout]);
+
+    // Refresh access token explicitly
+    const refreshAccessToken = useCallback(async () => {
+      try {
+        const res = await api.post('/api/auth/refresh');
+        const newToken = res.data.token;
+        setToken(newToken);
+        return newToken;
+      } catch (err) {
+        await doLogout();
+        throw err;
+      }
+    }, [doLogout]);
+
+    // Login
+    const login = useCallback(async (email, password, deviceInfo) => {
+      try {
+        const res = await api.post('/api/auth/login', { email, password, deviceInfo });
+        const newToken = res.data.token;
+        const userData = res.data.user;
+        setToken(newToken);
+        setUser(userData);
+        toast.success('Logged in');
+        return userData;
+      } catch (err) {
+        const message = err.response?.data?.message || 'Login failed';
+        toast.error(message);
+        throw err;
+      }
+    }, []);
+
+    const register = useCallback(async (email, password, name) => {
+      try {
+        const res = await api.post('/api/auth/register', { email, password, name });
+        const newToken = res.data.token;
+        const userData = res.data.user;
+        setToken(newToken);
+        setUser(userData);
+        toast.success('Registered');
+        return userData;
+      } catch (err) {
+        const message = err.response?.data?.message || 'Registration failed';
+        toast.error(message);
+        throw err;
+      }
+    }, []);
+
+    // Initialize: attempt to refresh token to populate session
+    useEffect(() => {
+      let mounted = true;
+      (async () => {
+        try {
+          const stored = localStorage.getItem('token');
+          if (stored) {
+            // try to validate stored token by calling /api/auth/me
+            api.defaults.headers.common['Authorization'] = `Bearer ${stored}`;
+            try {
+              const meRes = await api.get('/api/auth/me');
+              if (!mounted) return;
+              setUser(meRes.data);
+              setToken(stored);
+              return;
+            } catch (_) {
+              // invalid stored token, attempt refresh
+            }
+          }
+
+          // attempt refresh (cookie-based)
+          const refreshRes = await api.post('/api/auth/refresh');
+          if (refreshRes?.data?.token) {
+            if (!mounted) return;
+            setToken(refreshRes.data.token);
+            // fetch user
+            const meRes = await api.get('/api/auth/me');
+            if (!mounted) return;
+            setUser(meRes.data);
+          }
+        } catch (err) {
+          // not authenticated
+        } finally {
+          if (mounted) setLoading(false);
+        }
+      })();
+
+      return () => { mounted = false; };
+    }, []);
+
+    const value = { user, token, loading, login, logout, register, refreshToken: refreshAccessToken };
+
+    return <AuthContext.Provider value={value}>{!loading && children}</AuthContext.Provider>;
   };
 
-  return (
-    <AuthContext.Provider value={value}>
-      {!loading && children}
-    </AuthContext.Provider>
-  );
-};
-
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-};
+  export const useAuth = () => {
+    const context = useContext(AuthContext);
+    if (!context) throw new Error('useAuth must be used within AuthProvider');
+    return context;
+  };

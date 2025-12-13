@@ -9,8 +9,17 @@
     "frontend": "npm --prefix community-savings-app-frontend start",
     "build": "npm --prefix community-savings-app-frontend run build",
     "test": "npm --prefix community-savings-app-backend test && npm --prefix community-savings-app-frontend test",
-    "install-all": "npm install && npm --prefix community-savings-app-backend install && npm --prefix community-savings-app-frontend install"
+    "install-all": "npm install && npm --prefix community-savings-app-backend install && npm --prefix community-savings-app-frontend install",
+    "postman:test": "newman run postman/Community-auth-tests.postman_collection.json -e postman/Group-env.postman_environment.json --reporters cli,json --reporter-json-export postman/reports/newman-report.json",
+    "seed-admin": "npm --prefix community-savings-app-backend run seed-admin"
+    ,
+    "seed-admin-cli": "node scripts/seed-admin-cli.js"
   },
+  "newman": {
+    "collection": "postman/Community-auth-tests.postman_collection.json",
+    "environment": "postman/Group-env.postman_environment.json"
+  },
+  
   "keywords": [
     "community",
     "savings",
@@ -21,7 +30,8 @@
   "author": "Igune Justine Robert, TITech Africa",
   "license": "ISC",
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "newman": "^6.21.0"
   },
   "dependencies": {
     "mongodb": "^7.0.0"

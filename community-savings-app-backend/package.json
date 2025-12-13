@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node --max-old-space-size=4096 app.js",
     "dev": "nodemon --exec \"node --max-old-space-size=4096\" server.js",
+    "seed-admin": "node scripts/seed-admin.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "Igune Justine Robert, TITech Africa",

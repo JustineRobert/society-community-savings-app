@@ -10,7 +10,7 @@ const {
   updateLoanStatus,
 } = require('../controllers/loanController');
 
-const { verifyToken } = require('../middleware/auth'); // Adjusted for clarity and consistency
+const { verifyToken, requireRole } = require('../middleware/auth'); // Adjusted for clarity and consistency
 
 /**
  * @route   POST /api/loans
@@ -38,6 +38,6 @@ router.get('/group/:groupId', verifyToken, getGroupLoans);
  * @desc    Update the status of a specific loan (e.g., approve/reject)
  * @access  Private (Requires Elevated Role - Admin/Group Admin)
  */
-router.patch('/:loanId/status', verifyToken, updateLoanStatus);
+router.patch('/:loanId/status', verifyToken, requireRole('admin', 'group_admin'), updateLoanStatus);
 
 module.exports = router;

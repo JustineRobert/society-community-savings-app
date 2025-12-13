@@ -4,7 +4,7 @@ const express = require('express');
 const router = express.Router();
 
 // Middleware for verifying authentication
-const { verifyToken } = require('../middleware/auth');
+const { verifyToken, requireRole } = require('../middleware/auth');
 
 // Chat controller handlers
 const {
@@ -61,7 +61,7 @@ router.get('/user/:userId', verifyToken, async (req, res) => {
  * @desc    Delete a specific message by its ID
  * @access  Private (Admin/Moderator Only)
  */
-router.delete('/:messageId', verifyToken, async (req, res) => {
+router.delete('/:messageId', verifyToken, requireRole('admin', 'group_admin'), async (req, res) => {
   try {
     await deleteMessage(req, res);
   } catch (error) {

@@ -175,3 +175,46 @@ exports.leaveGroup = async (req, res) => {
     });
   }
 };
+
+/**
+ * Seed multiple groups for local development.
+ * Only allowed when not in production to avoid accidental data creation.
+ * Body: { count?: number, names?: string[] }
+ */
+exports.seedGroups = async (req, res) => {
+  try {
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(403).json({ message: 'Seeding is disabled in production' });
+    }
+
+    const { count = 3, names = [] } = req.body;
+    if (!req.user || !req.user.id) {
+      return res.status(400).json({ message: 'Authenticated user required for seeding' });
+    }
+
+    const groupsToCreate = [];
+    for (let i = 0; i < count; i++) {
+      const base = names[i] || `Sample Group ${i + 1}`;
+      // ensure unique name
+      const name = `${base} - ${Date.now().toString().slice(-6)}-${i}`;
+
+      groupsToCreate.push({
+        name,
+        members: [req.user.id],
+        createdBy: req.user.id,
+      });
+    }
+
+    const created = await Group.insertMany(groupsToCreate);
+
+    logger.info(`Seeded ${created.length} groups for user ${req.user.id}`);
+
+    res.status(201).json({ message: 'Seeded groups successfully', data: created });
+  } catch (err) {
+    logger.error('Error seeding groups:', { userId: req.user && req.user.id, error: err.message });
+    res.status(500).json({
+      message: 'Failed to seed groups',
+      error: process.env.NODE_ENV === 'production' ? undefined : err.message,
+    });
+  }
+};

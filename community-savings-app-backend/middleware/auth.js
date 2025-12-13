@@ -75,8 +75,21 @@ const isGroupAdmin = (req, res, next) => {
   return res.status(403).json({ message: 'Group admin access required' });
 };
 
+/**
+ * Generic role requirement middleware. Usage: requireRole('admin','group_admin')
+ * Works with `verifyToken` which attaches `req.user` as the full user object.
+ */
+const requireRole = (...allowedRoles) => (req, res, next) => {
+  if (!req.user) return res.status(401).json({ message: 'Not authenticated' });
+  const userRole = (req.user.role || '').toString();
+  if (allowedRoles.length === 0) return next();
+  if (!allowedRoles.includes(userRole)) return res.status(403).json({ message: 'Insufficient role' });
+  return next();
+};
+
 module.exports = {
   verifyToken,
   isAdmin,
   isGroupAdmin,
+  requireRole,
 };

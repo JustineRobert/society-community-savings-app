@@ -19,7 +19,7 @@ const { errorHandler } = require('./middleware/errorHandler');
 dotenv.config({ path: path.resolve(__dirname, '.env') });
 
 // Validate required environment variables
-const requiredEnvVars = ['PORT', 'MONGO_URI', 'JWT_SECRET', 'JWT_REFRESH_SECRET'];
+const requiredEnvVars = ['PORT', 'MONGO_URI', 'JWT_SECRET'];
 requiredEnvVars.forEach((key) => {
   if (!process.env[key]) {
     console.error(`❌ Missing required environment variable: ${key}`);

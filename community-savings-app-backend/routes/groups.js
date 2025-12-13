@@ -7,6 +7,7 @@ const {
   createGroup,
   joinGroup,
   getGroups,
+  seedGroups,
 } = require('../controllers/groupController');
 
 const { verifyToken } = require('../middleware/auth');
@@ -31,5 +32,12 @@ router.post('/join/:id', verifyToken, joinGroup);
  * @access  Private (Authenticated Users)
  */
 router.get('/', verifyToken, getGroups);
+
+/**
+ * @route   POST /api/groups/seed
+ * @desc    Seed sample groups for local development (disabled in production)
+ * @access  Private (Authenticated Users)
+ */
+router.post('/seed', verifyToken, seedGroups);
 
 module.exports = router;

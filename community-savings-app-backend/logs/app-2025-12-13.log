@@ -1,0 +1,58 @@
+2025-12-13 07:57:25 [INFO]: 🔌 MongoDB connection established
+2025-12-13 07:57:25 [INFO]: ✅ MongoDB connected successfully using SRV URI
+2025-12-13 11:28:01 [ERROR]: Error occurred Expected ':' after property name in JSON at position 49 (line 1 column 50)
+2025-12-13 11:39:02 [ERROR]: Error occurred Expected ':' after property name in JSON at position 49 (line 1 column 50)
+2025-12-13 12:05:59 [WARN]: ⚠️ MongoDB disconnected
+2025-12-13 12:16:14 [INFO]: 🔌 MongoDB connection established
+2025-12-13 12:16:14 [INFO]: ✅ MongoDB connected successfully using SRV URI
+2025-12-13 12:18:34 [WARN]: ⚠️ MongoDB disconnected
+2025-12-13 12:18:35 [INFO]: 🔌 MongoDB connection established
+2025-12-13 12:29:25 [WARN]: ⚠️ MongoDB disconnected
+2025-12-13 12:29:25 [INFO]: 🔌 MongoDB connection established
+2025-12-13 13:01:42 [WARN]: ⚠️ MongoDB disconnected
+2025-12-13 13:14:54 [INFO]: 🔌 MongoDB connection established
+2025-12-13 13:14:54 [INFO]: ✅ MongoDB connected successfully using SRV URI
+2025-12-13 13:38:05 [WARN]: ⚠️ MongoDB disconnected
+2025-12-13 13:38:16 [INFO]: 🔌 MongoDB connection established
+2025-12-13 13:49:07 [WARN]: ⚠️ MongoDB disconnected
+2025-12-13 13:49:18 [INFO]: 🔌 MongoDB connection established
+2025-12-13 14:06:50 [WARN]: ⚠️ MongoDB disconnected
+2025-12-13 14:07:01 [INFO]: 🔌 MongoDB connection established
+2025-12-13 14:10:53 [WARN]: ⚠️ MongoDB disconnected
+2025-12-13 14:11:07 [INFO]: 🔌 MongoDB connection established
+2025-12-13 14:16:05 [INFO]: 🔌 MongoDB connection established
+2025-12-13 14:16:05 [INFO]: ✅ MongoDB connected successfully using SRV URI
+2025-12-13 14:16:26 [INFO]: 🔌 MongoDB connection established
+2025-12-13 14:16:26 [INFO]: ✅ MongoDB connected successfully using SRV URI
+2025-12-13 14:17:05 [WARN]: ⚠️ MongoDB disconnected
+2025-12-13 14:17:31 [INFO]: 🔌 MongoDB connection established
+2025-12-13 14:25:12 [INFO]: 🔌 MongoDB connection established
+2025-12-13 14:25:12 [INFO]: ✅ MongoDB connected successfully using SRV URI
+2025-12-13 14:29:13 [WARN]: ⚠️ MongoDB disconnected
+2025-12-13 14:29:13 [ERROR]: ❌ MongoDB connection failed: Could not connect to any servers in your MongoDB Atlas cluster. One common reason is that you're trying to access the database from an IP that isn't whitelisted. Make sure your current IP address is on your Atlas cluster's IP whitelist: https://www.mongodb.com/docs/atlas/security-whitelist/
+2025-12-13 14:29:13 [WARN]: 🔄 Retrying MongoDB connection in 5s... (Attempt 1/5)
+2025-12-13 14:29:13 [ERROR]: ❌ MongoDB error: Server selection timed out after 5000 ms
+2025-12-13 14:29:25 [INFO]: 🔌 MongoDB connection established
+2025-12-13 14:29:25 [INFO]: ✅ MongoDB connected successfully using SRV URI
+2025-12-13 14:34:28 [INFO]: 🔌 MongoDB connection established
+2025-12-13 14:34:28 [INFO]: ✅ MongoDB connected successfully using SRV URI
+2025-12-13 16:08:39 [INFO]: 🔌 MongoDB connection established
+2025-12-13 16:08:39 [INFO]: ✅ MongoDB connected successfully using SRV URI
+2025-12-13 16:37:14 [WARN]: ⚠️ MongoDB disconnected
+2025-12-13 16:37:14 [INFO]: 🔌 MongoDB connection established
+2025-12-13 16:40:38 [WARN]: ⚠️ MongoDB disconnected
+2025-12-13 16:40:38 [INFO]: 🔌 MongoDB connection established
+2025-12-13 16:45:36 [WARN]: ⚠️ MongoDB disconnected
+2025-12-13 16:45:41 [INFO]: 🔌 MongoDB connection established
+2025-12-13 18:00:26 [INFO]: 🔌 MongoDB connection established
+2025-12-13 18:00:26 [INFO]: ✅ MongoDB connected successfully using SRV URI
+2025-12-13 18:37:39 [INFO]: 🔌 MongoDB connection established
+2025-12-13 18:37:39 [INFO]: ✅ MongoDB connected successfully using SRV URI
+2025-12-13 18:57:48 [INFO]: 🔌 MongoDB connection established
+2025-12-13 18:57:48 [INFO]: ✅ MongoDB connected successfully using SRV URI
+2025-12-13 19:00:24 [WARN]: ⚠️ MongoDB disconnected
+2025-12-13 19:09:47 [INFO]: 🔌 MongoDB connection established
+2025-12-13 19:09:47 [INFO]: ✅ MongoDB connected successfully using SRV URI
+2025-12-13 19:17:13 [WARN]: ⚠️ MongoDB disconnected
+2025-12-13 19:19:09 [INFO]: 🔌 MongoDB connection established
+2025-12-13 19:19:09 [INFO]: ✅ MongoDB connected successfully using SRV URI

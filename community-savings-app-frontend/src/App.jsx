@@ -5,6 +5,7 @@ import 'react-toastify/dist/ReactToastify.css';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
+import ProtectedRouteWithRole from './components/ProtectedRouteWithRole';
 import Navbar from './components/Navbar';
 
 import Dashboard from './pages/Dashboard';
@@ -14,6 +15,10 @@ import GroupList from './pages/GroupList';
 import GroupDetails from './pages/GroupDetails';
 import CreateGroup from './pages/CreateGroup';
 import NotFound from './pages/NotFound';
+import AdminDashboard from './pages/admin/AdminDashboard';
+import AdminSettings from './pages/admin/AdminSettings';
+import ManageUsers from './pages/admin/ManageUsers';
+import AdminSessions from './pages/admin/AdminSessions';
 
 function HomeRedirect() {
   const { user, loading } = useAuth();
@@ -68,6 +73,43 @@ export default function App() {
           />
 
           <Route path="*" element={<NotFound />} />
+
+          {/* Admin routes */}
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRouteWithRole allowedRoles={["admin"]}>
+                <AdminDashboard />
+              </ProtectedRouteWithRole>
+            }
+          />
+
+          <Route
+            path="/admin/settings"
+            element={
+              <ProtectedRouteWithRole allowedRoles={["admin"]}>
+                <AdminSettings />
+              </ProtectedRouteWithRole>
+            }
+          />
+
+          <Route
+            path="/admin/users"
+            element={
+              <ProtectedRouteWithRole allowedRoles={["admin"]}>
+                <ManageUsers />
+              </ProtectedRouteWithRole>
+            }
+          />
+
+          <Route
+            path="/admin/sessions"
+            element={
+              <ProtectedRouteWithRole allowedRoles={["admin"]}>
+                <AdminSessions />
+              </ProtectedRouteWithRole>
+            }
+          />
         </Routes>
         <ToastContainer position="top-right" />
       </BrowserRouter>

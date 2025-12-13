@@ -16,6 +16,12 @@ const AdminDashboard = () => {
           Manage Users
         </Link>
         <Link
+          to="/admin/sessions"
+          className="block px-4 py-2 bg-yellow-600 text-white rounded hover:bg-yellow-700"
+        >
+          Manage Sessions
+        </Link>
+        <Link
           to="/admin/settings"
           className="block px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
         >

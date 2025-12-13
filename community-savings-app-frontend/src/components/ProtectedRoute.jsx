@@ -1,63 +1,36 @@
 // src/components/ProtectedRoute.jsx
 
-import React, { useEffect, useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import React from 'react';
+import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { toast } from 'react-toastify';
 
-// Checks JWT token expiry
-const isTokenExpired = (token) => {
-  try {
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    return payload.exp * 1000 < Date.now();
-  } catch {
-    return true;
-  }
-};
-
-// Loading Spinner Component
+// Simple loading placeholder
 const LoadingSpinner = () => (
-  <div className="flex items-center justify-center min-h-screen bg-gray-50">
-    <div className="flex flex-col items-center gap-4">
-      <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
-      <p className="text-gray-600 font-medium">Loading...</p>
-    </div>
+  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '40vh' }}>
+    <div>Loading...</div>
   </div>
 );
 
-const ProtectedRoute = ({ children }) => {
-  const auth = useAuth();
-  const [isValid, setIsValid] = useState(null); // null = loading state
+/**
+ * ProtectedRoute
+ * - If not authenticated -> redirect to /login
+ * - If requiredRoles provided -> ensure user.role matches one of them
+ * Usage: <Route element={<ProtectedRoute requiredRoles={["admin"]} />}>
+ */
+const ProtectedRoute = ({ requiredRoles = [], children }) => {
+  const { user, loading } = useAuth();
 
-  useEffect(() => {
-    const validateAuth = async () => {
-      try {
-        const token = localStorage.getItem('token');
+  if (loading) return <LoadingSpinner />;
 
-        if (!auth || typeof auth.logout !== 'function') {
-          toast.error('Authentication context error');
-          setIsValid(false);
-          return;
-        }
+  if (!user) return <Navigate to="/login" replace />;
 
-        if (!token || isTokenExpired(token)) {
-          await auth.logout();
-          toast.error('Session expired. Please login again.');
-          setIsValid(false);
-        } else {
-          setIsValid(true);
-        }
-      } catch (error) {
-        console.error('Auth validation error:', error);
-        setIsValid(false);
-      }
-    };
+  if (requiredRoles && requiredRoles.length > 0) {
+    const has = requiredRoles.includes((user.role || '').toString());
+    if (!has) return <Navigate to="/403" replace />;
+  }
 
-    validateAuth();
-  }, [auth]);
-
-  if (isValid === null) return <LoadingSpinner />;
-  return isValid ? children : <Navigate to="/login" replace />;
+  // If children provided, render them; otherwise use Outlet for nested routes
+  return children ? children : <Outlet />;
 };
 
 export default ProtectedRoute;
