@@ -1,57 +1,284 @@
+
 // routes/auth.js
+// ============================================================================
+// Authentication Routes
+// - Access & refresh token issuance/rotation (with secure cookie for refresh).
+// - Registration and login validation.
+// - Protected profile and admin session management.
+// ============================================================================
 
 const express = require('express');
-const { validationRules, handleValidationErrors } = require('../utils/validators');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcrypt');
+const crypto = require('crypto');
+const rateLimit = require('express-rate-limit');
+
+const asyncHandler = require('../utils/asyncHandler');
+const { validationRules, handleValidation } = require('../utils/validators');
 const { verifyToken, requireRole } = require('../middleware/auth');
 const authController = require('../controllers/authController');
-require('dotenv').config();
 
 const router = express.Router();
 
-/**
- * @route   POST /api/auth/register
- * @desc    Register a new user
- * @access  Public
- */
-router.post('/register', validationRules.register, handleValidationErrors, authController.register);
+// ----------------------------------------------------------------------------
+// Token Secrets & TTLs (compatible with your server.js ENV validation)
+// ----------------------------------------------------------------------------
+const ACCESS_SECRET = process.env.ACCESS_TOKEN_SECRET || process.env.JWT_SECRET;
+const REFRESH_SECRET = process.env.REFRESH_TOKEN_SECRET || process.env.JWT_SECRET;
+
+const ACCESS_TOKEN_TTL = process.env.ACCESS_TOKEN_TTL || '10m';   // short-lived access
+const REFRESH_TOKEN_TTL = process.env.REFRESH_TOKEN_TTL || '30d'; // long-lived refresh
+
+const JWT_ISSUER = process.env.JWT_ISSUER || undefined;
+const JWT_AUDIENCE = process.env.JWT_AUDIENCE || undefined;
+
+// ----------------------------------------------------------------------------
+// Refresh token store (in-memory). Replace with Redis/DB keyed by jti in prod.
+// ----------------------------------------------------------------------------
+const refreshStore = new Map();
+
+const REFRESH_COOKIE_NAME = 'refreshToken';
+const REFRESH_COOKIE_PATH = '/api/auth/refresh';
+
+// ----------------------------------------------------------------------------
+// Helpers
+// ----------------------------------------------------------------------------
 
 /**
- * @route   POST /api/auth/login
- * @desc    Authenticate user and return tokens
- * @access  Public
+ * Issue an access token for the given user payload.
+ * @param {{ id: string, email: string, roles?: string[] }} user
  */
-router.post('/login', validationRules.login, handleValidationErrors, authController.login);
+function signAccessToken(user) {
+  const payload = { sub: user.id, email: user.email, roles: user.roles || [] };
+  const options = {
+    expiresIn: ACCESS_TOKEN_TTL,
+    ...(JWT_ISSUER ? { issuer: JWT_ISSUER } : {}),
+    ...(JWT_AUDIENCE ? { audience: JWT_AUDIENCE } : {}),
+  };
+  return jwt.sign(payload, ACCESS_SECRET, options);
+}
 
 /**
- * @route   GET /api/auth/me
- * @desc    Get current authenticated user
- * @access  Private (Requires valid token)
+ * Issue a refresh token with jti.
+ * @param {string} userId
+ * @param {string} jti
  */
-router.get('/me', verifyToken, authController.me);
+function signRefreshToken(userId, jti) {
+  const payload = { sub: userId, jti };
+  const options = {
+    expiresIn: REFRESH_TOKEN_TTL,
+    ...(JWT_ISSUER ? { issuer: JWT_ISSUER } : {}),
+    ...(JWT_AUDIENCE ? { audience: JWT_AUDIENCE } : {}),
+  };
+  return jwt.sign(payload, REFRESH_SECRET, options);
+}
+
+function setRefreshCookie(res, token) {
+  const isProd = process.env.NODE_ENV === 'production';
+  res.cookie(REFRESH_COOKIE_NAME, token, {
+    httpOnly: true,
+    secure: isProd,           // HTTPS only in production
+    sameSite: isProd ? 'strict' : 'lax',
+    path: REFRESH_COOKIE_PATH,
+    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+  });
+}
+
+function clearRefreshCookie(res) {
+  res.clearCookie(REFRESH_COOKIE_NAME, { path: REFRESH_COOKIE_PATH });
+}
+
+function cryptoRandomString() {
+  return crypto.randomBytes(32).toString('hex');
+}
 
 /**
- * @route   POST /api/auth/refresh
- * @desc    Refresh access token using the stored refresh token
- * @access  Public (Requires valid refresh token)
+ * Delegates to controller for user lookup by email.
+ * Implement `authController.findUserByEmail` or adjust here to your data layer.
  */
-router.post('/refresh', authController.refresh);
+async function findUserByEmail(email) {
+  if (typeof authController.findUserByEmail === 'function') {
+    return authController.findUserByEmail(email);
+  }
+  throw Object.assign(new Error('findUserByEmail(email) not implemented'), { statusCode: 500 });
+}
 
 /**
- * @route   POST /api/auth/logout
- * @desc    Logout user by clearing refresh token cookie
- * @access  Public
+ * Delegates to controller for user lookup by id.
  */
-router.post('/logout', authController.logout);
+async function getUserById(userId) {
+  if (typeof authController.getUserById === 'function') {
+    return authController.getUserById(userId);
+  }
+  // Fallback minimal payload if controller not implemented
+  return { id: userId, email: undefined, roles: [] };
+}
 
-// Logout all sessions (requires valid access token)
-router.post('/logoutAll', verifyToken, authController.logoutAll);
+// ----------------------------------------------------------------------------
+// Per-route rate limiting (in addition to global limiter in server.js)
+// ----------------------------------------------------------------------------
+const loginLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000, // 5 minutes
+  limit: 20,               // 20 attempts per window per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
-// Sessions listing and revocation
-router.get('/sessions', verifyToken, authController.listSessions);
-router.delete('/sessions/:id', verifyToken, authController.revokeSession);
+const refreshLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  limit: 60,               // 60 refreshes per window per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
-// Admin session management: list/revoke sessions across users
-router.get('/admin/sessions', verifyToken, requireRole('admin'), authController.adminListSessions);
-router.delete('/admin/sessions/:id', verifyToken, requireRole('admin'), authController.adminRevokeSession);
+// ----------------------------------------------------------------------------
+// Routes
+// ----------------------------------------------------------------------------
+
+/**
+ * REGISTER — delegates to controller, validated inputs forwarded to global error handler
+ */
+router.post(
+  '/register',
+  validationRules.register,
+  handleValidation,
+  asyncHandler(authController.register)
+);
+
+/**
+ * LOGIN — issues access + refresh (cookie). Validated inputs, strict rate limit.
+ */
+router.post(
+  '/login',
+  loginLimiter,
+  validationRules.login,
+  handleValidation,
+  asyncHandler(async (req, res) => {
+    const { email, password } = req.body;
+
+    const user = await findUserByEmail(email);
+    // Around line 160-164 in auth.js
+    if (!user || !user.password) {
+      return res.status(401).json({
+        message: "Invalid credentials",
+        type: "AuthenticationError"
+      });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!ok) {
+      return res.status(401).json({ errorId: req.requestId, message: 'Invalid credentials' });
+    }
+
+    const accessToken = signAccessToken(user);
+    const jti = cryptoRandomString();
+    const refreshToken = signRefreshToken(user.id, jti);
+
+    // Persist/rotate refresh token record (replace with Redis/DB in production)
+    refreshStore.set(jti, { userId: user.id, exp: Date.now() + 30 * 24 * 3600 * 1000 });
+
+    setRefreshCookie(res, refreshToken);
+    res.status(200).json({
+      accessToken,
+      user: { id: user.id, email: user.email, roles: user.roles || [] },
+    });
+  })
+);
+
+/**
+ * REFRESH — cookie-based rotation and new access token
+ * Protect with per-route limiter.
+ */
+router.post(
+  '/refresh',
+  refreshLimiter,
+  asyncHandler(async (req, res) => {
+    const { [REFRESH_COOKIE_NAME]: refreshToken } = req.cookies || {};
+    if (!refreshToken) {
+      return res.status(401).json({ errorId: req.requestId, message: 'Missing refresh token' });
+    }
+
+    // Verify refresh token
+    let payload;
+    try {
+      payload = jwt.verify(refreshToken, REFRESH_SECRET, {
+        ...(JWT_ISSUER ? { issuer: JWT_ISSUER } : {}),
+        ...(JWT_AUDIENCE ? { audience: JWT_AUDIENCE } : {}),
+      });
+    } catch (err) {
+      return res.status(401).json({ errorId: req.requestId, message: 'Invalid/expired refresh token' });
+    }
+
+    const { sub: userId, jti: oldJti } = payload;
+    const record = refreshStore.get(oldJti);
+    if (!record || record.userId !== userId) {
+      return res.status(401).json({ errorId: req.requestId, message: 'Refresh token revoked' });
+    }
+
+    // Rotate refresh token
+    refreshStore.delete(oldJti);
+    const newJti = cryptoRandomString();
+    refreshStore.set(newJti, { userId, exp: Date.now() + 30 * 24 * 3600 * 1000 });
+    const newRefresh = signRefreshToken(userId, newJti);
+    setRefreshCookie(res, newRefresh);
+
+    // Issue new access token
+    const fullUser = await getUserById(userId);
+    const accessToken = signAccessToken(fullUser);
+
+    res.json({ accessToken });
+  })
+);
+
+/**
+ * LOGOUT — revoke current refresh token and clear cookie
+ */
+router.post(
+  '/logout',
+  asyncHandler(async (req, res) => {
+    const { [REFRESH_COOKIE_NAME]: refreshToken } = req.cookies || {};
+    if (refreshToken) {
+      try {
+        const { jti } = jwt.verify(refreshToken, REFRESH_SECRET);
+        refreshStore.delete(jti);
+      } catch (_) {
+        // ignore verification errors; still clear cookie
+      }
+    }
+    clearRefreshCookie(res);
+    res.status(204).end();
+  })
+);
+
+/**
+ * ME — simple identity probe using verifyToken middleware (matches other feature routes)
+ */
+router.get(
+  '/me',
+  verifyToken,
+  asyncHandler(async (req, res) => {
+    if (typeof authController.me === 'function') {
+      return authController.me(req, res);
+    }
+    res.json({ userId: req.user.id || req.user.sub, email: req.user.email, roles: req.user.roles || [] });
+  })
+);
+
+/**
+ * Admin session management
+ */
+router.get(
+  '/admin/sessions',
+  verifyToken,
+  requireRole('admin'),
+  asyncHandler(authController.adminListSessions)
+);
+
+router.delete(
+  '/admin/sessions/:id',
+  verifyToken,
+  requireRole('admin'),
+  asyncHandler(authController.adminRevokeSession)
+);
 
 module.exports = router;

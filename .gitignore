@@ -7,4 +7,21 @@ build/
 .env
 
 
-Token : 7d3435b762ffad1456a3a6f613a7e528ae8cd08a02d60546fa8e8b77990e2a27
+# Dependencies
+node_modules/
+
+# Logs
+logs/
+*.log
+*.gz
+
+# Environment variables
+.env
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# npm / node artifacts
+node
+community-savings-backend@*

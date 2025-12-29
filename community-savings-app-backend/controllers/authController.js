@@ -1,3 +1,13 @@
+
+// controllers/authController.js
+// ============================================================================
+// Authentication Controller
+// - Access tokens (JWT) with payload: { user: { id, email, role } }.
+// - Opaque refresh tokens stored hashed in DB (RefreshToken model).
+// - Rotation on refresh; reuse detection revokes all user tokens.
+// - Admin and user session management.
+// ============================================================================
+
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
@@ -5,51 +15,91 @@ const User = require('../models/User');
 const RefreshToken = require('../models/RefreshToken');
 
 const ACCESS_TOKEN_EXP = process.env.ACCESS_TOKEN_EXP || '15m';
+const ACCESS_TOKEN_SECRET = process.env.ACCESS_TOKEN_SECRET || process.env.JWT_SECRET;
+
 const REFRESH_TOKEN_DAYS = parseInt(process.env.REFRESH_TOKEN_DAYS || '30', 10);
-const ACCESS_TOKEN_SECRET = process.env.JWT_SECRET;
+const REFRESH_COOKIE_NAME = 'refreshToken';
+const REFRESH_COOKIE_PATH = '/api/auth/refresh';
+
+const JWT_ISSUER = process.env.JWT_ISSUER || undefined;
+const JWT_AUDIENCE = process.env.JWT_AUDIENCE || undefined;
+
+// ----------------------------------------------------------------------------
+// Utilities
+// ----------------------------------------------------------------------------
 
 function randomTokenString() {
   return crypto.randomBytes(64).toString('hex');
 }
-
 function hashToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
+function setRefreshCookie(res, token) {
+  const isProd = process.env.NODE_ENV === 'production';
+  res.cookie(REFRESH_COOKIE_NAME, token, {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? 'Strict' : 'Lax',
+    path: REFRESH_COOKIE_PATH,
+    maxAge: REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000,
+  });
+}
+function clearRefreshCookie(res) {
+  res.clearCookie(REFRESH_COOKIE_NAME, { path: REFRESH_COOKIE_PATH });
+}
+
 function generateAccessToken(user) {
+  // user can be a Mongoose document; use normalized primitives.
   const payload = {
     user: {
-      id: user._id.toString(),
+      id: user._id?.toString?.() || user.id || String(user),
       email: user.email,
       role: user.role,
+      // If you store multiple roles, consider adding roles: user.roles
     },
   };
-  return jwt.sign(payload, ACCESS_TOKEN_SECRET, { expiresIn: ACCESS_TOKEN_EXP });
+  const options = {
+    expiresIn: ACCESS_TOKEN_EXP,
+    ...(JWT_ISSUER ? { issuer: JWT_ISSUER } : {}),
+    ...(JWT_AUDIENCE ? { audience: JWT_AUDIENCE } : {}),
+  };
+  return jwt.sign(payload, ACCESS_TOKEN_SECRET, options);
 }
 
 async function createRefreshToken(userId, deviceInfo = {}) {
   const token = randomTokenString();
   const tokenHash = hashToken(token);
-  const expiresAt = new Date(Date.now() + REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000);
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000);
+
   const dbEntry = await RefreshToken.create({
     id: uuidv4(),
     userId,
     tokenHash,
     deviceInfo,
-    createdAt: new Date(),
-    lastUsedAt: new Date(),
+    createdAt: now,
+    lastUsedAt: now,
     expiresAt,
     revokedAt: null,
     revokedReason: null,
     replacedBy: null,
   });
+
   return { token, dbEntry };
 }
 
-// Register
-async function register(req, res) {
+// ----------------------------------------------------------------------------
+// Public endpoints
+// ----------------------------------------------------------------------------
+
+/**
+ * POST /api/auth/register
+ */
+async function register(req, res, next) {
   try {
     const { email, password, name, deviceInfo } = req.body;
+
     const existing = await User.findOne({ email });
     if (existing) return res.status(400).json({ message: 'Email already registered' });
 
@@ -63,13 +113,7 @@ async function register(req, res) {
       ...(deviceInfo || {}),
     });
 
-    res.cookie('refreshToken', refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'Lax',
-      path: '/api/auth/refresh',
-      maxAge: REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000,
-    });
+    setRefreshCookie(res, refreshToken);
 
     return res.status(201).json({
       message: 'User registered',
@@ -82,13 +126,17 @@ async function register(req, res) {
   }
 }
 
-// Login
-async function login(req, res) {
+/**
+ * POST /api/auth/login
+ */
+async function login(req, res, next) {
   try {
     const { email, password, deviceInfo } = req.body;
+
     const user = await User.findOne({ email }).select('+password');
     if (!user) return res.status(401).json({ message: 'Invalid credentials' });
-    const isMatch = await user.matchPassword(password);
+
+    const isMatch = await user.matchPassword(password); // assumes schema method
     if (!isMatch) return res.status(401).json({ message: 'Invalid credentials' });
 
     user.lastLogin = new Date();
@@ -101,13 +149,7 @@ async function login(req, res) {
       ...(deviceInfo || {}),
     });
 
-    res.cookie('refreshToken', refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'Lax',
-      path: '/api/auth/refresh',
-      maxAge: REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000,
-    });
+    setRefreshCookie(res, refreshToken);
 
     return res.status(200).json({
       message: 'Login successful',
@@ -120,32 +162,46 @@ async function login(req, res) {
   }
 }
 
-// Refresh (rotation + reuse detection)
-async function refresh(req, res) {
+/**
+ * POST /api/auth/refresh
+ * Opaque refresh token rotation:
+ * - If token is unknown: 401.
+ * - If token is revoked: revoke all tokens for user (reuse protection), 401.
+ * - If expired: 401.
+ * - Else: rotate (revoke old, issue new), update cookie, return new access token.
+ */
+async function refresh(req, res, next) {
   try {
-    const presented = req.cookies?.refreshToken || req.body?.refreshToken;
+    const presented = req.cookies?.[REFRESH_COOKIE_NAME] || req.body?.refreshToken;
     if (!presented) return res.status(401).json({ message: 'Missing refresh token' });
 
     const presentedHash = hashToken(presented);
     const dbToken = await RefreshToken.findOne({ tokenHash: presentedHash });
 
     if (!dbToken) {
-      // unknown token: cannot determine user easily
       return res.status(401).json({ message: 'Invalid refresh token' });
     }
 
     if (dbToken.revokedAt) {
-      // Token reuse detected. Revoke all tokens for user.
-      await RefreshToken.updateMany({ userId: dbToken.userId, revokedAt: null }, { $set: { revokedAt: new Date(), revokedReason: 'reuse_detected' } });
-      return res.status(401).json({ message: 'Refresh token revoked (possible reuse). All sessions revoked.' });
+      // Reuse detected; revoke all active tokens for user.
+      await RefreshToken.updateMany(
+        { userId: dbToken.userId, revokedAt: null },
+        { $set: { revokedAt: new Date(), revokedReason: 'reuse_detected' } }
+      );
+      return res.status(401).json({
+        message: 'Refresh token revoked (possible reuse). All sessions revoked.',
+      });
     }
 
     if (dbToken.expiresAt < new Date()) {
       return res.status(401).json({ message: 'Refresh token expired' });
     }
 
-    // Rotation: issue new refresh token
-    const { token: newToken, dbEntry: newDb } = await createRefreshToken(dbToken.userId, dbToken.deviceInfo);
+    // Rotate: create new token; revoke old
+    const { token: newToken, dbEntry: newDb } = await createRefreshToken(
+      dbToken.userId,
+      dbToken.deviceInfo
+    );
 
     dbToken.revokedAt = new Date();
     dbToken.revokedReason = 'rotated';
@@ -155,78 +211,98 @@ async function refresh(req, res) {
     const user = await User.findById(dbToken.userId);
     if (!user) return res.status(401).json({ message: 'User not found' });
 
+    setRefreshCookie(res, newToken);
     const accessToken = generateAccessToken(user);
 
-    // set new cookie
-    res.cookie('refreshToken', newToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'Lax',
-      path: '/api/auth/refresh',
-      maxAge: REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000,
-    });
-
-    return res.status(200).json({ message: 'Token refreshed', token: accessToken });
+    return res.status(200).json({ token: accessToken });
   } catch (err) {
     console.error('[AuthController] refresh error', err);
     return res.status(500).json({ message: 'Refresh failed' });
   }
 }
 
-// Logout current session
-async function logout(req, res) {
+/**
+ * POST /api/auth/logout
+ * Revokes current refresh token, clears cookie.
+ */
+async function logout(req, res, next) {
   try {
-    const presented = req.cookies?.refreshToken || req.body?.refreshToken;
+    const presented = req.cookies?.[REFRESH_COOKIE_NAME] || req.body?.refreshToken;
     if (presented) {
-      const presentedHash = hashToken(presented);
-      const dbToken = await RefreshToken.findOne({ tokenHash: presentedHash });
-      if (dbToken && !dbToken.revokedAt) {
-        dbToken.revokedAt = new Date();
-        dbToken.revokedReason = 'logout';
-        await dbToken.save();
+      try {
+        const presentedHash = hashToken(presented);
+        const dbToken = await RefreshToken.findOne({ tokenHash: presentedHash });
+        if (dbToken && !dbToken.revokedAt) {
+          dbToken.revokedAt = new Date();
+          dbToken.revokedReason = 'logout';
+          await dbToken.save();
+        }
+      } catch (_) {
+        // ignore errors in token lookup
       }
     }
-    res.clearCookie('refreshToken', { path: '/api/auth/refresh' });
-    return res.status(200).json({ message: 'Logged out' });
+    clearRefreshCookie(res);
+    return res.status(204).end();
   } catch (err) {
     console.error('[AuthController] logout error', err);
     return res.status(500).json({ message: 'Logout failed' });
   }
 }
 
-// Logout all sessions
-async function logoutAll(req, res) {
+/**
+ * POST /api/auth/logout-all
+ * Revokes all refresh tokens for authenticated user.
+ */
+async function logoutAll(req, res, next) {
   try {
-    // req.user populated by middleware.verifyToken
-    const userId = req.user?._id || req.user?.id;
-    if (!userId) return res.status(401).json({ message: 'Unauthorized' });
-    await RefreshToken.updateMany({ userId, revokedAt: null }, { $set: { revokedAt: new Date(), revokedReason: 'logout_all' } });
-    res.clearCookie('refreshToken', { path: '/api/auth/refresh' });
-    return res.status(200).json({ message: 'All sessions logged out' });
+    if (!req.user?.id && !req.user?._id) {
+      return res.status(401).json({ message: 'Not authenticated' });
+    }
+    const userId = req.user._id?.toString?.() || req.user.id;
+    await RefreshToken.updateMany(
+      { userId, revokedAt: null },
+      { $set: { revokedAt: new Date(), revokedReason: 'user_logout_all' } }
+    );
+    clearRefreshCookie(res);
+    return res.status(204).end();
   } catch (err) {
     console.error('[AuthController] logoutAll error', err);
     return res.status(500).json({ message: 'Logout all failed' });
   }
 }
 
-// Get current user info (keeps behavior compatible with existing verifyToken middleware)
-async function me(req, res) {
+/**
+ * GET /api/auth/me
+ */
+async function me(req, res, next) {
   try {
-    const user = await User.findById(req.user.id);
-    if (!user) return res.status(404).json({ message: 'User not found' });
-    return res.status(200).json({ id: user._id, email: user.email, name: user.name, role: user.role, lastLogin: user.lastLogin });
+    if (!req.user) return res.status(401).json({ message: 'Not authenticated' });
+    const user = req.user;
+    return res.status(200).json({
+      id: user._id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      // include other non-sensitive fields if needed
+    });
   } catch (err) {
     console.error('[AuthController] me error', err);
-    return res.status(500).json({ message: 'Failed to fetch user' });
+    return res.status(500).json({ message: 'Failed to fetch profile' });
   }
 }
 
-// List active sessions for current user
-async function listSessions(req, res) {
+/**
+ * GET /api/auth/sessions
+ * Lists refresh token sessions for authenticated user (basic).
+ */
+async function listSessions(req, res, next) {
   try {
-    const userId = req.user?._id || req.user?.id;
-    if (!userId) return res.status(401).json({ message: 'Unauthorized' });
-    const sessions = await RefreshToken.find({ userId }).select('-tokenHash -__v');
+    const userId = req.user._id?.toString?.() || req.user.id;
+    const sessions = await RefreshToken.find({ userId })
+      .select('id createdAt lastUsedAt expiresAt revokedAt revokedReason deviceInfo replacedBy')
+      .sort({ createdAt: -1 })
+      .lean();
+
     return res.status(200).json({ sessions });
   } catch (err) {
     console.error('[AuthController] listSessions error', err);
@@ -234,59 +310,107 @@ async function listSessions(req, res) {
   }
 }
 
-// Revoke a specific session by id
-async function revokeSession(req, res) {
+/**
+ * DELETE /api/auth/sessions/:id
+ * Revokes a specific session belonging to the authenticated user.
+ */
+async function revokeSession(req, res, next) {
   try {
-    const userId = req.user?._id || req.user?.id;
-    const sessionId = req.params.id;
-    if (!userId) return res.status(401).json({ message: 'Unauthorized' });
-    const token = await RefreshToken.findOne({ id: sessionId, userId });
+    const userId = req.user._id?.toString?.() || req.user.id;
+    const { id } = req.params;
+
+    const token = await RefreshToken.findOne({ id });
     if (!token) return res.status(404).json({ message: 'Session not found' });
+    if (String(token.userId) !== String(userId)) {
+      return res.status(403).json({ message: 'Cannot revoke another user\'s session' });
+    }
     if (!token.revokedAt) {
       token.revokedAt = new Date();
-      token.revokedReason = 'revoked_by_user';
+      token.revokedReason = 'user_revoked';
       await token.save();
     }
-    return res.status(200).json({ message: 'Session revoked' });
+
+    return res.status(204).end();
   } catch (err) {
     console.error('[AuthController] revokeSession error', err);
     return res.status(500).json({ message: 'Failed to revoke session' });
   }
 }
 
-// --- Admin-only session management ---
-// List all sessions (optionally filter by userId via query param)
-async function adminListSessions(req, res) {
+// ----------------------------------------------------------------------------
+// Admin-only session views/actions
+// ----------------------------------------------------------------------------
+
+/**
+ * GET /api/auth/admin/sessions
+ * Lists all sessions (admin).
+ */
+async function adminListSessions(req, res, next) {
   try {
-    const userIdFilter = req.query.userId;
-    const query = {};
-    if (userIdFilter) query.userId = userIdFilter;
-    const sessions = await RefreshToken.find(query).select('-tokenHash -__v');
+    const sessions = await RefreshToken.find({})
+      .select('id userId createdAt lastUsedAt expiresAt revokedAt revokedReason deviceInfo replacedBy')
+      .sort({ createdAt: -1 })
+      .lean();
+
     return res.status(200).json({ sessions });
   } catch (err) {
     console.error('[AuthController] adminListSessions error', err);
-    return res.status(500).json({ message: 'Failed to list sessions' });
+    return res.status(500).json({ message: 'Failed to list sessions (admin)' });
   }
 }
 
-// Revoke any session by id (admin only)
-async function adminRevokeSession(req, res) {
+/**
+ * DELETE /api/auth/admin/sessions/:id
+ * Revokes a session by ID (admin).
+ */
+async function adminRevokeSession(req, res, next) {
   try {
-    const sessionId = req.params.id;
-    if (!sessionId) return res.status(400).json({ message: 'Missing session id' });
-    const token = await RefreshToken.findOne({ id: sessionId });
+    const { id } = req.params;
+    const token = await RefreshToken.findOne({ id });
     if (!token) return res.status(404).json({ message: 'Session not found' });
+
     if (!token.revokedAt) {
       token.revokedAt = new Date();
-      token.revokedReason = 'revoked_by_admin';
+      token.revokedReason = 'admin_revoked';
       await token.save();
     }
-    return res.status(200).json({ message: 'Session revoked by admin' });
+
+    return res.status(204).end();
   } catch (err) {
     console.error('[AuthController] adminRevokeSession error', err);
-    return res.status(500).json({ message: 'Failed to revoke session' });
+    return res.status(500).json({ message: 'Failed to revoke session (admin)' });
   }
 }
 
-module.exports = { register, login, refresh, logout, logoutAll, me, listSessions, revokeSession, adminListSessions, adminRevokeSession };
+// ----------------------------------------------------------------------------
+// Helpers exposed for router-level usage if needed (optional)
+// ----------------------------------------------------------------------------
 
+async function findUserByEmail(email) {
+  return User.findOne({ email });
+}
+async function getUserById(userId) {
+  return User.findById(userId);
+}
+
+module.exports = {
+  // public
+  register,
+  login,
+  refresh,
+  logout,
+  logoutAll,
+  me,
+
+  // user sessions
+  listSessions,
+  revokeSession,
+
+  // admin sessions
+  adminListSessions,
+  adminRevokeSession,
+
+  // helpers for router-level usage (optional)
+  findUserByEmail,
+  getUserById,
+};

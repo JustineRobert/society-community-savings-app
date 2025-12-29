@@ -1,27 +1,59 @@
-// utils/validators.js
 
-const { body, validationResult } = require('express-validator');
+// utils/validators.js
+// ============================================================================
+// Centralized express-validator rules and middleware for Community Savings App.
+// - Provides reusable validation chains for common entities.
+// - Forwards errors to the global error handler via next({ status, errors }).
+// - Avoids circular dependencies and keeps controllers clean.
+// ============================================================================
+
+const { body, param, query, validationResult } = require('express-validator');
+
+const MAX_NAME_LEN = 100;
+const MAX_GROUP_NAME_LEN = 100;
+const MAX_GROUP_DESC_LEN = 500;
+const MIN_PASSWORD_LEN = 8;
+const MAX_REASON_LEN = 300;
+
+/**
+ * Cross-field validator to ensure `from` <= `to` when both provided.
+ * Adds `.toDate()` for normalized Date objects downstream.
+ */
+const validateFromTo = [
+  query('from').optional().isISO8601().toDate(),
+  query('to').optional().isISO8601().toDate(),
+  query('to').custom((to, { req }) => {
+    const from = req.query.from;
+    if (from && to && new Date(from) > new Date(to)) {
+      throw new Error('`from` must be earlier than or equal to `to`');
+    }
+    return true;
+  }),
+];
 
 /**
  * Validation Rules
+ * Keep chains small and explicit for maintainability.
  */
 const validationRules = {
-  // Auth Validators
+  // ------------------------
+  // Auth
+  // ------------------------
   register: [
     body('name')
       .trim()
       .notEmpty().withMessage('Name is required')
       .isLength({ min: 2 }).withMessage('Name must be at least 2 characters')
-      .isLength({ max: 100 }).withMessage('Name must not exceed 100 characters'),
-    
+      .isLength({ max: MAX_NAME_LEN }).withMessage(`Name must not exceed ${MAX_NAME_LEN} characters`),
+
     body('email')
       .trim()
       .toLowerCase()
       .isEmail().withMessage('Please provide a valid email')
       .normalizeEmail(),
-    
+
     body('password')
-      .isLength({ min: 8 }).withMessage('Password must be at least 8 characters')
+      .isLength({ min: MIN_PASSWORD_LEN }).withMessage(`Password must be at least ${MIN_PASSWORD_LEN} characters`)
       .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/).withMessage(
         'Password must contain at least one uppercase letter, one lowercase letter, and one number'
       ),
@@ -32,74 +64,96 @@ const validationRules = {
       .trim()
       .toLowerCase()
       .isEmail().withMessage('Please provide a valid email'),
-    
+
     body('password')
       .notEmpty().withMessage('Password is required'),
   ],
 
-  // Group Validators
+  // ------------------------
+  // Group
+  // ------------------------
   createGroup: [
     body('name')
       .trim()
       .notEmpty().withMessage('Group name is required')
       .isLength({ min: 3 }).withMessage('Group name must be at least 3 characters')
-      .isLength({ max: 100 }).withMessage('Group name must not exceed 100 characters'),
-    
+      .isLength({ max: MAX_GROUP_NAME_LEN }).withMessage(`Group name must not exceed ${MAX_GROUP_NAME_LEN} characters`),
+
     body('description')
       .optional()
       .trim()
-      .isLength({ max: 500 }).withMessage('Description must not exceed 500 characters'),
+      .isLength({ max: MAX_GROUP_DESC_LEN }).withMessage(`Description must not exceed ${MAX_GROUP_DESC_LEN} characters`),
   ],
 
-  // Contribution Validators
+  // ------------------------
+  // Contribution
+  // ------------------------
   addContribution: [
     body('groupId')
       .notEmpty().withMessage('Group ID is required')
       .isMongoId().withMessage('Invalid group ID'),
-    
+
     body('amount')
       .notEmpty().withMessage('Amount is required')
-      .isFloat({ min: 0.01 }).withMessage('Amount must be greater than 0'),
+      .isFloat({ gt: 0 }).withMessage('Amount must be greater than 0')
+      .toFloat(),
+
+    body('note')
+      .optional()
+      .isString().withMessage('Note must be a string')
+      .trim()
+      .isLength({ max: 1000 }).withMessage('Note must not exceed 1000 characters'),
+
+    body('date')
+      .optional()
+      .isISO8601().withMessage('Invalid date format')
+      .toDate(),
   ],
 
-  // Loan Validators
+  // ------------------------
+  // Loan
+  // ------------------------
   createLoan: [
     body('groupId')
       .notEmpty().withMessage('Group ID is required')
       .isMongoId().withMessage('Invalid group ID'),
-    
+
     body('amount')
       .notEmpty().withMessage('Amount is required')
-      .isFloat({ min: 0.01 }).withMessage('Amount must be greater than 0'),
-    
+      .isFloat({ gt: 0 }).withMessage('Amount must be greater than 0')
+      .toFloat(),
+
     body('dueDate')
       .notEmpty().withMessage('Due date is required')
-      .isISO8601().withMessage('Invalid date format'),
-    
+      .isISO8601().withMessage('Invalid date format')
+      .toDate(),
+
     body('reason')
       .trim()
       .notEmpty().withMessage('Loan reason is required')
-      .isLength({ max: 300 }).withMessage('Reason must not exceed 300 characters'),
+      .isLength({ max: MAX_REASON_LEN }).withMessage(`Reason must not exceed ${MAX_REASON_LEN} characters`),
   ],
 
-  // Settings Validators
+  // ------------------------
+  // Settings
+  // ------------------------
   updateProfile: [
     body('name')
       .optional()
       .trim()
       .isLength({ min: 2 }).withMessage('Name must be at least 2 characters')
-      .isLength({ max: 100 }).withMessage('Name must not exceed 100 characters'),
-    
+      .isLength({ max: MAX_NAME_LEN }).withMessage(`Name must not exceed ${MAX_NAME_LEN} characters`),
+
     body('phone')
       .optional()
       .trim()
       .isMobilePhone().withMessage('Please provide a valid phone number'),
-    
+
     body('profile.occupation')
       .optional()
       .trim()
       .isLength({ max: 100 }).withMessage('Occupation must not exceed 100 characters'),
-    
+
     body('profile.city')
       .optional()
       .trim()
@@ -109,42 +163,48 @@ const validationRules = {
 
 /**
  * Validation Middleware
- * Catches and returns validation errors
+ * Forwards validation errors to the global error handler.
+ * Consistent shape: next({ status: 400, errors: [...] })
+ *
+ * Use in routes like:
+ *   router.post('/endpoint', rules, handleValidation, controller)
  */
 const handleValidationErrors = (req, res, next) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({
-      message: 'Validation failed',
-      errors: errors.array().map((err) => ({
-        field: err.param,
-        message: err.msg,
-      })),
+  const result = validationResult(req);
+  if (!result.isEmpty()) {
+    // forward to errorHandler.js (which formats the response)
+    return next({
+      status: 400,
+      errors: result.array(),
     });
   }
   next();
 };
 
 /**
- * Custom Validators
+ * Backwards-compatible export alias.
+ * Your routes import `handleValidation`, so keep the name.
  */
-const isValidMongoId = (id) => {
-  return /^[0-9a-fA-F]{24}$/.test(id);
-};
+const handleValidation = handleValidationErrors;
+
+/**
+ * Custom Validators (utility helpers)
+ */
+const isValidMongoId = (id) => /^[0-9a-fA-F]{24}$/.test(String(id));
 
 const isValidEmail = (email) => {
-  const emailRegex = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/;
-  return emailRegex.test(email);
+  const emailRegex = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,})+$/;
+  return emailRegex.test(String(email));
 };
 
-const isStrongPassword = (password) => {
-  // At least 8 characters, 1 uppercase, 1 lowercase, 1 number
-  return /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/.test(password);
-};
+const isStrongPassword = (password) =>
+  /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/.test(String(password));
 
 module.exports = {
   validationRules,
+  validateFromTo,
   handleValidationErrors,
+  handleValidation, // alias for compatibility
   isValidMongoId,
   isValidEmail,
   isStrongPassword,

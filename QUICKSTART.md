@@ -287,7 +287,7 @@ kill -9 <PID>
 - `POST /api/auth/refresh` - Refresh access token
 - `POST /api/auth/logout` - Logout user
 
-### Group Routes
+4### Group Routes
 - `POST /api/groups` - Create group
 - `GET /api/groups` - List user's groups
 - `GET /api/groups/:id` - Get group details

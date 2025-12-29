@@ -1,12 +1,17 @@
+
 // routes/chat.js
 
 const express = require('express');
 const router = express.Router();
+const asyncHandler = require('../utils/asyncHandler');
 
-// Middleware for verifying authentication
+const { body, param, query } = require('express-validator');
+const { handleValidation } = require('../utils/validators');
+
+// AuthZ middleware
 const { verifyToken, requireRole } = require('../middleware/auth');
 
-// Chat controller handlers
+// Controllers (some may be optional)
 const {
   sendMessage,
   getGroupMessages,
@@ -14,60 +19,87 @@ const {
   deleteMessage      // Optional: for admin/moderator cleanup
 } = require('../controllers/chatController');
 
+// --- Guardrails: verify controllers are functions at load time (if provided).
+const controllers = { sendMessage, getGroupMessages, getUserMessages, deleteMessage };
+for (const [key, val] of Object.entries(controllers)) {
+  if (val !== undefined && typeof val !== 'function') {
+    throw new TypeError(`[routes/chat] Controller "${key}" must be a function, received: ${typeof val}`);
+  }
+}
+
 /**
  * @route   POST /api/chat
  * @desc    Send a message to a group
  * @access  Private (Authenticated Users)
+ * @notes   Enforces minimal payload shape; controllers also normalize/sanitize content.
  */
-router.post('/', verifyToken, async (req, res) => {
-  try {
-    await sendMessage(req, res);
-  } catch (error) {
-    console.error('Error sending message:', error);
-    res.status(500).json({ error: 'Server error while sending message' });
-  }
-});
+router.post(
+  '/',
+  verifyToken,
+  [
+    body('groupId').isString().trim().notEmpty().withMessage('groupId is required'),
+    body('content').isString().trim().isLength({ min: 1, max: 5000 }).withMessage('content is required (1-5000 chars)'),
+    body('attachments').optional().isArray().withMessage('attachments must be an array'),
+  ],
+  handleValidation,
+  asyncHandler(sendMessage)
+);
 
 /**
  * @route   GET /api/chat/group/:groupId
- * @desc    Retrieve all messages in a specific group
+ * @desc    Retrieve messages in a specific group (paginated)
  * @access  Private (Authenticated Users)
+ * @query   ?page=1&limit=50&before=<ISO8601>&after=<ISO8601>
  */
-router.get('/group/:groupId', verifyToken, async (req, res) => {
-  try {
-    await getGroupMessages(req, res);
-  } catch (error) {
-    console.error('Error fetching group messages:', error);
-    res.status(500).json({ error: 'Server error while fetching group messages' });
-  }
-});
+router.get(
+  '/group/:groupId',
+  verifyToken,
+  [
+    param('groupId').isString().trim().notEmpty(),
+    query('page').optional().toInt().isInt({ min: 1 }),
+    query('limit').optional().toInt().isInt({ min: 1, max: 200 }),
+    query('before').optional().isISO8601().withMessage('before must be ISO date'),
+    query('after').optional().isISO8601().withMessage('after must be ISO date'),
+  ],
+  handleValidation,
+  asyncHandler(getGroupMessages)
+);
 
 /**
  * @route   GET /api/chat/user/:userId
- * @desc    Retrieve messages between the logged-in user and a specific user
+ * @desc    Retrieve direct messages with a specific user (paginated)
  * @access  Private (Optional Direct Messaging Feature)
+ * @query   ?page=1&limit=50
  */
-router.get('/user/:userId', verifyToken, async (req, res) => {
-  try {
-    await getUserMessages(req, res);
-  } catch (error) {
-    console.error('Error fetching user messages:', error);
-    res.status(500).json({ error: 'Server error while fetching user messages' });
-  }
-});
+if (typeof getUserMessages === 'function') {
+  router.get(
+    '/user/:userId',
+    verifyToken,
+    [
+      param('userId').isString().trim().notEmpty(),
+      query('page').optional().toInt().isInt({ min: 1 }),
+      query('limit').optional().toInt().isInt({ min: 1, max: 200 }),
+    ],
+    handleValidation,
+    asyncHandler(getUserMessages)
+  );
+}
 
 /**
  * @route   DELETE /api/chat/:messageId
  * @desc    Delete a specific message by its ID
  * @access  Private (Admin/Moderator Only)
+ * @notes   Controller may further enforce ownership if needed.
  */
-router.delete('/:messageId', verifyToken, requireRole('admin', 'group_admin'), async (req, res) => {
-  try {
-    await deleteMessage(req, res);
-  } catch (error) {
-    console.error('Error deleting message:', error);
-    res.status(500).json({ error: 'Server error while deleting message' });
-  }
-});
+if (typeof deleteMessage === 'function') {
+  router.delete(
+    '/:messageId',
+    verifyToken,
+    requireRole('admin', 'group_admin'),
+    [param('messageId').isString().trim().notEmpty()],
+    handleValidation,
+    asyncHandler(deleteMessage)
+  );
+}
 
 module.exports = router;
