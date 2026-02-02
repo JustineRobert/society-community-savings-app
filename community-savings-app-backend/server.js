@@ -208,6 +208,7 @@ app.use('/api/loans', require('./routes/loans'));
 app.use('/api/chats', require('./routes/chat'));
 app.use('/api/referrals', require('./routes/referrals'));
 app.use('/api/settings', require('./routes/settings'));
+app.use('/api/payments', require('./routes/payments'));
 
 // Root info endpoint (non-sensitive)
 app.get('/', (req, res) => {

@@ -1,8 +1,0 @@
-2025-12-09 16:42:37 [ERROR]: ❌ MongoDB connection failed: Could not connect to any servers in your MongoDB Atlas cluster. One common reason is that you're trying to access the database from an IP that isn't whitelisted. Make sure your current IP address is on your Atlas cluster's IP whitelist: https://www.mongodb.com/docs/atlas/security-whitelist/
-2025-12-09 16:42:37 [ERROR]: ❌ MongoDB error: Server selection timed out after 5000 ms
-2025-12-09 16:42:49 [ERROR]: ❌ MongoDB connection failed: Could not connect to any servers in your MongoDB Atlas cluster. One common reason is that you're trying to access the database from an IP that isn't whitelisted. Make sure your current IP address is on your Atlas cluster's IP whitelist: https://www.mongodb.com/docs/atlas/security-whitelist/
-2025-12-09 16:42:49 [ERROR]: ❌ MongoDB error: Server selection timed out after 5000 ms
-2025-12-09 19:02:48 [ERROR]: ❌ MongoDB connection failed: Could not connect to any servers in your MongoDB Atlas cluster. One common reason is that you're trying to access the database from an IP that isn't whitelisted. Make sure your current IP address is on your Atlas cluster's IP whitelist: https://www.mongodb.com/docs/atlas/security-whitelist/
-2025-12-09 19:02:48 [ERROR]: ❌ MongoDB error: Server selection timed out after 5000 ms
-2025-12-09 19:36:57 [ERROR]: ❌ MongoDB connection failed: Could not connect to any servers in your MongoDB Atlas cluster. One common reason is that you're trying to access the database from an IP that isn't whitelisted. Make sure your current IP address is on your Atlas cluster's IP whitelist: https://www.mongodb.com/docs/atlas/security-whitelist/
-2025-12-09 19:36:57 [ERROR]: ❌ MongoDB error: Server selection timed out after 5000 ms
