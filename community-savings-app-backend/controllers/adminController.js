@@ -11,7 +11,7 @@ const Group = require('../models/Group');
 const Loan = require('../models/Loan');
 const Contribution = require('../models/Contribution');
 const LoanAudit = require('../models/LoanAudit');
-const { asyncHandler } = require('../utils/asyncHandler');
+const asyncHandler = require('../utils/asyncHandler');
 
 /**
  * Admin authorization middleware

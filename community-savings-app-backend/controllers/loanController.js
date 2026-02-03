@@ -14,7 +14,7 @@ const LoanAudit = require('../models/LoanAudit');
 const User = require('../models/User');
 const Group = require('../models/Group');
 const Contribution = require('../models/Contribution');
-const { asyncHandler } = require('../utils/asyncHandler');
+const asyncHandler = require('../utils/asyncHandler');
 const { assessEligibility, getEligibility } = require('../services/loanScoringService');
 
 /**
