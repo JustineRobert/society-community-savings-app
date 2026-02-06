@@ -23,7 +23,19 @@ const AuthContext = createContext({
 });
 
 // Create an axios instance we can attach interceptors to
-const api = axios.create({ baseURL: API_BASE, withCredentials: true });
+// Set a reasonable timeout so the auth initialization cannot hang
+const api = axios.create({ baseURL: API_BASE, withCredentials: true, timeout: 5000 });
+
+// Track refresh attempts to prevent cascading failures
+let refreshPromise = null;
+
+/**
+ * Calculate exponential backoff delay in milliseconds
+ * Attempt 1: 100ms, Attempt 2: 200ms, Attempt 3: 400ms
+ */
+const getBackoffDelay = (attempt) => {
+  return Math.min(100 * Math.pow(2, attempt - 1), 1000);
+};
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -54,25 +66,44 @@ export const AuthProvider = ({ children }) => {
     }
   }, [token]);
 
-  // Response interceptor: on 401 try refresh once, then retry request
+  // Response interceptor: on 401 try refresh with exponential backoff, then retry request
   useEffect(() => {
     const interceptor = api.interceptors.response.use(
       (res) => res,
       async (error) => {
         const originalRequest = error.config;
+        
+        // Prevent infinite retry loops
         if (!originalRequest || originalRequest._retry) return Promise.reject(error);
+        
+        // Only attempt refresh on 401 Unauthorized
         if (error.response?.status === 401) {
           originalRequest._retry = true;
+          
           try {
-            const refreshRes = await api.post('/api/auth/refresh');
-            const newToken = refreshRes.data.token;
-            setToken(newToken);
+            // Use a shared promise to prevent multiple concurrent refresh attempts
+            if (!refreshPromise) {
+              refreshPromise = (async () => {
+                const refreshRes = await api.post('/api/auth/refresh');
+                // Handle both 'token' (old) and 'accessToken' (new) response formats
+                const newToken = refreshRes.data.token || refreshRes.data.accessToken;
+                if (!newToken) {
+                  throw new Error('No token in refresh response');
+                }
+                setToken(newToken);
+                return newToken;
+              })();
+            }
+            
+            const newToken = await refreshPromise;
             originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
             return api(originalRequest);
           } catch (e) {
-            // Refresh failed
-            await doLogout(); // <-- referenced here
+            // Refresh failed - logout user
+            await doLogout();
             return Promise.reject(e);
+          } finally {
+            refreshPromise = null;
           }
         }
         return Promise.reject(error);
@@ -80,23 +111,42 @@ export const AuthProvider = ({ children }) => {
     );
 
     return () => api.interceptors.response.eject(interceptor);
-  }, [doLogout]); // ✅ include doLogout to satisfy react-hooks/exhaustive-deps
+  }, [doLogout]);
 
   // Public logout
   const logout = useCallback(async () => {
     await doLogout();
   }, [doLogout]);
 
-  // Refresh access token explicitly
+  // Refresh access token explicitly with exponential backoff and retry
   const refreshAccessToken = useCallback(async () => {
-    try {
-      const res = await api.post('/api/auth/refresh');
-      const newToken = res.data.token;
-      setToken(newToken);
-      return newToken;
-    } catch (err) {
-      await doLogout();
-      throw err;
+    const MAX_REFRESH_ATTEMPTS = 3;
+    for (let attempt = 1; attempt <= MAX_REFRESH_ATTEMPTS; attempt++) {
+      try {
+        const res = await api.post('/api/auth/refresh');
+        // Handle both 'token' (old) and 'accessToken' (new) response formats
+        const newToken = res.data.token || res.data.accessToken;
+        if (!newToken) {
+          throw new Error('No token in refresh response');
+        }
+        setToken(newToken);
+        return newToken;
+      } catch (err) {
+        // Only retry on specific errors (network, 5xx, 429)
+        const status = err.response?.status;
+        const shouldRetry = !status || status >= 500 || status === 429;
+        
+        if (shouldRetry && attempt < MAX_REFRESH_ATTEMPTS) {
+          // Wait with exponential backoff before retrying
+          const delay = getBackoffDelay(attempt);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        
+        // Final attempt failed or non-retryable error
+        await doLogout();
+        throw err;
+      }
     }
   }, [doLogout]);
 
@@ -104,8 +154,9 @@ export const AuthProvider = ({ children }) => {
   const login = useCallback(async (email, password, deviceInfo) => {
     try {
       const res = await api.post('/api/auth/login', { email, password, deviceInfo });
-      const newToken = res.data.token;
-      const userData = res.data.user;
+      // Normalize token field names across possible backend responses
+      const newToken = res.data.token || res.data.accessToken || res.data.access_token;
+      const userData = res.data.user || res.data.userData || res.data;
       setToken(newToken);
       setUser(userData);
       toast.success('Logged in');
@@ -120,8 +171,8 @@ export const AuthProvider = ({ children }) => {
   const register = useCallback(async (email, password, name) => {
     try {
       const res = await api.post('/api/auth/register', { email, password, name });
-      const newToken = res.data.token;
-      const userData = res.data.user;
+      const newToken = res.data.token || res.data.accessToken || res.data.access_token;
+      const userData = res.data.user || res.data.userData || res.data;
       setToken(newToken);
       setUser(userData);
       toast.success('Registered');
@@ -154,17 +205,23 @@ export const AuthProvider = ({ children }) => {
         }
 
         // attempt refresh (cookie-based)
-        const refreshRes = await api.post('/api/auth/refresh');
-        if (refreshRes?.data?.token) {
+        // Use a race against a manual timeout to ensure this initialization
+        // cannot hang indefinitely if the backend is unreachable.
+        const refreshPromise = api.post('/api/auth/refresh');
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('refresh timeout')), 5000));
+        const refreshRes = await Promise.race([refreshPromise, timeoutPromise]);
+        // Handle both 'token' (old) and 'accessToken' (new) response formats
+        const newToken = refreshRes.data?.token || refreshRes.data?.accessToken;
+        if (newToken) {
           if (!mounted) return;
-          setToken(refreshRes.data.token);
+          setToken(newToken);
           // fetch user
           const meRes = await api.get('/api/auth/me');
           if (!mounted) return;
           setUser(meRes.data);
         }
       } catch (err) {
-        // not authenticated
+        // not authenticated; silently proceed
       } finally {
         if (mounted) setLoading(false);
       }

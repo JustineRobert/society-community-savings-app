@@ -45,6 +45,7 @@ function setRefreshCookie(res, token) {
     maxAge: REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000,
   });
 }
+
 function clearRefreshCookie(res) {
   res.clearCookie(REFRESH_COOKIE_NAME, { path: REFRESH_COOKIE_PATH });
 }
@@ -56,7 +57,6 @@ function generateAccessToken(user) {
       id: user._id?.toString?.() || user.id || String(user),
       email: user.email,
       role: user.role,
-      // If you store multiple roles, consider adding roles: user.roles
     },
   };
   const options = {
@@ -387,7 +387,8 @@ async function adminRevokeSession(req, res, next) {
 // ----------------------------------------------------------------------------
 
 async function findUserByEmail(email) {
-  return User.findOne({ email });
+  // Must explicitly select password field since it has select: false in schema
+  return User.findOne({ email }).select('+password');
 }
 async function getUserById(userId) {
   return User.findById(userId);
@@ -414,3 +415,6 @@ module.exports = {
   findUserByEmail,
   getUserById,
 };
+
+
+

@@ -42,9 +42,11 @@ const validationRules = {
   register: [
     body('name')
       .trim()
+      .escape()
       .notEmpty().withMessage('Name is required')
       .isLength({ min: 2 }).withMessage('Name must be at least 2 characters')
-      .isLength({ max: MAX_NAME_LEN }).withMessage(`Name must not exceed ${MAX_NAME_LEN} characters`),
+      .isLength({ max: MAX_NAME_LEN }).withMessage(`Name must not exceed ${MAX_NAME_LEN} characters`)
+      .matches(/^[a-zA-Z\s'-]+$/).withMessage('Name can only contain letters, spaces, hyphens, and apostrophes'),
 
     body('email')
       .trim()
@@ -54,9 +56,11 @@ const validationRules = {
 
     body('password')
       .isLength({ min: MIN_PASSWORD_LEN }).withMessage(`Password must be at least ${MIN_PASSWORD_LEN} characters`)
+      .isLength({ max: 128 }).withMessage('Password must not exceed 128 characters')
       .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/).withMessage(
         'Password must contain at least one uppercase letter, one lowercase letter, and one number'
-      ),
+      )
+      .matches(/^(?!.*[\s])/).withMessage('Password must not contain spaces'),
   ],
 
   login: [

@@ -16,6 +16,7 @@ const Group = require('../models/Group');
 
 /**
  * Configuration for scoring (can be moved to env or database)
+ * PRODUCTION-READY with configurable thresholds
  */
 const SCORING_CONFIG = {
   // Weights for each component (sum = 100)
@@ -37,6 +38,11 @@ const SCORING_CONFIG = {
       2000: 15, // 15 points if >= 2K
       0: 5, // 5 points minimum
     },
+    // Bonus multipliers for different contexts
+    bonusMultipliers: {
+      earlyStage: 1.2, // 20% bonus if < 6 months
+      consistent: 1.15, // 15% bonus for consistency
+    },
   },
 
   // Participation score (max 30 points)
@@ -44,6 +50,8 @@ const SCORING_CONFIG = {
     meetingAttendanceWeight: 0.6,
     contributionConsistencyWeight: 0.4,
     minMeetingsAttended: 2,
+    // Track meeting attendance if available
+    attendanceBonus: 5, // Extra points for high attendance
   },
 
   // Repayment history score (max 20 points)
@@ -52,6 +60,8 @@ const SCORING_CONFIG = {
     completedLoanBonus: 4, // Points per completed loan
     onTimeBonus: 10, // Full bonus for 100% on-time
     defaultPenalty: -20, // Severe penalty for default
+    latePaymentThreshold: 7, // Days late to count as late
+    latePaymentPenalty: 0.5, // Reduce score per late payment
   },
 
   // Risk factors (max 10 points, deductions)
@@ -60,6 +70,7 @@ const SCORING_CONFIG = {
     maxActiveLoansCap: 3, // Don't penalize beyond 3 active
     outstandingLoanRatio: 0.5, // If outstanding > 50% of contributed, penalize
     recentDefaultMonths: 12, // Look back 12 months for defaults
+    debtToIncomeRatio: 0.8, // Maximum debt to income ratio allowed
   },
 
   // Eligibility thresholds
@@ -67,15 +78,19 @@ const SCORING_CONFIG = {
     minOverallScore: 50, // Minimum overall score to be eligible
     minContributionScore: 10, // Minimum contribution
     minGroupTenureMonths: 2, // Minimum months in group
+    maxScore: 100, // Maximum achievable score
   },
 
   // Max loan calculation
   maxLoanMultiplier: 2.5, // Can borrow 2.5x total contributed
-  minLoanAmount: 1000,
-  maxLoanAmount: 500000,
+    minLoanAmount: 1000,
+    maxLoanAmount: 500000,
 
   // Assessment validity
   assessmentValidityDays: 30, // Re-assess every 30 days
+  
+  // Appeal period (days after rejection during which user can appeal)
+  appealPeriodDays: 14,
 };
 
 /**

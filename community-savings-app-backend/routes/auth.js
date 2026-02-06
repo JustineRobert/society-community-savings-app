@@ -126,11 +126,30 @@ const loginLimiter = rateLimit({
 
 const refreshLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
-  limit: 60,               // 60 refreshes per window per IP
+  limit: 120,              // 120 refreshes per minute (2 per second)
   standardHeaders: true,
   legacyHeaders: false,
+  // Skip rate limit for valid refresh tokens (optional, if you implement token validation)
+  skip: (req) => {
+    // In production, you could validate the refresh token before counting the limit
+    // For now, we apply rate limit to all requests
+    return false;
+  },
+  message: 'Too many refresh attempts. Please wait before retrying.',
 });
 
+/**
+ * Register rate limiter: Prevent brute-force account creation
+ * 5 registrations per 15 minutes per IP to allow legitimate users but prevent abuse
+ */
+const registerLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: 5,                  // 5 registration attempts per IP per 15-minute window
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: 'Too many account creation attempts. Please try again later.',
+  skip: (req) => false, // Apply rate limit to all registration requests
+});
 // ----------------------------------------------------------------------------
 // Routes
 // ----------------------------------------------------------------------------
@@ -140,6 +159,7 @@ const refreshLimiter = rateLimit({
  */
 router.post(
   '/register',
+  registerLimiter,
   validationRules.register,
   handleValidation,
   asyncHandler(authController.register)
@@ -166,7 +186,7 @@ router.post(
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!ok) {
+    if (!isMatch) {
       return res.status(401).json({ errorId: req.requestId, message: 'Invalid credentials' });
     }
 
@@ -226,7 +246,11 @@ router.post(
     const fullUser = await getUserById(userId);
     const accessToken = signAccessToken(fullUser);
 
-    res.json({ accessToken });
+    res.json({
+      accessToken,
+      token: accessToken, // Include both for backwards compatibility
+      user: fullUser,
+    });
   })
 );
 

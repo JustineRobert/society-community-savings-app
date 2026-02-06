@@ -42,8 +42,8 @@ const Login = () => {
   const handleLogin = async (values, { setSubmitting }) => {
     setLoading(true);
     try {
-      await login(values.email, values.password);
-      
+      const user = await login(values.email, values.password);
+
       // Save email if remember me is checked
       if (values.remember) {
         localStorage.setItem('savedEmail', values.email);
@@ -53,8 +53,12 @@ const Login = () => {
         localStorage.removeItem('rememberMe');
       }
 
-      toast.success('Welcome back to Community Savings!');
-      navigate('/dashboard');
+      if (user) {
+        toast.success('Welcome back to Community Savings!');
+        navigate('/dashboard');
+      } else {
+        toast.error('Login did not complete — please try again.');
+      }
     } catch (err) {
       const message = err?.response?.data?.message || 
                       err.message || 

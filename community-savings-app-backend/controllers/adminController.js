@@ -479,4 +479,334 @@ exports.getAuditLog = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * Get detailed loan analytics
+ * GET /api/admin/analytics/loans
+ */
+exports.getLoanAnalytics = asyncHandler(async (req, res) => {
+  const { period = '30d' } = req.query;
+  
+  // Calculate date range based on period
+  const now = new Date();
+  let startDate;
+  
+  switch (period) {
+    case '7d':
+      startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      break;
+    case '30d':
+      startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      break;
+    case '90d':
+      startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+      break;
+    case 'all':
+      startDate = new Date('2000-01-01');
+      break;
+    default:
+      startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  }
+
+  const statusStats = await Loan.aggregate([
+    { $match: { createdAt: { $gte: startDate } } },
+    {
+      $group: {
+        _id: '$status',
+        count: { $sum: 1 },
+        totalAmount: { $sum: '$amount' },
+        averageAmount: { $avg: '$amount' },
+      },
+    },
+  ]);
+
+  // Loan creation trend (daily)
+  const trendData = await Loan.aggregate([
+    { $match: { createdAt: { $gte: startDate } } },
+    {
+      $group: {
+        _id: {
+          $dateToString: { format: '%Y-%m-%d', date: '$createdAt' },
+        },
+        count: { $sum: 1 },
+        amount: { $sum: '$amount' },
+      },
+    },
+    { $sort: { _id: 1 } },
+  ]);
+
+  // Default analysis
+  const repaymentData = await require('../models/LoanRepaymentSchedule').aggregate([
+    { $match: { createdAt: { $gte: startDate } } },
+    {
+      $group: {
+        _id: '$status',
+        count: { $sum: 1 },
+        totalAmount: { $sum: '$totalAmount' },
+      },
+    },
+  ]);
+
+  res.json({
+    success: true,
+    data: {
+      period,
+      statusDistribution: statusStats,
+      creationTrend: trendData,
+      repaymentStatus: repaymentData,
+      summary: {
+        totalLoansInPeriod: statusStats.reduce((sum, s) => sum + s.count, 0),
+        totalAmountInPeriod: statusStats.reduce((sum, s) => sum + s.totalAmount, 0),
+      },
+    },
+  });
+});
+
+/**
+ * Get user engagement metrics
+ * GET /api/admin/analytics/users
+ */
+exports.getUserAnalytics = asyncHandler(async (req, res) => {
+  // Most active users (by contribution count)
+  const activeUsers = await User.aggregate([
+    {
+      $lookup: {
+        from: 'contributions',
+        localField: '_id',
+        foreignField: 'user',
+        as: 'userContributions',
+      },
+    },
+    {
+      $lookup: {
+        from: 'loans',
+        localField: '_id',
+        foreignField: 'user',
+        as: 'userLoans',
+      },
+    },
+    {
+      $project: {
+        name: 1,
+        email: 1,
+        phone: 1,
+        isVerified: 1,
+        role: 1,
+        contributionCount: { $size: '$userContributions' },
+        totalContributed: { $sum: '$userContributions.amount' },
+        loanCount: { $size: '$userLoans' },
+        createdAt: 1,
+      },
+    },
+    { $sort: { totalContributed: -1 } },
+    { $limit: 20 },
+  ]);
+
+  // Verification status
+  const verificationStats = await User.aggregate([
+    {
+      $group: {
+        _id: '$isVerified',
+        count: { $sum: 1 },
+      },
+    },
+  ]);
+
+  // Role distribution
+  const roleStats = await User.aggregate([
+    {
+      $group: {
+        _id: '$role',
+        count: { $sum: 1 },
+      },
+    },
+  ]);
+
+  res.json({
+    success: true,
+    data: {
+      topUsers: activeUsers,
+      verification: verificationStats,
+      roleDistribution: roleStats,
+    },
+  });
+});
+
+/**
+ * Get system health status
+ * GET /api/admin/system/health
+ */
+exports.getSystemHealth = asyncHandler(async (req, res) => {
+  const start = Date.now();
+  
+  try {
+    // Database connectivity test
+    const dbStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
+    
+    // Query performance (measure response time)
+    const userCount = await User.countDocuments();
+    const queryTime = Date.now() - start;
+    
+    // Check for overdue loans/payments
+    const now = new Date();
+    const overdueCount = await require('../models/LoanRepaymentSchedule').countDocuments({
+      'installments.dueDate': { $lt: now },
+      'installments.paid': false,
+    });
+
+    res.json({
+      success: true,
+      data: {
+        database: {
+          status: dbStatus,
+          connected: dbStatus === 'connected',
+        },
+        performance: {
+          queryTime: `${queryTime}ms`,
+          status: queryTime < 100 ? 'healthy' : queryTime < 500 ? 'acceptable' : 'slow',
+        },
+        data: {
+          totalUsers: userCount,
+          overdueLoans: overdueCount,
+          timestamp: new Date(),
+        },
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'System health check failed',
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * Get payment analytics
+ * GET /api/admin/analytics/payments
+ */
+exports.getPaymentAnalytics = asyncHandler(async (req, res) => {
+  const LoanRepaymentSchedule = require('../models/LoanRepaymentSchedule');
+  
+  // Payment status summary
+  const paymentStats = await LoanRepaymentSchedule.aggregate([
+    {
+      $facet: {
+        byStatus: [
+          {
+            $group: {
+              _id: '$status',
+              count: { $sum: 1 },
+              totalAmount: { $sum: '$totalAmount' },
+            },
+          },
+        ],
+        installmentAnalysis: [
+          { $unwind: '$installments' },
+          {
+            $group: {
+              _id: '$installments.paid',
+              count: { $sum: 1 },
+              totalAmount: { $sum: '$installments.amount' },
+            },
+          },
+        ],
+        collectionRate: [
+          {
+            $group: {
+              _id: null,
+              totalSchedules: { $sum: 1 },
+              totalAmount: { $sum: '$totalAmount' },
+              totalPaid: { $sum: '$totalPaid' },
+            },
+          },
+        ],
+      },
+    },
+  ]);
+
+  const collectionRate = paymentStats[0]?.collectionRate[0];
+  const percentPaid = collectionRate 
+    ? ((collectionRate.totalPaid / collectionRate.totalAmount) * 100).toFixed(2)
+    : 0;
+
+  res.json({
+    success: true,
+    data: {
+      scheduleStatus: paymentStats[0]?.byStatus || [],
+      installmentStatus: paymentStats[0]?.installmentAnalysis || [],
+      collectionMetrics: {
+        totalSchedules: collectionRate?.totalSchedules || 0,
+        totalAmount: collectionRate?.totalAmount || 0,
+        totalPaid: collectionRate?.totalPaid || 0,
+        collectionRate: `${percentPaid}%`,
+      },
+    },
+  });
+});
+
+/**
+ * Generate compliance report
+ * GET /api/admin/reports/compliance
+ */
+exports.getComplianceReport = asyncHandler(async (req, res) => {
+  const now = new Date();
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+  // High-risk loans (overdue)
+  const riskyLoans = await require('../models/LoanRepaymentSchedule').find({
+    $expr: {
+      $gt: [
+        {
+          $size: {
+            $filter: {
+              input: '$installments',
+              as: 'inst',
+              cond: {
+                $and: [
+                  { $lt: ['$$inst.dueDate', now] },
+                  { $eq: ['$$inst.paid', false] },
+                ],
+              },
+            },
+          },
+        },
+        0,
+      ],
+    },
+  }).populate('loan');
+
+  // Recent defaults
+  const recentDefaults = await require('../models/LoanAudit').find({
+    action: 'loan_defaulted',
+    createdAt: { $gte: thirtyDaysAgo },
+  }).populate('loan').populate('user');
+
+  // Verification compliance
+  const unverifiedUsers = await User.countDocuments({ isVerified: false });
+  const totalUsers = await User.countDocuments();
+  const verificationRate = ((totalUsers - unverifiedUsers) / totalUsers) * 100;
+
+  res.json({
+    success: true,
+    data: {
+      riskAssessment: {
+        highRiskLoans: riskyLoans.length,
+        recentDefaults: recentDefaults.length,
+        overallRiskScore: (riskyLoans.length + recentDefaults.length) * 10, // Simple scoring
+      },
+      compliance: {
+        userVerificationRate: `${verificationRate.toFixed(2)}%`,
+        verifiedUsers: totalUsers - unverifiedUsers,
+        unverifiedUsers,
+        totalUsers,
+      },
+      recentIssues: {
+        overdueLoans: riskyLoans,
+        defaults: recentDefaults.slice(0, 10),
+      },
+      timestamp: new Date(),
+    },
+  });
+});
+
 module.exports = exports;

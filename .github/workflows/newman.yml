@@ -14,8 +14,11 @@ jobs:
         image: mongo:6.0
         ports:
           - 27017:27017
-        options: >-
-          --health-cmd "mongo --eval 'db.adminCommand({ ping: 1 })'" --health-interval=5s --health-timeout=5s --health-retries=5
+        # Note: MongoDB health-check via 'mongo' shell removed.
+        # The 'mongo' binary is not present in mongo:6.0+ images.
+        # Instead, we use port-based detection (nc) from the runner
+        # to wait for MongoDB readiness. This is more robust and
+        # avoids external shell dependencies.
 
     steps:
       - name: Checkout repository
@@ -32,12 +35,13 @@ jobs:
       - name: Install backend dependencies
         run: npm --prefix community-savings-app-backend ci
 
-      - name: Wait for MongoDB
+      - name: Wait for MongoDB port
         run: |
-          echo 'Waiting for MongoDB to be ready...'
-          for i in {1..30}; do
-            if mongo --eval 'db.runCommand({ ping: 1 })' >/dev/null 2>&1; then
-              echo 'Mongo ready'; break
+          echo 'Waiting for MongoDB to be ready (TCP 127.0.0.1:27017)...'
+          for i in {1..60}; do
+            if nc -z 127.0.0.1 27017 >/dev/null 2>&1; then
+              echo 'MongoDB port is open and ready'
+              break
             fi
             sleep 1
           done
@@ -48,22 +52,28 @@ jobs:
           ADMIN_EMAIL: admin@example.com
           ADMIN_PASS: AdminPass123A
           ADMIN_FORCE: 'true'
+        # Run seeding script within the backend package context
+        # to ensure all dependencies and scripts are available.
         run: |
-          npm run seed-admin --silent
+          npm --prefix community-savings-app-backend run seed-admin --silent
 
-      - name: Start backend
+      - name: Start backend server
         env:
           PORT: 5000
           NODE_ENV: development
           MONGO_URI: mongodb://127.0.0.1:27017/community-savings-test
           JWT_SECRET: testsecret12345678901234567890
           JWT_REFRESH_SECRET: testrefreshsecret1234567890
+        # Start the backend in development mode and wait for it to be ready.
+        # Using curl polling to detect when the API endpoint is responding.
         run: |
           npm --prefix community-savings-app-backend run dev &
-          # wait for server to start (simple polling)
-          for i in {1..30}; do
+          echo 'Backend starting in background...'
+          # Poll the API endpoint until the backend is ready (max 60 seconds)
+          for i in {1..60}; do
             if curl -sS http://localhost:5000/api/auth/me >/dev/null 2>&1; then
-              echo 'Backend ready'; break
+              echo 'Backend is ready and responding to requests'
+              break
             fi
             sleep 1
           done
@@ -71,7 +81,7 @@ jobs:
       - name: Run Newman Postman collection
         run: npm run postman:test
 
-      - name: Upload Newman report
+      - name: Upload Newman test report
         if: always()
         uses: actions/upload-artifact@v4
         with:

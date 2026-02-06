@@ -770,3 +770,368 @@ exports.getGroupLoans = asyncHandler(async (req, res) => {
     data: loans,
   });
 });
+
+/**
+ * Get loan repayment schedule and status
+ * GET /api/loans/:loanId/schedule
+ */
+exports.getLoanSchedule = asyncHandler(async (req, res) => {
+  const { loanId } = req.params;
+
+  const loan = await Loan.findById(loanId).populate('user');
+
+  if (!loan) {
+    return res.status(404).json({
+      success: false,
+      message: 'Loan not found',
+    });
+  }
+
+  // Authorization
+  if (req.user.role !== 'admin' && !loan.user._id.equals(req.user._id)) {
+    return res.status(403).json({
+      success: false,
+      message: 'You do not have permission to view this schedule',
+    });
+  }
+
+  const schedule = await LoanRepaymentSchedule.findById(loan.repaymentSchedule);
+
+  if (!schedule) {
+    return res.status(404).json({
+      success: false,
+      message: 'Repayment schedule not found',
+    });
+  }
+
+  // Calculate summary
+  const totalPaid = schedule.totalPaid || 0;
+  const outstandingAmount = schedule.totalAmount - totalPaid;
+  const paidInstallments = (schedule.installments || []).filter(i => i.paid).length;
+  const totalInstallments = schedule.installments?.length || 0;
+
+  res.json({
+    success: true,
+    data: {
+      loan: {
+        id: loan._id,
+        amount: loan.amount,
+        status: loan.status,
+        approvedAt: loan.approvedAt,
+        disburseDate: loan.disburseDate,
+        repaidAt: loan.repaidAt,
+      },
+      schedule: {
+        id: schedule._id,
+        totalAmount: schedule.totalAmount,
+        totalPaid,
+        outstandingAmount,
+        interestRate: schedule.interestRate,
+        status: schedule.status,
+        paidInstallments,
+        totalInstallments,
+        installments: schedule.installments,
+      },
+      summary: {
+        percentagePaid: totalInstallments > 0 ? (paidInstallments / totalInstallments) * 100 : 0,
+        remainingInstallments: totalInstallments - paidInstallments,
+        nextDueDate: (schedule.installments || [])
+          .find(i => !i.paid)?.dueDate || null,
+      },
+    },
+  });
+});
+
+/**
+ * Request loan (user-facing endpoint)
+ * POST /api/loans/request
+ * Body: { groupId, amount, reason, repaymentTermMonths }
+ */
+exports.requestLoan = asyncHandler(async (req, res) => {
+  const { groupId, amount, reason, repaymentTermMonths, idempotencyKey } = req.body;
+
+  // Validation
+  if (!groupId || !amount) {
+    return res.status(400).json({
+      success: false,
+      message: 'Group ID and amount are required',
+      errors: {
+        groupId: !groupId ? 'Required' : undefined,
+        amount: !amount ? 'Required' : undefined,
+      },
+    });
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(groupId)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid group ID format',
+    });
+  }
+
+  if (typeof amount !== 'number' || amount <= 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'Amount must be a positive number',
+    });
+  }
+
+  // Verify group exists and user is member
+  const group = await Group.findById(groupId);
+  if (!group) {
+    return res.status(404).json({
+      success: false,
+      message: 'Group not found',
+    });
+  }
+
+  const isMember = group.members.includes(req.user._id);
+  if (!isMember) {
+    return res.status(403).json({
+      success: false,
+      message: 'You are not a member of this group',
+    });
+  }
+
+  // Check eligibility
+  const eligibility = await assessEligibility(req.user._id, groupId, req.user._id);
+
+  if (!eligibility.isEligible) {
+    return res.status(403).json({
+      success: false,
+      message: 'You are not eligible to apply for a loan',
+      eligibility: {
+        isEligible: false,
+        rejectionReason: eligibility.rejectionReason,
+        score: eligibility.overallScore,
+      },
+    });
+  }
+
+  // Validate amount against max
+  if (amount > eligibility.maxLoanAmount) {
+    return res.status(400).json({
+      success: false,
+      message: 'Requested amount exceeds your borrowing limit',
+      maxAllowed: eligibility.maxLoanAmount,
+    });
+  }
+
+  // Check for existing active loans
+  const existingActive = await Loan.findOne({
+    user: req.user._id,
+    group: groupId,
+    status: { $in: ['pending', 'approved', 'disbursed'] },
+  });
+
+  if (existingActive) {
+    return res.status(409).json({
+      success: false,
+      message: 'You already have an active loan application or disbursed loan in this group',
+    });
+  }
+
+  // Check idempotency
+  if (idempotencyKey) {
+    const existingByKey = await Loan.findOne({
+      user: req.user._id,
+      group: groupId,
+      idempotencyKey,
+    });
+
+    if (existingByKey) {
+      return res.status(200).json({
+        success: true,
+        message: 'Loan request already exists',
+        isDuplicate: true,
+        data: existingByKey,
+      });
+    }
+  }
+
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const loanData = {
+      user: req.user._id,
+      group: groupId,
+      amount,
+      reason: reason || null,
+      repaymentTermMonths: repaymentTermMonths || 6,
+      status: 'pending',
+      eligibilityScore: eligibility.overallScore,
+      idempotencyKey,
+    };
+
+    const loan = new Loan(loanData);
+    await loan.save({ session });
+
+    // Audit log
+    await LoanAudit.logAction({
+      action: 'loan_requested',
+      loan: loan._id,
+      user: req.user._id,
+      group: groupId,
+      actor: req.user._id,
+      actorRole: req.user.role,
+      description: `Loan request submitted: ${amount} in ${groupId}`,
+      amount,
+      metadata: {
+        eligibilityScore: eligibility.overallScore,
+        requestedTerm: repaymentTermMonths,
+      },
+      status: 'success',
+    });
+
+    await session.commitTransaction();
+
+    res.status(201).json({
+      success: true,
+      message: 'Loan request submitted successfully',
+      data: loan,
+    });
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    session.endSession();
+  }
+});
+
+/**
+ * Batch update loan statuses (admin only)
+ * PATCH /api/loans/batch
+ * Body: { loanIds, newStatus, reason }
+ */
+exports.updateLoansInBatch = asyncHandler(async (req, res) => {
+  const { loanIds, newStatus, reason } = req.body;
+
+  // Authorization
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({
+      success: false,
+      message: 'Only admins can perform batch operations',
+    });
+  }
+
+  if (!Array.isArray(loanIds) || loanIds.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'Valid loan IDs array is required',
+    });
+  }
+
+  if (!['approved', 'rejected', 'cancelled'].includes(newStatus)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid status',
+    });
+  }
+
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const updates = { status: newStatus };
+    const dateField = newStatus === 'approved' ? 'approvedAt' : `${newStatus}At`;
+    updates[dateField] = new Date();
+
+    if (newStatus === 'rejected') {
+      updates.rejectionReason = reason || 'Rejected in batch operation';
+    }
+
+    const result = await Loan.updateMany(
+      { _id: { $in: loanIds } },
+      updates,
+      { session }
+    );
+
+    // Audit batch update
+    await LoanAudit.logAction({
+      action: 'loans_batch_updated',
+      actor: req.user._id,
+      actorRole: req.user.role,
+      description: `Batch updated ${result.modifiedCount} loans to ${newStatus}`,
+      metadata: {
+        loanCount: loanIds.length,
+        newStatus,
+        reason,
+      },
+      status: 'success',
+    });
+
+    await session.commitTransaction();
+
+    res.json({
+      success: true,
+      message: `Successfully updated ${result.modifiedCount} loans`,
+      data: {
+        matched: result.matchedCount,
+        modified: result.modifiedCount,
+      },
+    });
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    session.endSession();
+  }
+});
+
+/**
+ * Get loan statistics for a group
+ * GET /api/loans/group/:groupId/statistics
+ */
+exports.getGroupLoanStatistics = asyncHandler(async (req, res) => {
+  const { groupId } = req.params;
+
+  // Authorization
+  if (req.user.role !== 'admin' && req.user.role !== 'group_admin') {
+    return res.status(403).json({
+      success: false,
+      message: 'Only admins can view statistics',
+    });
+  }
+
+  const stats = await Loan.aggregate([
+    { $match: { group: mongoose.Types.ObjectId(groupId) } },
+    {
+      $group: {
+        _id: '$status',
+        count: { $sum: 1 },
+        totalAmount: { $sum: '$amount' },
+        averageAmount: { $avg: '$amount' },
+        minAmount: { $min: '$amount' },
+        maxAmount: { $max: '$amount' },
+      },
+    },
+  ]);
+
+  // Get summary across all statuses
+  const allLoans = await Loan.find({ group: groupId });
+  const totalLoans = allLoans.length;
+  const totalLoanAmount = allLoans.reduce((sum, l) => sum + l.amount, 0);
+  const totalRepaid = allLoans
+    .filter(l => l.status === 'repaid')
+    .reduce((sum, l) => sum + l.amount, 0);
+
+  // Get default rate
+  const defaultedSchedules = await LoanRepaymentSchedule.countDocuments({
+    status: 'defaulted',
+  });
+
+  res.json({
+    success: true,
+    data: {
+      summary: {
+        totalLoans,
+        totalLoanAmount,
+        totalRepaid,
+        defaultRate: totalLoans > 0 ? (defaultedSchedules / totalLoans) * 100 : 0,
+        averageLoanAmount: totalLoans > 0 ? totalLoanAmount / totalLoans : 0,
+      },
+      byStatus: stats,
+    },
+  });
+});

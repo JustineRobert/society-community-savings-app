@@ -152,6 +152,8 @@ const Register = () => {
               }}
               validationSchema={RegisterSchema}
               onSubmit={handleRegister}
+              validateOnChange={true}
+              validateOnBlur={true}
             >
               {({ isSubmitting, errors, touched, values }) => (
                 <Form className="register-form">
@@ -225,19 +227,29 @@ const Register = () => {
                       Password
                     </label>
                     <div className="password-input-wrapper">
-                      <Field
-                        id="password"
-                        name="password"
-                        type={showPassword ? 'text' : 'password'}
-                        placeholder="••••••••"
-                        onChange={(e) => {
-                          e.target.form.password?.value &&
-                            setPasswordStrength(
-                              calculatePasswordStrength(e.target.value)
-                            );
-                        }}
-                        className={`form-input ${touched.password && errors.password ? 'error' : ''}`}
-                      />
+                      <Field name="password">
+                        {({ field }) => (
+                          <input
+                            {...field}
+                            id="password"
+                            type={showPassword ? 'text' : 'password'}
+                            placeholder="••••••••"
+                            className={`form-input ${touched.password && errors.password ? 'error' : ''}`}
+                            onChange={(e) => {
+                              // First, update Formik's internal state
+                              field.onChange(e);
+                              // Then update password strength indicator
+                              const value = e.target.value;
+                              if (value) {
+                                setPasswordStrength(calculatePasswordStrength(value));
+                              } else {
+                                setPasswordStrength(0);
+                              }
+                            }}
+                            onBlur={field.onBlur}
+                          />
+                        )}
+                      </Field>
                       <button
                         type="button"
                         className="password-toggle"
