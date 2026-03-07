@@ -14,10 +14,13 @@ const { verifyToken, requireRole } = require('../middleware/auth');
 // Controllers (some may be optional)
 const {
   sendMessage,
-  getGroupMessages,
-  getUserMessages,   // Optional: for private/user-to-user messaging
-  deleteMessage      // Optional: for admin/moderator cleanup
+  getMessages,        // <– real export from chatController
+  getUserMessages,    // Optional: for private/user-to-user messaging
+  deleteMessage       // Optional: for admin/moderator cleanup
 } = require('../controllers/chatController');
+
+// alias so the route code stays semantically the same
+const getGroupMessages = getMessages;
 
 // --- Guardrails: verify controllers are functions at load time (if provided).
 const controllers = { sendMessage, getGroupMessages, getUserMessages, deleteMessage };

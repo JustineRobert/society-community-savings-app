@@ -1,248 +1,513 @@
 /**
- * loanController.js - ENHANCED
- * 
- * Production-grade loan management
- * Includes: eligibility, application, approval, disbursement, repayment
- * Full audit trail, proper error handling, idempotency
+ * controllers/loanController.js
+ *
+ * HTTP handlers for loan operations using LoanWorkflowService.
+ *
+ * Features:
+ * - Loan application creation and lifecycle
+ * - Loan approval/rejection/disbursement (admin/finance only)
+ * - Repayment recording with validation
+ * - Repayment schedule generation
+ * - Loan status tracking and updates
+ * - Overdue and default detection
+ * - Comprehensive audit trail
+ * - Role-based access control
+ *
+ * All operations require authentication via req.user._id
+ * Admin operations require admin role
  */
 
-const mongoose = require('mongoose');
-const Loan = require('../models/Loan');
-const LoanRepaymentSchedule = require('../models/LoanRepaymentSchedule');
-const LoanEligibility = require('../models/LoanEligibility');
-const LoanAudit = require('../models/LoanAudit');
-const User = require('../models/User');
-const Group = require('../models/Group');
-const Contribution = require('../models/Contribution');
+const logger = require('../utils/logger');
 const asyncHandler = require('../utils/asyncHandler');
-const { assessEligibility, getEligibility } = require('../services/loanScoringService');
 
 /**
- * Check loan eligibility
- * GET /api/loans/eligibility/:groupId
+ * Helper: Ensure user is authenticated
  */
-exports.checkEligibility = asyncHandler(async (req, res) => {
-  const { groupId } = req.params;
-
-  // Validate inputs
-  if (!groupId || !mongoose.Types.ObjectId.isValid(groupId)) {
-    return res.status(400).json({
-      success: false,
-      message: 'Invalid group ID',
-    });
+function ensureAuth(req) {
+  const userId = req.user?._id || req.user?.id;
+  if (!userId) {
+    const err = new Error('User authentication required');
+    err.status = 401;
+    throw err;
   }
-
-  // Verify group exists and user is member
-  const group = await Group.findById(groupId);
-  if (!group) {
-    return res.status(404).json({
-      success: false,
-      message: 'Group not found',
-    });
-  }
-
-  const isMember = group.members.includes(req.user._id);
-  if (!isMember) {
-    return res.status(403).json({
-      success: false,
-      message: 'You are not a member of this group',
-    });
-  }
-
-  // Get eligibility assessment
-  const eligibility = await getEligibility(req.user._id, groupId, req.user._id);
-
-  res.json({
-    success: true,
-    data: eligibility,
-  });
-});
+  return userId;
+}
 
 /**
- * Apply for loan
- * POST /api/loans/apply
- * Body: { groupId, amount, reason, idempotencyKey }
+ * Helper: Ensure user has admin role
  */
-exports.applyForLoan = asyncHandler(async (req, res) => {
-  const { groupId, amount, reason, idempotencyKey } = req.body;
+function ensureAdmin(req) {
+  const userId = ensureAuth(req);
+  const roles = req.user?.roles || [];
 
-  // Input validation
-  if (!groupId || !amount) {
-    return res.status(400).json({
-      success: false,
-      message: 'Group ID and amount are required',
-    });
+  if (!roles.includes('admin')) {
+    const err = new Error('Admin access required');
+    err.status = 403;
+    throw err;
   }
 
-  if (!mongoose.Types.ObjectId.isValid(groupId)) {
-    return res.status(400).json({
-      success: false,
-      message: 'Invalid group ID',
-    });
-  }
+  return userId;
+}
 
-  if (amount <= 0 || !Number.isInteger(amount)) {
-    return res.status(400).json({
-      success: false,
-      message: 'Amount must be a positive integer',
-    });
-  }
+/**
+ * Helper: Create HTTP error
+ */
+function httpError(status, message, details) {
+  const err = new Error(message);
+  err.status = status;
+  if (details) err.details = details;
+  return err;
+}
 
-  // Check for duplicate application (idempotency)
-  if (idempotencyKey) {
-    const existing = await Loan.findOne({
-      user: req.user._id,
-      group: groupId,
-      idempotencyKey,
-    });
-
-    if (existing) {
-      return res.status(200).json({
-        success: true,
-        message: 'Loan application already exists',
-        data: existing,
-        isDuplicate: true,
-      });
-    }
-  }
-
-  // Verify group exists
-  const group = await Group.findById(groupId).populate('members');
-  if (!group) {
-    return res.status(404).json({
-      success: false,
-      message: 'Group not found',
-    });
-  }
-
-  // Check membership
-  const isMember = group.members.some((m) => m._id.equals(req.user._id));
-  if (!isMember) {
-    return res.status(403).json({
-      success: false,
-      message: 'You must be a member of this group to apply for a loan',
-    });
-  }
-
-  // Check eligibility
-  const eligibility = await getEligibility(req.user._id, groupId, req.user._id);
-
-  if (!eligibility.isEligible) {
-    await LoanAudit.logAction({
-      action: 'loan_applied',
-      user: req.user._id,
-      group: groupId,
-      actor: req.user._id,
-      actorRole: req.user.role,
-      description: 'Loan application rejected: ineligible',
-      amount,
-      metadata: {
-        rejectionReason: eligibility.rejectionReason,
-        ipAddress: req.ip,
-        userAgent: req.get('user-agent'),
-      },
-      status: 'failed',
-    });
-
-    return res.status(403).json({
-      success: false,
-      message: 'You are not eligible to apply for a loan at this time',
-      reason: eligibility.rejectionReason,
-    });
-  }
-
-  // Check amount against max allowed
-  if (amount > eligibility.maxLoanAmount) {
-    return res.status(400).json({
-      success: false,
-      message: `Requested amount exceeds your limit. Max allowed: ${eligibility.maxLoanAmount}`,
-      maxAllowed: eligibility.maxLoanAmount,
-    });
-  }
-
-  // Check for existing pending/approved loans in same group
-  const existingPending = await Loan.findOne({
-    user: req.user._id,
-    group: groupId,
-    status: { $in: ['pending', 'approved', 'disbursed'] },
-  });
-
-  if (existingPending) {
-    return res.status(409).json({
-      success: false,
-      message: 'You already have a pending or active loan in this group',
-    });
-  }
-
-  // Create loan application
-  const loan = new Loan({
-    user: req.user._id,
-    group: groupId,
-    amount,
-    reason: reason || null,
-    status: 'pending',
-    eligibilityScore: eligibility.overallScore,
-    idempotencyKey,
-  });
-
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
+/**
+ * POST /api/loans
+ * Create a new loan application
+ *
+ * Body: {
+ *   amount: number (required),
+ *   duration: number (months, required),
+ *   interestRate: number (percentage, optional, default 5),
+ *   purpose: string (optional),
+ *   description: string (optional)
+ * }
+ *
+ * Returns: loan application object
+ */
+exports.createLoanApplication = async (req, res, next) => {
   try {
-    await loan.save({ session });
+    const userId = ensureAuth(req);
+    const { amount, duration, interestRate, purpose, description } = req.body;
+    const loanService = req.app.locals.loanWorkflowService;
 
-    // Audit log
-    await LoanAudit.logAction({
-      action: 'loan_applied',
-      loan: loan._id,
-      user: req.user._id,
-      group: groupId,
-      actor: req.user._id,
-      actorRole: req.user.role,
-      description: `Loan application submitted: ${amount}`,
+    if (!loanService) {
+      return res.status(500).json({ error: 'Loan service not initialized' });
+    }
+
+    // Validate
+    if (!amount || amount <= 0) {
+      throw httpError(400, 'amount must be positive number');
+    }
+    if (!duration || duration < 1 || duration > 360) {
+      throw httpError(400, 'duration must be between 1 and 360 months');
+    }
+
+    const loanData = {
       amount,
-      metadata: {
-        eligibilityScore: eligibility.overallScore,
-        ipAddress: req.ip,
-        userAgent: req.get('user-agent'),
-      },
-      status: 'success',
-    });
+      duration,
+      interestRate: interestRate || 5,
+      purpose: purpose || undefined,
+      description: description || undefined,
+    };
 
-    await session.commitTransaction();
+    const result = await loanService.createLoanApplication(userId, loanData);
+
+    logger.info('Loan application created', {
+      loanId: result._id,
+      amount,
+      duration,
+      userId,
+    });
 
     res.status(201).json({
-      success: true,
-      message: 'Loan application submitted successfully',
+      message: 'Loan application created successfully',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * GET /api/loans
+ * List user's loans (or all loans if admin)
+ *
+ * Query: ?page=1&limit=20&status=active&sortBy=createdAt
+ * Returns: array of loan objects with pagination
+ */
+exports.listLoans = async (req, res, next) => {
+  try {
+    const userId = ensureAuth(req);
+    const loanService = req.app.locals.loanWorkflowService;
+    const Loan = require('../models/Loan');
+
+    if (!loanService) {
+      return res.status(500).json({ error: 'Loan service not initialized' });
+    }
+
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(100, Number(req.query.limit) || 20);
+    const skip = (page - 1) * limit;
+    const status = req.query.status || null;
+    const sortBy = req.query.sortBy || 'createdAt';
+    const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
+
+    // Build filter
+    const isAdmin = req.user?.roles?.includes('admin');
+    const filter = isAdmin ? {} : { borrower: userId };
+
+    if (status) {
+      filter.status = status;
+    }
+
+    // Query
+    const [loans, total] = await Promise.all([
+      Loan.find(filter)
+        .select('_id borrower amount duration interestRate status createdAt updatedAt')
+        .populate('borrower', 'name email')
+        .sort({ [sortBy]: sortOrder })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Loan.countDocuments(filter),
+    ]);
+
+    res.status(200).json({
+      message: 'Loans retrieved successfully',
+      data: loans,
+      pagination: { page, limit, total },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * GET /api/loans/:loanId
+ * Get loan details with full information
+ *
+ * Returns: loan object with borrower populated
+ */
+exports.getLoanDetail = async (req, res, next) => {
+  try {
+    const userId = ensureAuth(req);
+    const { loanId } = req.params;
+    const Loan = require('../models/Loan');
+
+    if (!loanId) {
+      throw httpError(400, 'loanId is required');
+    }
+
+    const loan = await Loan.findById(loanId).populate('borrower', 'name email');
+
+    if (!loan) {
+      throw httpError(404, 'Loan not found');
+    }
+
+    // Check ownership or admin
+    const isAdmin = req.user?.roles?.includes('admin');
+    const isOwner = String(loan.borrower._id) === String(userId);
+
+    if (!isOwner && !isAdmin) {
+      throw httpError(403, 'Not authorized to view this loan');
+    }
+
+    res.status(200).json({
+      message: 'Loan details retrieved successfully',
       data: loan,
     });
-  } catch (error) {
-    await session.abortTransaction();
+  } catch (err) {
+    next(err);
+  }
+};
 
-    await LoanAudit.logAction({
-      action: 'loan_applied',
-      user: req.user._id,
-      group: groupId,
-      actor: req.user._id,
-      actorRole: req.user.role,
-      description: 'Loan application failed',
-      amount,
-      metadata: {
-        ipAddress: req.ip,
-        userAgent: req.get('user-agent'),
-      },
-      status: 'failed',
-      error: {
-        message: error.message,
-        code: error.code,
-      },
+/**
+ * POST /api/loans/:loanId/approve
+ * Approve a pending loan application (admin only)
+ *
+ * Body: {
+ *   notes: string (optional)
+ * }
+ *
+ * Returns: updated loan object with status='approved'
+ */
+exports.approveLoan = async (req, res, next) => {
+  try {
+    const adminId = ensureAdmin(req);
+    const { loanId } = req.params;
+    const { notes } = req.body;
+    const loanService = req.app.locals.loanWorkflowService;
+
+    if (!loanService) {
+      return res.status(500).json({ error: 'Loan service not initialized' });
+    }
+
+    if (!loanId) {
+      throw httpError(400, 'loanId is required');
+    }
+
+    const result = await loanService.changeLoanStatus(loanId, 'approved', adminId, {
+      reason: notes || 'Approved by admin',
     });
 
-    throw error;
-  } finally {
-    session.endSession();
+    logger.info('Loan approved', {
+      loanId,
+      adminId,
+      amount: result.amount,
+    });
+
+    res.status(200).json({
+      message: 'Loan approved successfully',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
   }
-});
+};
+
+/**
+ * POST /api/loans/:loanId/reject
+ * Reject a pending loan application (admin only)
+ *
+ * Body: {
+ *   reason: string (required)
+ * }
+ *
+ * Returns: updated loan object with status='rejected'
+ */
+exports.rejectLoan = async (req, res, next) => {
+  try {
+    const adminId = ensureAdmin(req);
+    const { loanId } = req.params;
+    const { reason } = req.body;
+    const loanService = req.app.locals.loanWorkflowService;
+
+    if (!loanService) {
+      return res.status(500).json({ error: 'Loan service not initialized' });
+    }
+
+    if (!loanId) {
+      throw httpError(400, 'loanId is required');
+    }
+    if (!reason) {
+      throw httpError(400, 'reason is required');
+    }
+
+    const result = await loanService.changeLoanStatus(loanId, 'rejected', adminId, {
+      reason,
+    });
+
+    logger.info('Loan rejected', {
+      loanId,
+      adminId,
+      reason,
+    });
+
+    res.status(200).json({
+      message: 'Loan rejected successfully',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * POST /api/loans/:loanId/disburse
+ * Disburse an approved loan (admin/finance only)
+ * Generates repayment schedule and sets status to 'active'
+ *
+ * Body: {
+ *   notes: string (optional)
+ * }
+ *
+ * Returns: updated loan object with repayment schedule
+ */
+exports.disburseLoan = async (req, res, next) => {
+  try {
+    const adminId = ensureAdmin(req);
+    const { loanId } = req.params;
+    const { notes } = req.body;
+    const loanService = req.app.locals.loanWorkflowService;
+
+    if (!loanService) {
+      return res.status(500).json({ error: 'Loan service not initialized' });
+    }
+
+    if (!loanId) {
+      throw httpError(400, 'loanId is required');
+    }
+
+    // Change status to disbursed then generate schedule
+    let result = await loanService.changeLoanStatus(loanId, 'disbursed', adminId, {
+      reason: notes || 'Disbursed by admin',
+    });
+
+    // Generate repayment schedule
+    result = await loanService.changeLoanStatus(loanId, 'active', adminId, {
+      reason: 'Generating repayment schedule',
+    });
+
+    // Generate schedule
+    const scheduleResult = await loanService.generateRepaymentSchedule(
+      loanId,
+      result.amount,
+      result.duration,
+      result.interestRate
+    );
+
+    logger.info('Loan disbursed', {
+      loanId,
+      adminId,
+      amount: result.amount,
+      scheduleCount: scheduleResult.length,
+    });
+
+    res.status(200).json({
+      message: 'Loan disbursed successfully',
+      data: result,
+      schedule: scheduleResult,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * POST /api/loans/:loanId/repayment
+ * Record a repayment for a loan
+ *
+ * Body: {
+ *   amount: number (required),
+ *   method: string (optional, e.g., 'bank_transfer', 'mobile_money'),
+ *   reference: string (optional, transaction ID)
+ * }
+ *
+ * Returns: updated loan with new repayment record
+ */
+exports.recordRepayment = async (req, res, next) => {
+  try {
+    const userId = ensureAuth(req);
+    const { loanId } = req.params;
+    const { amount, method, reference } = req.body;
+    const loanService = req.app.locals.loanWorkflowService;
+
+    if (!loanService) {
+      return res.status(500).json({ error: 'Loan service not initialized' });
+    }
+
+    if (!loanId) {
+      throw httpError(400, 'loanId is required');
+    }
+    if (!amount || amount <= 0) {
+      throw httpError(400, 'amount must be positive number');
+    }
+
+    const repaymentData = {
+      amount,
+      method: method || 'unspecified',
+      reference: reference || undefined,
+    };
+
+    const result = await loanService.recordRepayment(loanId, userId, repaymentData);
+
+    logger.info('Repayment recorded', {
+      loanId,
+      userId,
+      amount,
+    });
+
+    res.status(201).json({
+      message: 'Repayment recorded successfully',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * GET /api/loans/:loanId/schedule
+ * Get the repayment schedule for a loan
+ *
+ * Query: ?page=1&limit=50&status=pending
+ * Returns: array of installment objects
+ */
+exports.getRepaymentSchedule = async (req, res, next) => {
+  try {
+    const userId = ensureAuth(req);
+    const { loanId } = req.params;
+    const LoanRepaymentSchedule = require('../models/LoanRepaymentSchedule');
+    const Loan = require('../models/Loan');
+
+    if (!loanId) {
+      throw httpError(400, 'loanId is required');
+    }
+
+    // Check ownership
+    const loan = await Loan.findById(loanId).select('borrower');
+    if (!loan) {
+      throw httpError(404, 'Loan not found');
+    }
+
+    const isAdmin = req.user?.roles?.includes('admin');
+    const isOwner = String(loan.borrower) === String(userId);
+
+    if (!isOwner && !isAdmin) {
+      throw httpError(403, 'Not authorized to view this schedule');
+    }
+
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(100, Number(req.query.limit) || 50);
+    const skip = (page - 1) * limit;
+    const statusFilter = req.query.status || null;
+
+    // Build filter
+    const filter = { loan: loanId };
+    if (statusFilter) {
+      filter.status = statusFilter;
+    }
+
+    // Query
+    const [schedule, total] = await Promise.all([
+      LoanRepaymentSchedule.find(filter)
+        .select('installmentNumber dueDate amount status daysOverdue')
+        .sort({ installmentNumber: 1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      LoanRepaymentSchedule.countDocuments(filter),
+    ]);
+
+    res.status(200).json({
+      message: 'Repayment schedule retrieved successfully',
+      data: schedule,
+      pagination: { page, limit, total },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * GET /api/loans/:loanId/summary
+ * Get loan summary with progress and statistics
+ *
+ * Returns: loan summary with remaining balance, paid amount, overdue info
+ */
+exports.getLoanSummary = async (req, res, next) => {
+  try {
+    const userId = ensureAuth(req);
+    const { loanId } = req.params;
+    const loanService = req.app.locals.loanWorkflowService;
+
+    if (!loanService) {
+      return res.status(500).json({ error: 'Loan service not initialized' });
+    }
+
+    if (!loanId) {
+      throw httpError(400, 'loanId is required');
+    }
+
+    const result = await loanService.getLoanSummary(loanId, userId);
+
+    res.status(200).json({
+      message: 'Loan summary retrieved successfully',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
 
 /**
  * Approve loan (admin/group_admin only)

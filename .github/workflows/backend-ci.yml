@@ -1,0 +1,144 @@
+name: Backend CI/CD
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      mongodb:
+        image: mongo:5.0
+        options: >-
+          --health-cmd mongosh
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 27017:27017
+      
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linting
+        run: npm run lint || true
+
+      - name: Run unit tests
+        run: npm run test:unit -- --coverage
+        env:
+          MONGODB_URI: mongodb://localhost:27017/community-savings-test
+          REDIS_URL: redis://localhost:6379
+
+      - name: Run integration tests
+        run: npm run test:integration -- --coverage --forceExit
+        env:
+          MONGODB_URI: mongodb://localhost:27017/community-savings-test
+          REDIS_URL: redis://localhost:6379
+
+      - name: Check coverage thresholds
+        run: npm run test:ci -- --coverage
+        env:
+          MONGODB_URI: mongodb://localhost:27017/community-savings-test
+          REDIS_URL: redis://localhost:6379
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage/lcov.info
+          fail_ci_if_error: true
+
+      - name: Archive test results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-results
+          path: |
+            coverage/
+            test-results.xml
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run npm audit
+        run: npm audit --audit-level=moderate || true
+
+      - name: Run OWASP dependency check
+        run: |
+          npm install -g snyk
+          snyk test || true
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [test, security]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build || echo "No build script defined"
+
+      - name: Archive artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: build-artifacts
+          path: dist/
+
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/develop'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Deploy to Staging
+        run: |
+          echo "Deploying to staging environment..."
+          # Add deployment steps (Docker push, K8s deploy, etc.)

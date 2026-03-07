@@ -1,268 +1,482 @@
+/**
+ * controllers/chatController.js
+ *
+ * HTTP handlers for chat operations using ChatService.
+ * Features:
+ * - Conversation management (1-to-1 DM, group conversations)
+ * - Message operations (send, edit, delete with soft delete)
+ * - Read receipts and unread tracking
+ * - Content moderation and flagging
+ * - Message search and archiving
+ *
+ * All operations require authentication via req.user._id
+ */
 
-// controllers/chatController.js
-
-const Chat = require('../models/Chat');
-const Group = require('../models/Group');
+const logger = require('../utils/logger');
 
 /**
- * Create an Error with HTTP status. The global error handler should
- * honor `err.status` and `err.details` if present.
+ * Helper: Ensure user is authenticated
+ */
+function ensureAuth(req) {
+  const userId = req.user?._id || req.user?.id;
+  if (!userId) {
+    const err = new Error('User authentication required');
+    err.status = 401;
+    throw err;
+  }
+  return userId;
+}
+
+/**
+ * Helper: Create HTTP error for cleaner code
  */
 function httpError(status, message, details) {
   const err = new Error(message);
   err.status = status;
-  if (details !== undefined) err.details = details;
+  if (details) err.details = details;
   return err;
 }
 
 /**
- * Safely coerce any input to trimmed string. Returns '' for null/undefined.
- */
-function toTrimmedString(v) {
-  return (v ?? '').toString().trim();
-}
-
-/**
- * Basic text sanitization to reduce accidental script injection.
- * NOTE: For production-grade XSS protection, prefer a well-tested
- * library like `xss` or escape on render. This here is minimal.
- */
-function sanitizeText(v) {
-  const s = toTrimmedString(v);
-  // Remove obvious <script> blocks; keep content as plain text.
-  return s.replace(/<\s*script[^>]*>[\s\S]*?<\s*\/\s*script\s*>/gi, '');
-}
-
-/**
- * Normalize & validate pagination parameters.
- */
-function getPagination({ page = 1, limit = 50 }, { max = 200 } = {}) {
-  let p = Number(page);
-  let l = Number(limit);
-  if (!Number.isFinite(p) || p < 1) p = 1;
-  if (!Number.isFinite(l) || l < 1) l = 50;
-  if (l > max) l = max;
-  const skip = (p - 1) * l;
-  return { page: p, limit: l, skip };
-}
-
-/**
- * @desc    Send a message to a group
- * @route   POST /api/chat
- * @access  Private
+ * POST /api/chat/conversations
+ * Create a new conversation (1-to-1 or group)
  *
- * Expects: { groupId: string, content: string (1-5000), attachments?: [] }
- * Routes set validators; we still normalize and guard at controller.
+ * Body: {
+ *   type: 'dm' | 'group',
+ *   participantIds: [userId],  // for DM: 1 other user; for group: other users
+ *   name: string (optional, required for groups),
+ *   description: string (optional)
+ * }
+ *
+ * Returns: conversation object with participants populated
  */
-exports.sendMessage = async (req, res) => {
-  // Normalize inputs
-  const groupId = toTrimmedString(req.body.groupId);
-  // Accept "content" (preferred per routes) or fallback to "message"
-  const contentRaw = req.body.content ?? req.body.message;
-  const content = sanitizeText(contentRaw);
-  const attachments = Array.isArray(req.body.attachments) ? req.body.attachments : [];
+exports.createConversation = async (req, res, next) => {
+  try {
+    const userId = ensureAuth(req);
+    const { type, participantIds, name, description } = req.body;
+    const chatService = req.app.locals.chatService;
 
-  if (!groupId || !content) {
-    throw httpError(400, 'Group ID and content are required');
-  }
-  if (content.length < 1 || content.length > 5000) {
-    throw httpError(400, 'Content must be between 1 and 5000 characters');
-  }
-
-  // Ensure user is present (auth middleware should set req.user)
-  const userId = req.user?.id || req.user?._id;
-  if (!userId) {
-    throw httpError(401, 'User authentication required');
-  }
-
-  // Verify group exists
-  const group = await Group.findById(groupId).select('_id members').lean();
-  if (!group) {
-    throw httpError(404, 'Group not found');
-  }
-
-  // If your Group schema has a "members" array, enforce membership
-  const hasMembersField = Group.schema.path('members') !== undefined;
-  if (hasMembersField) {
-    const userIdStr = String(userId);
-    const isMember = Array.isArray(group.members) && group.members.some(m => String(m) === userIdStr);
-    if (!isMember) {
-      throw httpError(403, 'User is not a member of this group');
+    if (!chatService) {
+      return res.status(500).json({ error: 'Chat service not initialized' });
     }
+
+    // Validate
+    if (!type || !['dm', 'group'].includes(type)) {
+      throw httpError(400, 'type must be "dm" or "group"');
+    }
+    if (!Array.isArray(participantIds) || participantIds.length === 0) {
+      throw httpError(400, 'participantIds must be non-empty array');
+    }
+    if (type === 'group' && !name) {
+      throw httpError(400, 'name is required for group conversations');
+    }
+
+    const conversationData = {
+      type,
+      participantIds,
+      name: name || undefined,
+      description: description || undefined,
+    };
+
+    const result = await chatService.createConversation(userId, conversationData);
+
+    logger.info('Conversation created', { conversationId: result._id, type, userId });
+
+    res.status(201).json({
+      message: 'Conversation created successfully',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
   }
-
-  // Prepare the message document
-  const doc = {
-    sender: userId,
-    group: groupId,
-    message: content, // store normalized content in "message" field in DB
-  };
-
-  // Only attach attachments if the schema supports it
-  if (Chat.schema.path('attachments') && attachments.length) {
-    // Optionally validate attachment shape here
-    doc.attachments = attachments;
-  }
-
-  const saved = await new Chat(doc).save();
-
-  // Optionally populate sender minimally; otherwise return saved as-is
-  res.status(201).json({
-    message: 'Message sent successfully',
-    data: saved,
-  });
 };
 
 /**
- * @desc    Get messages for a group (paginated, with optional date range)
- * @route   GET /api/chat/group/:groupId
- * @access  Private
+ * GET /api/chat/conversations
+ * List user's conversations (paginated, sorted by last activity)
  *
- * Query: ?page=1&limit=50&before=<ISO>&after=<ISO>
- * Routes validators ensure basic types; controller builds filter robustly.
+ * Query: ?page=1&limit=20
+ * Returns: array of conversation objects with last message populated
  */
-exports.getGroupMessages = async (req, res) => {
-  const groupId = toTrimmedString(req.params.groupId);
-  if (!groupId) {
-    throw httpError(400, 'groupId is required');
+exports.listConversations = async (req, res, next) => {
+  try {
+    const userId = ensureAuth(req);
+    const chatService = req.app.locals.chatService;
+
+    if (!chatService) {
+      return res.status(500).json({ error: 'Chat service not initialized' });
+    }
+
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(100, Number(req.query.limit) || 20);
+    const skip = (page - 1) * limit;
+
+    const result = await chatService.getUserConversations(userId, { skip, limit });
+
+    res.status(200).json({
+      message: 'Conversations retrieved successfully',
+      data: result,
+      pagination: { page, limit },
+    });
+  } catch (err) {
+    next(err);
   }
-
-  // Verify group exists (cheap guard; avoids querying a non-existent group)
-  const groupExists = await Group.exists({ _id: groupId });
-  if (!groupExists) {
-    throw httpError(404, 'Group not found');
-  }
-
-  const { page, limit, skip } = getPagination(req.query, { max: 200 });
-
-  // Build date range filter
-  const filter = { group: groupId };
-  const createdAtRange = {};
-  const before = req.query.before ? new Date(req.query.before) : null;
-  const after = req.query.after ? new Date(req.query.after) : null;
-
-  if (before && !isNaN(before.getTime())) createdAtRange.$lt = before;
-  if (after && !isNaN(after.getTime())) createdAtRange.$gt = after;
-  if (Object.keys(createdAtRange).length) filter.createdAt = createdAtRange;
-
-  // Projection for performance; adjust to your schema fields
-  const projection = '_id group sender message attachments createdAt';
-
-  const [items, total] = await Promise.all([
-    Chat.find(filter)
-      .select(projection)
-      .populate('sender', 'name email') // optional, as in your original
-      .sort({ createdAt: 1 })           // ascending to match routes
-      .skip(skip)
-      .limit(limit)
-      .lean(),
-    Chat.countDocuments(filter),
-  ]);
-
-  const hasMore = skip + items.length < total;
-
-  res.status(200).json({
-    message: 'Messages retrieved successfully',
-    count: items.length,
-    data: items,
-    page,
-    limit,
-    total,
-    hasMore,
-  });
 };
 
 /**
- * @desc    Get direct messages with a specific user (paginated)
- * @route   GET /api/chat/user/:userId
- * @access  Private
+ * GET /api/chat/conversations/:conversationId/messages
+ * Get messages in a conversation (paginated, newest first)
  *
- * Requires Chat schema to have a "recipient" field for DMs.
+ * Query: ?page=1&limit=50
+ * Returns: message array with sender populated
  */
-exports.getUserMessages = async (req, res) => {
-  const recipientId = toTrimmedString(req.params.userId);
-  const viewerId = req.user?.id || req.user?._id;
+exports.getMessages = async (req, res, next) => {
+  try {
+    const userId = ensureAuth(req);
+    const { conversationId } = req.params;
+    const chatService = req.app.locals.chatService;
 
-  if (!viewerId) {
-    throw httpError(401, 'User authentication required');
+    if (!chatService) {
+      return res.status(500).json({ error: 'Chat service not initialized' });
+    }
+
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(200, Number(req.query.limit) || 50);
+    const skip = (page - 1) * limit;
+
+    // Verify user is participant (via getMessages with auth)
+    const result = await chatService.getMessages(conversationId, userId, {
+      skip,
+      limit,
+    });
+
+    res.status(200).json({
+      message: 'Messages retrieved successfully',
+      data: result.messages,
+      pagination: { page, limit, total: result.total },
+    });
+  } catch (err) {
+    next(err);
   }
-  if (!recipientId) {
-    throw httpError(400, 'userId is required');
-  }
-
-  // If Chat schema does not support DMs, return 501 instead of crashing.
-  const hasRecipient = Chat.schema.path('recipient') !== undefined;
-  if (!hasRecipient) {
-    throw httpError(501, 'Direct messaging is not enabled on this server');
-  }
-
-  const { page, limit, skip } = getPagination(req.query, { max: 200 });
-
-  const filter = {
-    $or: [
-      { sender: viewerId, recipient: recipientId },
-      { sender: recipientId, recipient: viewerId },
-    ],
-  };
-
-  const projection = '_id sender recipient message attachments createdAt';
-
-  const [items, total] = await Promise.all([
-    Chat.find(filter)
-      .select(projection)
-      .sort({ createdAt: -1 }) // newest first for DMs
-      .skip(skip)
-      .limit(limit)
-      .lean(),
-    Chat.countDocuments(filter),
-  ]);
-
-  const hasMore = skip + items.length < total;
-
-  res.status(200).json({
-    message: 'Direct messages retrieved successfully',
-    count: items.length,
-    data: items,
-    page,
-    limit,
-    total,
-    hasMore,
-  });
 };
 
 /**
- * @desc    Delete a specific message by its ID
- * @route   DELETE /api/chat/:messageId
- * @access  Private (Admin/Moderator only via route middleware)
+ * POST /api/chat/conversations/:conversationId/messages
+ * Send a message to a conversation
  *
- * NOTE: Routes already enforce roles via requireRole('admin', 'group_admin').
- * This controller will still gracefully handle common cases.
+ * Body: {
+ *   content: string (1-5000),
+ *   replyTo: messageId (optional),
+ *   attachments: array (optional)
+ * }
+ *
+ * Returns: new message object with sender populated
+ * Emits Socket.IO event: message:new (to conversation room)
  */
-exports.deleteMessage = async (req, res) => {
-  const messageId = toTrimmedString(req.params.messageId);
-  if (!messageId) {
-    throw httpError(400, 'messageId is required');
+exports.sendMessage = async (req, res, next) => {
+  try {
+    const userId = ensureAuth(req);
+    const { conversationId } = req.params;
+    const { content, replyTo, attachments } = req.body;
+    const chatService = req.app.locals.chatService;
+    const io = req.app.locals.io; // Socket.IO instance
+
+    if (!chatService) {
+      return res.status(500).json({ error: 'Chat service not initialized' });
+    }
+
+    // Validate
+    if (!content || typeof content !== 'string') {
+      throw httpError(400, 'content is required and must be string');
+    }
+    if (content.trim().length < 1 || content.length > 5000) {
+      throw httpError(400, 'content must be between 1 and 5000 characters');
+    }
+
+    const messageData = {
+      content: content.trim(),
+      replyTo: replyTo || undefined,
+      attachments: Array.isArray(attachments) ? attachments : [],
+    };
+
+    const result = await chatService.addMessage(conversationId, userId, messageData);
+
+    logger.info('Message sent', {
+      conversationId,
+      messageId: result._id,
+      userId,
+    });
+
+    // Emit Socket.IO event for real-time delivery
+    if (io) {
+      io.to(`conversation:${conversationId}`).emit('message:new', {
+        conversationId,
+        message: result,
+      });
+    }
+
+    res.status(201).json({
+      message: 'Message sent successfully',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
   }
+};
 
-  const msg = await Chat.findById(messageId).select('_id sender group').lean();
-  if (!msg) {
-    throw httpError(404, 'Message not found');
+/**
+ * POST /api/chat/conversations/:conversationId/messages/:messageId/read
+ * Mark a message/messages in conversation as read
+ *
+ * Body: {
+ *   messageIds: [id1, id2, ...] (optional: specific messages; if omitted, marks all unread)
+ * }
+ *
+ * Returns: conversation with updated readBy for marked messages
+ * Emits Socket.IO event: message:read (to conversation room)
+ */
+exports.markAsRead = async (req, res, next) => {
+  try {
+    const userId = ensureAuth(req);
+    const { conversationId, messageId } = req.params;
+    const chatService = req.app.locals.chatService;
+    const io = req.app.locals.io;
+
+    if (!chatService) {
+      return res.status(500).json({ error: 'Chat service not initialized' });
+    }
+
+    // Mark single message or array based on request
+    const target = messageId ? [messageId] : req.body.messageIds || [];
+    if (target.length === 0 && messageId) {
+      target.push(messageId);
+    }
+
+    const result = await chatService.markAsRead(conversationId, userId, target);
+
+    logger.info('Message marked as read', {
+      conversationId,
+      messageCount: target.length,
+      userId,
+    });
+
+    // Emit Socket.IO event
+    if (io) {
+      io.to(`conversation:${conversationId}`).emit('message:read', {
+        conversationId,
+        messageIds: target,
+        userId,
+      });
+    }
+
+    res.status(200).json({
+      message: 'Message(s) marked as read',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
   }
+};
 
-  // If you want to allow owners to delete their own messages (even without admin),
-  // uncomment the ownership check below and make sure your route permits it:
-  //
-  // const viewerId = req.user?.id || req.user?._id;
-  // if (!viewerId) {
-  //   throw httpError(401, 'User authentication required');
-  // }
-  // const isOwner = String(msg.sender) === String(viewerId);
-  // if (!isOwner && !req.user?.roles?.some(r => ['admin', 'group_admin'].includes(r))) {
-  //   throw httpError(403, 'Not authorized to delete this message');
-  // }
+/**
+ * PUT /api/chat/conversations/:conversationId/messages/:messageId
+ * Edit a message (only sender within 15 minutes)
+ *
+ * Body: {
+ *   content: string (1-5000)
+ * }
+ *
+ * Returns: updated message object
+ * Emits Socket.IO event: message:edited (to conversation room)
+ */
+exports.editMessage = async (req, res, next) => {
+  try {
+    const userId = ensureAuth(req);
+    const { conversationId, messageId } = req.params;
+    const { content } = req.body;
+    const chatService = req.app.locals.chatService;
+    const io = req.app.locals.io;
 
-  const deleted = await Chat.findByIdAndDelete(messageId).lean();
-  // findByIdAndDelete returns the deleted doc or null; we already checked existence.
+    if (!chatService) {
+      return res.status(500).json({ error: 'Chat service not initialized' });
+    }
 
-  res.status(200).json({ message: 'Message deleted successfully', data: deleted });
+    // Validate
+    if (!content || typeof content !== 'string') {
+      throw httpError(400, 'content is required and must be string');
+    }
+    if (content.trim().length < 1 || content.length > 5000) {
+      throw httpError(400, 'content must be between 1 and 5000 characters');
+    }
+
+    const result = await chatService.editMessage(conversationId, messageId, userId, {
+      content: content.trim(),
+    });
+
+    logger.info('Message edited', {
+      conversationId,
+      messageId,
+      userId,
+    });
+
+    // Emit Socket.IO event
+    if (io) {
+      io.to(`conversation:${conversationId}`).emit('message:edited', {
+        conversationId,
+        messageId,
+        message: result,
+      });
+    }
+
+    res.status(200).json({
+      message: 'Message edited successfully',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * DELETE /api/chat/conversations/:conversationId/messages/:messageId
+ * Delete a message (soft delete with deletedBy tracking)
+ *
+ * Returns: deleted message object (with deletedAt, deletedBy)
+ * Emits Socket.IO event: message:deleted (to conversation room)
+ */
+exports.deleteMessage = async (req, res, next) => {
+  try {
+    const userId = ensureAuth(req);
+    const { conversationId, messageId } = req.params;
+    const chatService = req.app.locals.chatService;
+    const io = req.app.locals.io;
+
+    if (!chatService) {
+      return res.status(500).json({ error: 'Chat service not initialized' });
+    }
+
+    const result = await chatService.deleteMessage(conversationId, messageId, userId);
+
+    logger.info('Message deleted', {
+      conversationId,
+      messageId,
+      userId,
+    });
+
+    // Emit Socket.IO event
+    if (io) {
+      io.to(`conversation:${conversationId}`).emit('message:deleted', {
+        conversationId,
+        messageId,
+      });
+    }
+
+    res.status(200).json({
+      message: 'Message deleted successfully',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * POST /api/chat/conversations/:conversationId/archive
+ * Archive a conversation (soft delete for user)
+ *
+ * Returns: archived conversation object
+ */
+exports.archiveConversation = async (req, res, next) => {
+  try {
+    const userId = ensureAuth(req);
+    const { conversationId } = req.params;
+    const chatService = req.app.locals.chatService;
+
+    if (!chatService) {
+      return res.status(500).json({ error: 'Chat service not initialized' });
+    }
+
+    const result = await chatService.archiveConversation(conversationId, userId);
+
+    logger.info('Conversation archived', {
+      conversationId,
+      userId,
+    });
+
+    res.status(200).json({
+      message: 'Conversation archived successfully',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * GET /api/chat/unread
+ * Get unread message count per conversation
+ *
+ * Returns: array of { conversationId, unreadCount }
+ */
+exports.getUnreadCount = async (req, res, next) => {
+  try {
+    const userId = ensureAuth(req);
+    const chatService = req.app.locals.chatService;
+
+    if (!chatService) {
+      return res.status(500).json({ error: 'Chat service not initialized' });
+    }
+
+    const result = await chatService.getUnreadCount(userId);
+
+    res.status(200).json({
+      message: 'Unread counts retrieved successfully',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * GET /api/chat/conversations/:conversationId/search
+ * Search messages in a conversation
+ *
+ * Query: ?q=search_term&page=1&limit=50
+ * Returns: matching messages with sender populated
+ */
+exports.searchMessages = async (req, res, next) => {
+  try {
+    const userId = ensureAuth(req);
+    const { conversationId } = req.params;
+    const { q } = req.query;
+    const chatService = req.app.locals.chatService;
+
+    if (!chatService) {
+      return res.status(500).json({ error: 'Chat service not initialized' });
+    }
+
+    if (!q || typeof q !== 'string' || q.trim().length === 0) {
+      throw httpError(400, 'q (search query) is required');
+    }
+
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(200, Number(req.query.limit) || 50);
+    const skip = (page - 1) * limit;
+
+    const result = await chatService.searchMessages(
+      conversationId,
+      userId,
+      q.trim(),
+      { skip, limit }
+    );
+
+    res.status(200).json({
+      message: 'Search results retrieved successfully',
+      data: result.messages,
+      pagination: { page, limit, total: result.total },
+    });
+  } catch (err) {
+    next(err);
+  }
 };

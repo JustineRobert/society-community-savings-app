@@ -1,254 +1,183 @@
-
-// routes/loans.js
+/**
+ * routes/loans.js
+ *
+ * Loan management API routes.
+ *
+ * Public routes:
+ * - POST /api/loans - Create loan application
+ * - GET /api/loans - List user's loans
+ * - GET /api/loans/:loanId - Get loan details
+ * - GET /api/loans/:loanId/schedule - Get repayment schedule
+ * - GET /api/loans/:loanId/summary - Get loan summary
+ * - POST /api/loans/:loanId/repayment - Record repayment
+ *
+ * Admin routes (require admin role):
+ * - POST /api/loans/:loanId/approve - Approve loan
+ * - POST /api/loans/:loanId/reject - Reject loan
+ * - POST /api/loans/:loanId/disburse - Disburse loan
+ */
 
 const express = require('express');
 const router = express.Router();
-const asyncHandler = require('../utils/asyncHandler');
-
 const { body, param, query } = require('express-validator');
 const { handleValidation } = require('../utils/validators');
-
-const {
-  checkEligibility,
-  requestLoan,
-  applyForLoan,
-  approveLoan,
-  rejectLoan,
-  disburseLoan,
-  repayLoan,
-  getLoanStatus,
-  getUserLoans,
-  getGroupLoans,
-  getLoanSchedule,
-  updateLoansInBatch,
-  getGroupLoanStatistics,
-} = require('../controllers/loanController');
-
-const { verifyToken, requireRole } = require('../middleware/auth');
+const auth = require('../middleware/auth');
+const loanController = require('../controllers/loanController');
 
 /**
- * @route   GET /api/loans/eligibility/:groupId
- * @desc    Check loan eligibility for a group
- * @access  Private (Authenticated Users)
+ * All routes require authentication
  */
-router.get(
-  '/eligibility/:groupId',
-  verifyToken,
-  [param('groupId').isString().trim().notEmpty()],
-  handleValidation,
-  asyncHandler(checkEligibility)
-);
+router.use(auth.verifyToken);
 
 /**
- * @route   POST /api/loans/request
- * @desc    Submit a loan request
- * @access  Private (Authenticated Users)
- * @body    { groupId: string, amount: number, reason?: string, repaymentTermMonths?: number, idempotencyKey?: string }
- */
-router.post(
-  '/request',
-  verifyToken,
-  [
-    body('groupId').isString().trim().notEmpty().withMessage('Group ID is required'),
-    body('amount').isFloat({ gt: 0 }).withMessage('Amount must be greater than 0'),
-    body('reason').optional().isString().trim().isLength({ max: 500 }),
-    body('repaymentTermMonths').optional().isInt({ min: 1, max: 60 }),
-    body('idempotencyKey').optional().isString().trim(),
-  ],
-  handleValidation,
-  asyncHandler(requestLoan)
-);
-
-/**
- * @route   POST /api/loans
- * @desc    Alternative endpoint to submit a loan request
- * @access  Private (Authenticated Users)
- * @body    { groupId: string, amount: number, reason?: string, termMonths?: number }
+ * POST /api/loans
+ * Create a new loan application
+ *
+ * Body: {
+ *   amount: number (required),
+ *   duration: number (months, required),
+ *   interestRate: number (optional),
+ *   purpose: string (optional),
+ *   description: string (optional)
+ * }
  */
 router.post(
   '/',
-  verifyToken,
   [
-    body('groupId').isString().trim().notEmpty(),
-    body('amount').isFloat({ gt: 0 }).withMessage('amount must be > 0'),
-    body('reason').optional().isString().trim().isLength({ max: 2000 }),
-    body('termMonths').optional().isInt({ min: 1, max: 360 }).withMessage('termMonths must be 1-360'),
+    body('amount').isNumeric().custom((val) => val > 0).withMessage('amount must be positive'),
+    body('duration')
+      .isInt({ min: 1, max: 360 })
+      .withMessage('duration must be between 1 and 360 months'),
+    body('interestRate').optional().isNumeric().withMessage('interestRate must be numeric'),
+    body('purpose').optional().isString().trim(),
+    body('description').optional().isString().trim(),
   ],
   handleValidation,
-  asyncHandler(applyForLoan)
+  loanController.createLoanApplication
 );
 
 /**
- * @route   GET /api/loans/:loanId
- * @desc    Retrieve loan details and status
- * @access  Private (Loan owner or Admin)
+ * GET /api/loans
+ * List user's loans (or all if admin)
+ *
+ * Query: ?page=1&limit=20&status=active&sortBy=createdAt
  */
 router.get(
-  '/:loanId',
-  verifyToken,
-  [param('loanId').isString().trim().notEmpty()],
+  '/',
+  [
+    query('page').optional().isInt({ min: 1 }).withMessage('page must be positive'),
+    query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('limit must be 1-100'),
+    query('status').optional().isString(),
+    query('sortBy').optional().isString(),
+    query('sortOrder').optional().isIn(['asc', 'desc']),
+  ],
   handleValidation,
-  asyncHandler(getLoanStatus)
+  loanController.listLoans
 );
 
 /**
- * @route   GET /api/loans/:loanId/schedule
- * @desc    Retrieve loan repayment schedule and progress
- * @access  Private (Loan owner or Admin)
+ * GET /api/loans/:loanId/summary
+ * Get loan summary (must come before :loanId routes for proper matching)
+ */
+router.get('/:loanId/summary', loanController.getLoanSummary);
+
+/**
+ * GET /api/loans/:loanId/schedule
+ * Get repayment schedule for a loan
+ *
+ * Query: ?page=1&limit=50&status=pending
  */
 router.get(
   '/:loanId/schedule',
-  verifyToken,
-  [param('loanId').isString().trim().notEmpty()],
-  handleValidation,
-  asyncHandler(getLoanSchedule)
-);
-
-/**
- * @route   GET /api/loans/user/all
- * @desc    Retrieve all loans for authenticated user (paginated)
- * @access  Private (Authenticated Users)
- * @query   ?page=1&limit=50&status=pending|approved|rejected|disbursed|repaid
- */
-router.get(
-  '/user/all',
-  verifyToken,
   [
-    query('page').optional().toInt().isInt({ min: 1 }),
-    query('limit').optional().toInt().isInt({ min: 1, max: 200 }),
-    query('status').optional().isIn(['pending', 'approved', 'rejected', 'disbursed', 'repaid']),
+    query('page').optional().isInt({ min: 1 }).withMessage('page must be positive'),
+    query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('limit must be 1-100'),
+    query('status').optional().isString(),
   ],
   handleValidation,
-  asyncHandler(getUserLoans)
+  loanController.getRepaymentSchedule
 );
 
 /**
- * @route   PATCH /api/loans/:loanId/approve
- * @desc    Approve a pending loan
- * @access  Private (Admin/Group Admin only)
- * @body    { interestRate: number, repaymentPeriodMonths: number, notes?: string }
+ * GET /api/loans/:loanId
+ * Get loan details
  */
-router.patch(
-  '/:loanId/approve',
-  verifyToken,
-  requireRole('admin', 'group_admin'),
-  [
-    param('loanId').isString().trim().notEmpty(),
-    body('interestRate').optional().isFloat({ min: 0, max: 100 }),
-    body('repaymentPeriodMonths').optional().isInt({ min: 1, max: 60 }),
-    body('notes').optional().isString().trim(),
-  ],
-  handleValidation,
-  asyncHandler(approveLoan)
-);
+router.get('/:loanId', loanController.getLoanDetail);
 
 /**
- * @route   PATCH /api/loans/:loanId/reject
- * @desc    Reject a pending loan
- * @access  Private (Admin/Group Admin only)
- * @body    { reason: string }
- */
-router.patch(
-  '/:loanId/reject',
-  verifyToken,
-  requireRole('admin', 'group_admin'),
-  [
-    param('loanId').isString().trim().notEmpty(),
-    body('reason').isString().trim().notEmpty().withMessage('Rejection reason is required'),
-  ],
-  handleValidation,
-  asyncHandler(rejectLoan)
-);
-
-/**
- * @route   PATCH /api/loans/:loanId/disburse
- * @desc    Disburse an approved loan
- * @access  Private (Admin/Group Admin only)
- * @body    { paymentMethod?: string, notes?: string }
- */
-router.patch(
-  '/:loanId/disburse',
-  verifyToken,
-  requireRole('admin', 'group_admin'),
-  [
-    param('loanId').isString().trim().notEmpty(),
-    body('paymentMethod').optional().isString().trim(),
-    body('notes').optional().isString().trim(),
-  ],
-  handleValidation,
-  asyncHandler(disburseLoan)
-);
-
-/**
- * @route   POST /api/loans/:loanId/repay
- * @desc    Record a loan repayment
- * @access  Private (Admin or Loan owner)
- * @body    { amount: number, paymentMethod?: string, notes?: string }
+ * POST /api/loans/:loanId/approve
+ * Approve a loan (admin only)
+ *
+ * Body: {
+ *   notes: string (optional)
+ * }
  */
 router.post(
-  '/:loanId/repay',
-  verifyToken,
+  '/:loanId/approve',
   [
-    param('loanId').isString().trim().notEmpty(),
-    body('amount').isFloat({ gt: 0 }).withMessage('Amount must be greater than 0'),
-    body('paymentMethod').optional().isString().trim(),
+    param('loanId').isMongoId().withMessage('Invalid loan ID'),
     body('notes').optional().isString().trim(),
   ],
   handleValidation,
-  asyncHandler(repayLoan)
+  loanController.approveLoan
 );
 
 /**
- * @route   GET /api/loans/group/:groupId
- * @desc    Retrieve all loans within a specific group (paginated, admin only)
- * @access  Private (Admin/Group Admin only)
- * @query   ?page=1&limit=50&status=pending|approved|rejected
+ * POST /api/loans/:loanId/reject
+ * Reject a loan (admin only)
+ *
+ * Body: {
+ *   reason: string (required)
+ * }
  */
-router.get(
-  '/group/:groupId',
-  verifyToken,
-  requireRole('admin', 'group_admin'),
+router.post(
+  '/:loanId/reject',
   [
-    param('groupId').isString().trim().notEmpty(),
-    query('page').optional().toInt().isInt({ min: 1 }),
-    query('limit').optional().toInt().isInt({ min: 1, max: 200 }),
-    query('status').optional().isIn(['pending', 'approved', 'rejected', 'disbursed', 'repaid']),
+    param('loanId').isMongoId().withMessage('Invalid loan ID'),
+    body('reason').notEmpty().isString().trim().withMessage('reason is required'),
   ],
   handleValidation,
-  asyncHandler(getGroupLoans)
+  loanController.rejectLoan
 );
 
 /**
- * @route   GET /api/loans/group/:groupId/statistics
- * @desc    Get loan statistics for a group
- * @access  Private (Admin/Group Admin only)
+ * POST /api/loans/:loanId/disburse
+ * Disburse a loan (admin only)
+ *
+ * Body: {
+ *   notes: string (optional)
+ * }
  */
-router.get(
-  '/group/:groupId/statistics',
-  verifyToken,
-  requireRole('admin', 'group_admin'),
-  [param('groupId').isString().trim().notEmpty()],
-  handleValidation,
-  asyncHandler(getGroupLoanStatistics)
-);
-
-/**
- * @route   PATCH /api/loans/batch
- * @desc    Batch update loan statuses
- * @access  Private (Admin only)
- * @body    { loanIds: string[], newStatus: string, reason?: string }
- */
-router.patch(
-  '/batch',
-  verifyToken,
-  requireRole('admin'),
+router.post(
+  '/:loanId/disburse',
   [
-    body('loanIds').isArray({ min: 1 }).withMessage('Must provide at least one loan ID'),
-    body('newStatus').isIn(['approved', 'rejected', 'cancelled']),
-    body('reason').optional().isString().trim(),
+    param('loanId').isMongoId().withMessage('Invalid loan ID'),
+    body('notes').optional().isString().trim(),
   ],
   handleValidation,
-  asyncHandler(updateLoansInBatch)
+  loanController.disburseLoan
+);
+
+/**
+ * POST /api/loans/:loanId/repayment
+ * Record a repayment for a loan
+ *
+ * Body: {
+ *   amount: number (required),
+ *   method: string (optional),
+ *   reference: string (optional)
+ * }
+ */
+router.post(
+  '/:loanId/repayment',
+  [
+    param('loanId').isMongoId().withMessage('Invalid loan ID'),
+    body('amount').isNumeric().custom((val) => val > 0).withMessage('amount must be positive'),
+    body('method').optional().isString().trim(),
+    body('reference').optional().isString().trim(),
+  ],
+  handleValidation,
+  loanController.recordRepayment
 );
 
 module.exports = router;

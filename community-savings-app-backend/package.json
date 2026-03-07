@@ -4,7 +4,7 @@
   "description": "Backend for Community Savings App by TITech Africa",
   "main": "server.js",
   "scripts": {
-    "start": "node --max-old-space-size=4096 app.js",
+    "start": "node --max-old-space-size=4096 server.js",
     "dev": "nodemon --exec \"node --max-old-space-size=4096\" server.js",
     "seed-admin": "node scripts/seed-admin.js",
     "migrate": "node scripts/migrate.js up",
@@ -47,7 +47,12 @@
     "validator": "^13.11.0",
     "winston": "^3.18.3",
     "winston-daily-rotate-file": "^5.0.0",
-    "xss-clean": "^0.1.4"
+    "xss-clean": "^0.1.4",
+    "socket.io": "^4.7.0",
+    "redis": "^4.6.0",
+    "bull": "^4.11.5",
+    "rate-limiter-flexible": "^3.0.8",
+    "crypto": "^1.0.1"
   },
   "devDependencies": {
     "jest": "^29.7.0",
@@ -56,6 +61,9 @@
     "supertest": "^6.3.3",
     "nodemon": "^3.1.11",
     "ts-node": "^10.9.2",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "nock": "^13.4.0",
+    "jest-mock": "^29.7.0",
+    "mongodb-memory-server": "^9.1.6"
   }
 }

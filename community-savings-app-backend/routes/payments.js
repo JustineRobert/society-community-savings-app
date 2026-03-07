@@ -84,14 +84,14 @@ router.post(
   verifyToken,
   validatePaymentInput,
   handleValidationErrors,
-  paymentController.initiatePayment
+  paymentController.createPaymentIntent
 );
 
 /**
  * GET /api/payments/:transactionId/status
  * Check payment status
  */
-router.get('/status/:transactionId', verifyToken, paymentController.checkPaymentStatus);
+router.get('/status/:transactionId', verifyToken, paymentController.getPaymentIntent);
 
 /**
  * POST /api/payments/:transactionId/refund
@@ -113,7 +113,7 @@ router.post(
     .withMessage('Refund reason must be between 10 and 500 characters'),
 
   handleValidationErrors,
-  paymentController.requestRefund
+  paymentController.cancelPaymentIntent
 );
 
 /**
@@ -128,13 +128,13 @@ router.get(
   query('skip').optional().isInt({ min: 0 }).toInt(),
   query('limit').optional().isInt({ min: 1, max: 100 }).toInt(),
   handleValidationErrors,
-  paymentController.getPaymentHistory
+  paymentController.listTransactions
 );
 
 /**
  * GET /api/payments/:transactionId
  * Get payment details
  */
-router.get('/:transactionId', verifyToken, paymentController.getPaymentDetails);
+router.get('/:transactionId', verifyToken, paymentController.getPaymentIntent);
 
 module.exports = router;

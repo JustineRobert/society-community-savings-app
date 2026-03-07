@@ -1,419 +1,367 @@
-// controllers/paymentController.js
-// ============================================================================
-// Payment Controller - Handle Mobile Money Transactions
-// - Manage payment initiation, status checks, and refunds
-// - Secure transaction processing with audit logging
-// ============================================================================
+/**
+ * Payment Controller
+ * Handles payment intent creation, webhook processing, and transaction queries
+ * Validates input, calls PaymentService, returns appropriate HTTP responses
+ * Supports multiple providers: Stripe, Mobile Money, etc.
+ */
 
-const asyncHandler = require('../utils/asyncHandler');
-const mobileMoneyService = require('../services/mobileMoneyService');
-const Payment = require('../models/Payment');
 const logger = require('../utils/logger');
-const crypto = require('crypto');
 
 /**
- * POST /api/payments/initiate
- * Initiate a new mobile money payment
+ * POST /api/payments/intents
+ * Create a new payment intent
+ * Body: { amount, currency, provider, description, customerEmail, metadata }
  */
-const initiatePayment = asyncHandler(async (req, res) => {
-  const { phoneNumber, amount, currency, provider, groupId, contributionId, description } =
-    req.body;
-
-  // Validation
-  if (!phoneNumber || !amount || !provider) {
-    return res.status(400).json({
-      message: 'Missing required fields: phoneNumber, amount, provider',
-    });
-  }
-
-  if (!['MTN_MOMO', 'AIRTEL_MONEY'].includes(provider)) {
-    return res.status(400).json({
-      message: 'Unsupported payment provider. Use MTN_MOMO or AIRTEL_MONEY',
-    });
-  }
-
-  if (amount < 100 || amount > 500000) {
-    return res.status(400).json({
-      message: 'Payment amount must be between 100 and 500,000',
-    });
-  }
-
+async function createPaymentIntent(req, res) {
   try {
-    // Create transaction ID and idempotency key
-    const transactionId = `TXN-${Date.now()}-${crypto.randomBytes(8).toString('hex')}`;
-    const idempotencyKey = req.headers['idempotency-key'] || transactionId;
+    const { amount, currency = 'usd', provider = 'stripe', description, customerEmail, metadata = {} } = req.body;
+    const userId = req.user._id;
 
-    // Check for duplicate request (idempotency)
-    const existingPayment = await Payment.findOne({
-      userId: req.user._id,
+    // Input validation
+    if (!amount || amount <= 0) {
+      return res.status(400).json({
+        error: 'Invalid amount. Must be greater than 0.',
+      });
+    }
+
+    if (!provider) {
+      return res.status(400).json({
+        error: 'Provider is required (stripe, mobileMoney, etc)',
+      });
+    }
+
+    // Generate idempotency key from request
+    const idempotencyKey = req.headers['idempotency-key'] || `${userId}-${Date.now()}`;
+
+    logger.info('[PaymentController] Creating payment intent', {
+      userId,
+      amount,
+      provider,
       idempotencyKey,
-      status: { $in: ['PENDING', 'PROCESSING', 'COMPLETED'] },
     });
 
-    if (existingPayment) {
-      logger.warn('Duplicate payment request detected', {
-        userId: req.user._id,
-        idempotencyKey,
-      });
-      return res.status(409).json({
-        message: 'Duplicate payment request',
-        transactionId: existingPayment.transactionId,
-        status: existingPayment.status,
-      });
-    }
-
-    // Prepare metadata
-    const metadata = {
-      description: description || 'Community Savings Contribution',
-      deviceId: req.headers['x-device-id'],
-      ipAddress: req.ip,
-      userAgent: req.get('user-agent'),
-    };
-
-    // Call appropriate provider service
-    let paymentData;
-
-    if (provider === 'MTN_MOMO') {
-      paymentData = await mobileMoneyService.initiateMTNPayment(
-        phoneNumber,
-        amount,
-        currency,
-        idempotencyKey,
-        metadata
-      );
-    } else if (provider === 'AIRTEL_MONEY') {
-      paymentData = await mobileMoneyService.initiateAirtelPayment(
-        phoneNumber,
-        amount,
-        currency,
-        idempotencyKey,
-        metadata
-      );
-    }
-
-    // Store payment record in database
-    const payment = new Payment({
-      transactionId: paymentData.transactionId,
-      userId: req.user._id,
-      groupId,
-      contributionId,
+    const paymentIntent = await req.app.locals.paymentService.createPaymentIntent({
+      userId,
       amount,
       currency,
       provider,
-      phoneNumber,
-      status: 'PENDING',
-      providerReference: paymentData.providerReference,
+      description,
+      customerEmail: customerEmail || req.user.email,
       metadata,
       idempotencyKey,
     });
 
-    await payment.save();
-
-    logger.info('Payment initiated successfully', {
-      transactionId: payment.transactionId,
-      provider,
-      amount,
-      userId: req.user._id,
-    });
-
-    res.status(201).json({
-      message: 'Payment initiated successfully',
-      transactionId: payment.transactionId,
-      status: payment.status,
-      provider,
-      amount,
-      currency,
-      phoneNumber: mobileMoneyService.maskPhoneNumber(phoneNumber),
-      providerReference: paymentData.providerReference,
+    // Return response with client data
+    return res.status(201).json({
+      success: true,
+      data: {
+        paymentIntentId: paymentIntent._id,
+        provider: paymentIntent.provider,
+        amount: paymentIntent.amount,
+        currency: paymentIntent.currency,
+        status: paymentIntent.status,
+        clientData: paymentIntent.clientData,
+        createdAt: paymentIntent.createdAt,
+      },
     });
   } catch (error) {
-    logger.error('Payment initiation error', {
+    logger.error('[PaymentController] Error creating payment intent', {
       error: error.message,
-      provider,
-      userId: req.user._id,
-      amount,
+      userId: req.user?._id,
     });
 
-    res.status(400).json({
-      message: error.message || 'Failed to initiate payment',
+    return res.status(500).json({
+      error: 'Failed to create payment intent',
+      message: error.message,
     });
   }
-});
+}
 
 /**
- * POST /api/payments/:transactionId/status
- * Check payment status
+ * GET /api/payments/intents/:id
+ * Get payment intent status
+ * Query: ?refresh=true (optional, to sync with provider)
  */
-const checkPaymentStatus = asyncHandler(async (req, res) => {
-  const { transactionId } = req.params;
-
+async function getPaymentIntent(req, res) {
   try {
-    // Get payment record
-    const payment = await Payment.findOne({ transactionId });
+    const { id } = req.params;
+    const { refresh } = req.query;
+    const userId = req.user._id;
 
-    if (!payment) {
-      return res.status(404).json({
-        message: 'Payment not found',
-      });
-    }
+    logger.info('[PaymentController] Fetching payment intent', {
+      paymentIntentId: id,
+      userId,
+      refresh: refresh === 'true',
+    });
 
-    // Verify ownership
-    if (payment.userId.toString() !== req.user._id.toString()) {
+    const paymentIntent = await req.app.locals.paymentService.getPaymentIntent(
+      id,
+      refresh === 'true'
+    );
+
+    // Verify user owns this intent
+    if (paymentIntent.user?.toString() !== userId.toString()) {
       return res.status(403).json({
-        message: 'Unauthorized to access this payment',
+        error: 'Access denied. You do not own this payment intent.',
       });
     }
 
-    // If already completed or failed, return cached status
-    if (['COMPLETED', 'FAILED', 'CANCELLED', 'REFUNDED'].includes(payment.status)) {
+    return res.status(200).json({
+      success: true,
+      data: paymentIntent,
+    });
+  } catch (error) {
+    logger.error('[PaymentController] Error getting payment intent', {
+      error: error.message,
+      paymentIntentId: req.params.id,
+    });
+
+    if (error.message.includes('not found')) {
+      return res.status(404).json({ error: 'Payment intent not found' });
+    }
+
+    return res.status(500).json({
+      error: 'Failed to retrieve payment intent',
+      message: error.message,
+    });
+  }
+}
+
+/**
+ * POST /api/payments/webhooks/:provider
+ * Handle webhook events from payment provider
+ * Signature verification must pass before processing
+ * Body: Raw webhook payload (raw body middleware required)
+ */
+async function handleWebhook(req, res) {
+  try {
+    const { provider } = req.params;
+    const rawBody = req.rawBody; // Must be provided by middleware
+    const headers = req.headers;
+
+    logger.info('[PaymentController] Received webhook', {
+      provider,
+      eventType: req.body?.type,
+    });
+
+    // Verify webhook signature
+    const adapter = req.app.locals.paymentService.providers[provider];
+    if (!adapter) {
+      logger.warn('[PaymentController] Unknown provider in webhook', { provider });
+      return res.status(400).json({ error: 'Unknown provider' });
+    }
+
+    const isValid = adapter.verifyWebhook(rawBody, headers);
+    if (!isValid) {
+      logger.warn('[PaymentController] Webhook signature verification failed', {
+        provider,
+      });
+      return res.status(401).json({ error: 'Invalid webhook signature' });
+    }
+
+    // Process webhook event
+    const result = await req.app.locals.paymentService.handleProviderEvent(provider, req.body);
+
+    if (!result.success) {
+      logger.warn('[PaymentController] Webhook processing failed', {
+        provider,
+        reason: result.reason,
+      });
+      // Return 200 to acknowledge receipt even if processing failed
+      // Provider will retry on other errors
       return res.status(200).json({
-        transactionId: payment.transactionId,
-        status: payment.status,
-        amount: payment.amount,
-        currency: payment.currency,
-        confirmedAt: payment.confirmedAt,
-        failedAt: payment.failedAt,
-        error: payment.error,
+        acknowledged: true,
+        processed: false,
+        reason: result.reason,
       });
     }
 
-    // Check status with provider
-    let providerStatus;
+    logger.info('[PaymentController] Webhook processed successfully', {
+      provider,
+      paymentIntentId: result.paymentIntentId,
+      status: result.status,
+    });
 
-    try {
-      if (payment.provider === 'MTN_MOMO') {
-        providerStatus = await mobileMoneyService.checkMTNTransactionStatus(
-          payment.providerReference
-        );
-      } else if (payment.provider === 'AIRTEL_MONEY') {
-        providerStatus = await mobileMoneyService.checkAirtelTransactionStatus(
-          payment.providerReference
-        );
-      }
-
-      // Update payment status if changed
-      if (providerStatus.status === 'COMPLETED' && payment.status !== 'COMPLETED') {
-        await payment.markCompleted(payment.providerReference, providerStatus.providerStatus);
-        logger.info('Payment confirmed', {
-          transactionId,
-          provider: payment.provider,
-        });
-      } else if (providerStatus.status === 'FAILED' && payment.status !== 'FAILED') {
-        await payment.markFailed(
-          'PROVIDER_FAILED',
-          providerStatus.reason || 'Payment failed at provider',
-          {
-            providerStatus: providerStatus.providerStatus,
-          }
-        );
-      }
-    } catch (checkError) {
-      logger.warn('Could not verify payment with provider, using cached status', {
-        transactionId,
-        error: checkError.message,
-      });
-    }
-
-    res.status(200).json({
-      transactionId: payment.transactionId,
-      status: payment.status,
-      amount: payment.amount,
-      currency: payment.currency,
-      provider: payment.provider,
-      phoneNumber: mobileMoneyService.maskPhoneNumber(payment.phoneNumber),
-      initiatedAt: payment.initiatedAt,
-      confirmedAt: payment.confirmedAt,
-      failedAt: payment.failedAt,
-      error: payment.error,
-      providerReference: payment.providerReference,
+    return res.status(200).json({
+      acknowledged: true,
+      processed: true,
+      paymentIntentId: result.paymentIntentId,
+      status: result.status,
     });
   } catch (error) {
-    logger.error('Error checking payment status', {
-      transactionId,
+    logger.error('[PaymentController] Error processing webhook', {
+      error: error.message,
+      provider: req.params.provider,
+    });
+
+    // Return 200 to prevent provider from resending
+    return res.status(200).json({
+      acknowledged: true,
+      processed: false,
       error: error.message,
     });
-
-    res.status(500).json({
-      message: 'Failed to check payment status',
-    });
   }
-});
+}
 
 /**
- * POST /api/payments/:transactionId/refund
- * Request refund for a payment
+ * POST /api/payments/:id/cancel
+ * Cancel a payment intent
  */
-const requestRefund = asyncHandler(async (req, res) => {
-  const { transactionId } = req.params;
-  const { refundAmount, refundReason } = req.body;
-
+async function cancelPaymentIntent(req, res) {
   try {
-    const payment = await Payment.findOne({ transactionId });
+    const { id } = req.params;
+    const userId = req.user._id;
 
-    if (!payment) {
-      return res.status(404).json({
-        message: 'Payment not found',
-      });
-    }
+    logger.info('[PaymentController] Cancelling payment intent', {
+      paymentIntentId: id,
+      userId,
+    });
+
+    const paymentIntent = await req.app.locals.paymentService.cancelPaymentIntent(id);
 
     // Verify ownership
-    if (payment.userId.toString() !== req.user._id.toString()) {
+    if (paymentIntent.user.toString() !== userId.toString()) {
       return res.status(403).json({
-        message: 'Unauthorized to request refund',
+        error: 'Access denied. You do not own this payment intent.',
       });
     }
 
-    if (payment.status !== 'COMPLETED') {
+    // Check if cancellable (can't cancel if already completed)
+    if (['succeeded', 'failed'].includes(paymentIntent.status)) {
       return res.status(400).json({
-        message: 'Only completed payments can be refunded',
+        error: `Cannot cancel payment intent with status '${paymentIntent.status}'`,
       });
     }
 
-    const refundAmt = refundAmount || payment.amount;
+    return res.status(200).json({
+      success: true,
+      data: {
+        paymentIntentId: id,
+        status: paymentIntent.status,
+        message: 'Payment intent cancelled',
+      },
+    });
+  } catch (error) {
+    logger.error('[PaymentController] Error cancelling payment intent', {
+      error: error.message,
+      paymentIntentId: req.params.id,
+    });
 
-    if (refundAmt > payment.amount) {
-      return res.status(400).json({
-        message: 'Refund amount cannot exceed original payment',
-      });
-    }
+    return res.status(500).json({
+      error: 'Failed to cancel payment intent',
+      message: error.message,
+    });
+  }
+}
 
-    // Process refund with provider
-    let refundResult;
+/**
+ * GET /api/payments/transactions
+ * List user transactions
+ * Query: ?limit=20&skip=0&status=completed&startDate=2024-01-01&endDate=2024-12-31
+ */
+async function listTransactions(req, res) {
+  try {
+    const userId = req.user._id;
+    const { limit = '20', skip = '0', status, startDate, endDate } = req.query;
 
-    try {
-      if (payment.provider === 'MTN_MOMO') {
-        refundResult = await mobileMoneyService.refundMTNPayment(
-          transactionId,
-          refundAmt,
-          refundReason
-        );
-      } else if (payment.provider === 'AIRTEL_MONEY') {
-        refundResult = await mobileMoneyService.refundAirtelPayment(
-          transactionId,
-          refundAmt,
-          refundReason
-        );
-      }
-    } catch (refundError) {
-      logger.error('Provider refund failed', {
-        transactionId,
-        error: refundError.message,
-      });
+    logger.info('[PaymentController] Listing transactions', {
+      userId,
+      limit: parseInt(limit),
+      skip: parseInt(skip),
+    });
 
-      return res.status(400).json({
-        message: `Refund failed: ${refundError.message}`,
-      });
-    }
+    const result = await req.app.locals.paymentService.listTransactions(userId, {
+      limit: Math.min(parseInt(limit), 100), // Max 100 per page
+      skip: parseInt(skip),
+      status: status || null,
+      startDate: startDate ? new Date(startDate) : null,
+      endDate: endDate ? new Date(endDate) : null,
+    });
 
-    // Update payment record
-    await payment.refund(refundAmt, refundReason);
-
-    logger.info('Refund processed', {
-      transactionId,
-      refundAmount: refundAmt,
-      provider: payment.provider,
+    return res.status(200).json({
+      success: true,
+      data: result.transactions,
+      pagination: {
+        total: result.total,
+        limit: result.limit,
+        skip: result.skip,
+        pages: result.pages,
+        currentPage: result.currentPage,
+      },
+    });
+  } catch (error) {
+    logger.error('[PaymentController] Error listing transactions', {
+      error: error.message,
       userId: req.user._id,
     });
 
-    res.status(200).json({
-      message: 'Refund processed successfully',
-      transactionId,
-      refundId: refundResult.refundId,
-      refundAmount: refundAmt,
-      status: 'REFUNDED',
-      refundReason,
+    return res.status(500).json({
+      error: 'Failed to retrieve transactions',
+      message: error.message,
+    });
+  }
+}
+
+/**
+ * GET /api/payments/analytics/summary
+ * Admin endpoint: Payment analytics summary
+ */
+async function getPaymentAnalytics(req, res) {
+  try {
+    const { startDate, endDate } = req.query;
+    const userId = req.user._id;
+
+    logger.info('[PaymentController] Fetching payment analytics', { userId });
+
+    const query = {};
+    if (startDate || endDate) {
+      query.createdAt = {};
+      if (startDate) query.createdAt.$gte = new Date(startDate);
+      if (endDate) query.createdAt.$lte = new Date(endDate);
+    }
+
+    const Transaction = require('../models/Transaction');
+
+    const [totalTransactions, successfulPayments, totalAmount, averageAmount] = await Promise.all([
+      Transaction.countDocuments(query),
+      Transaction.countDocuments({ ...query, status: 'completed', type: 'credit' }),
+      Transaction.aggregate([
+        { $match: { ...query, type: 'credit' } },
+        { $group: { _id: null, total: { $sum: '$amount' } } },
+      ]),
+      Transaction.aggregate([
+        { $match: { ...query, type: 'credit' } },
+        { $group: { _id: null, avg: { $avg: '$amount' } } },
+      ]),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        totalTransactions,
+        successfulPayments,
+        totalAmount: totalAmount[0]?.total || 0,
+        averageAmount: averageAmount[0]?.avg || 0,
+        successRate: totalTransactions > 0 ? ((successfulPayments / totalTransactions) * 100).toFixed(2) + '%' : '0%',
+      },
     });
   } catch (error) {
-    logger.error('Refund request error', {
-      transactionId,
+    logger.error('[PaymentController] Error getting payment analytics', {
       error: error.message,
     });
 
-    res.status(500).json({
-      message: 'Failed to process refund',
+    return res.status(500).json({
+      error: 'Failed to retrieve payment analytics',
+      message: error.message,
     });
   }
-});
-
-/**
- * GET /api/payments
- * Get user's payment history
- */
-const getPaymentHistory = asyncHandler(async (req, res) => {
-  const { status, provider, skip = 0, limit = 20 } = req.query;
-
-  const filter = { userId: req.user._id };
-
-  if (status) {
-    filter.status = status;
-  }
-
-  if (provider) {
-    filter.provider = provider;
-  }
-
-  const payments = await Payment.find(filter)
-    .select('-metadata.ipAddress -metadata.userAgent')
-    .sort({ createdAt: -1 })
-    .skip(parseInt(skip))
-    .limit(parseInt(limit));
-
-  const total = await Payment.countDocuments(filter);
-
-  // Mask phone numbers before sending
-  const maskedPayments = payments.map((payment) => {
-    const obj = payment.toObject();
-    obj.phoneNumber = mobileMoneyService.maskPhoneNumber(obj.phoneNumber);
-    return obj;
-  });
-
-  res.status(200).json({
-    message: 'Payment history retrieved',
-    data: maskedPayments,
-    pagination: {
-      total,
-      skip: parseInt(skip),
-      limit: parseInt(limit),
-      hasMore: parseInt(skip) + parseInt(limit) < total,
-    },
-  });
-});
-
-/**
- * GET /api/payments/:transactionId
- * Get payment details
- */
-const getPaymentDetails = asyncHandler(async (req, res) => {
-  const { transactionId } = req.params;
-
-  const payment = await Payment.findOne({ transactionId });
-
-  if (!payment) {
-    return res.status(404).json({
-      message: 'Payment not found',
-    });
-  }
-
-  // Verify ownership
-  if (payment.userId.toString() !== req.user._id.toString()) {
-    return res.status(403).json({
-      message: 'Unauthorized to access this payment',
-    });
-  }
-
-  const obj = payment.toObject();
-  obj.phoneNumber = mobileMoneyService.maskPhoneNumber(obj.phoneNumber);
-
-  res.status(200).json({
-    message: 'Payment details retrieved',
-    data: obj,
-  });
-});
+}
 
 module.exports = {
-  initiatePayment,
-  checkPaymentStatus,
-  requestRefund,
-  getPaymentHistory,
-  getPaymentDetails,
+  createPaymentIntent,
+  getPaymentIntent,
+  handleWebhook,
+  cancelPaymentIntent,
+  listTransactions,
+  getPaymentAnalytics,
 };
