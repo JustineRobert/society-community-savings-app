@@ -1,0 +1,101 @@
+version: '3.9'
+
+services:
+  mongodb:
+    image: mongo:7-jammy
+    ports:
+      - '27017:27017'
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password123
+      MONGO_INITDB_DATABASE: community-savings
+    volumes:
+      - mongodb-data:/data/db
+      - ./scripts/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+    networks:
+      - app-net
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - app-net
+
+  backend:
+    build:
+      context: ./community-savings-app-backend
+      dockerfile: Dockerfile
+    env_file:
+      - ./community-savings-app-backend/.env.docker
+    ports:
+      - '5000:5000'
+    depends_on:
+      - mongodb
+      - redis
+    networks:
+      - app-net
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./community-savings-app-frontend
+      dockerfile: Dockerfile
+    ports:
+      - '3000:80' # expose nginx container port
+    depends_on:
+      - backend
+    networks:
+      - app-net
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - '9090:9090'
+    networks:
+      - app-net
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - '3001:3000'
+    volumes:
+      - grafana-data:/var/lib/grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    networks:
+      - app-net
+    restart: unless-stopped
+
+volumes:
+  mongodb-data:
+  redis-data:
+  grafana-data:
+
+networks:
+  app-net:
+    driver: bridge
+      - app-net
+
+  redis_exporter:
+    image: oliver006/redis_exporter:latest
+    command: ["--redis.addr=redis:6379"]
+    ports:
+      - '9121:9121'
+    networks:
+      - app-net
+
+volumes:
+  redis-data:
+  grafana-data:
+
+networks:
+  app-net:
+    driver: bridge

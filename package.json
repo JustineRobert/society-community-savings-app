@@ -33,5 +33,17 @@
   },
   "dependencies": {
     "mongodb": "^7.0.0"
-  }
+  },
+  "directories": {
+    "test": "tests"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JustineRobert/society-community-savings-app.git"
+  },
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/JustineRobert/society-community-savings-app/issues"
+  },
+  "homepage": "https://github.com/JustineRobert/society-community-savings-app#readme"
 }

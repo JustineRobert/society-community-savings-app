@@ -105,7 +105,7 @@ const LoanSchema = new mongoose.Schema({
 });
 
 // Compound index for analytics
-LoanSchema.index({ group: 1, status: 1, createdAt: -1 });
+// LoanSchema.index({ group: 1, status: 1, createdAt: -1 }); // Moved to performanceOptimization.js
 
 /**
  * Static method to calculate eligibility score

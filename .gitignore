@@ -29,3 +29,5 @@ community-savings-backend@*
 node_modules/
 logs/
 *.log
+
+community-savings-app-backend/.env

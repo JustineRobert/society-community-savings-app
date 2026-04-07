@@ -12,12 +12,16 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
+const RedisStore = require('rate-limit-redis');
 const mongoSanitize = require('express-mongo-sanitize');
+const redisClient = require('./services/redis');
 const xss = require('xss-clean'); // Note: popular but community-maintained. Keep if it fits your risk posture.
 const compression = require('compression');
 const hpp = require('hpp');
 const path = require('path');
 const http = require('http');
+const { Server: SocketIOServer } = require('socket.io');
+const client = require('prom-client'); // Prometheus metrics
 const winston = require('winston');
 const mongoose = require('mongoose');
 const crypto = require('crypto');
@@ -67,6 +71,31 @@ connectDB();
 const app = express();
 
 // ----------------------------------------------------------------------------
+// Initialize Services
+// ----------------------------------------------------------------------------
+try {
+  // Payment Service
+  const PaymentService = require('./services/payment/PaymentService');
+  const mobileMoneyProvider = require('./services/mobileMoneyService');
+  app.locals.paymentService = new PaymentService({
+    providers: { mobileMoney: mobileMoneyProvider }
+  });
+
+  // Chat Service
+  const ChatService = require('./services/chatService');
+  app.locals.chatService = new ChatService();
+
+  // Loan Workflow Service
+  const LoanWorkflowService = require('./services/loanWorkflowService');
+  app.locals.loanWorkflowService = new LoanWorkflowService();
+
+  logger.info('✅ Services initialized successfully');
+} catch (error) {
+  logger.error('❌ Failed to initialize services', { error: error.message });
+  // Don't exit - let the app start with degraded functionality
+}
+
+// ----------------------------------------------------------------------------
 // Trust Proxy — required when running behind a load balancer or CDN
 // to ensure real client IPs and correct rate limiting keying.
 // ----------------------------------------------------------------------------
@@ -76,19 +105,56 @@ app.set('trust proxy', 1);
 // Security, Performance & Parsing Middleware
 // ----------------------------------------------------------------------------
 
-// Rate limiting: standardized headers; friendly JSON handler.
-const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 100,
-  standardHeaders: true, // Send rate limit info in the RateLimit-* headers
-  legacyHeaders: false,  // Disable X-RateLimit-* headers
-  keyGenerator: (req) => req.ip,
-  handler: (req, res /*, next*/) => {
-    return res.status(429).json({
-      message: 'Too many requests, please try again later.',
+// Rate limiting: standardized headers; friendly JSON handler backed by Redis store.
+let apiLimiter;
+if (redisClient && redisClient.status === 'ready') {
+  try {
+    apiLimiter = rateLimit({
+      windowMs: 15 * 60 * 1000, // 15 minutes
+      max: 100,
+      standardHeaders: true, // Send rate limit info in the RateLimit-* headers
+      legacyHeaders: false,  // Disable X-RateLimit-* headers
+      keyGenerator: (req) => req.ip,
+      store: new RedisStore({
+        sendCommand: (...args) => redisClient.call(...args),
+        // optionally use client: redisClient
+      }),
+      handler: (req, res /*, next*/) => {
+        return res.status(429).json({
+          message: 'Too many requests, please try again later.',
+        });
+      },
     });
-  },
-});
+  } catch (error) {
+    logger.warn('⚠️ Redis store failed, falling back to memory store', { error: error.message });
+    apiLimiter = rateLimit({
+      windowMs: 15 * 60 * 1000, // 15 minutes
+      max: 100,
+      standardHeaders: true,
+      legacyHeaders: false,
+      keyGenerator: (req) => req.ip,
+      handler: (req, res /*, next*/) => {
+        return res.status(429).json({
+          message: 'Too many requests, please try again later.',
+        });
+      },
+    });
+  }
+} else {
+  logger.info('ℹ️ Redis not available, using memory store for rate limiting');
+  apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => req.ip,
+    handler: (req, res /*, next*/) => {
+      return res.status(429).json({
+        message: 'Too many requests, please try again later.',
+      });
+    },
+  });
+}
 app.use(apiLimiter);
 
 // Helmet: sensible defaults for APIs (no CSP needed unless you serve HTML).
@@ -171,6 +237,20 @@ app.use(
 app.options('*', cors());
 
 // ----------------------------------------------------------------------------
+// Prometheus Metrics (export at /metrics)
+// ----------------------------------------------------------------------------
+client.collectDefaultMetrics({ timeout: 5000 });
+
+app.get('/metrics', async (req, res) => {
+  try {
+    res.set('Content-Type', client.register.contentType);
+    res.end(await client.register.metrics());
+  } catch (err) {
+    res.status(500).send(err.message);
+  }
+});
+
+// ----------------------------------------------------------------------------
 // Health & Readiness Endpoints
 // ----------------------------------------------------------------------------
 let isReady = false;
@@ -232,6 +312,43 @@ app.use(errorHandler);
 // Server Initialization & Timeouts
 // ----------------------------------------------------------------------------
 const server = http.createServer(app);
+
+// attach socket.io for realtime notifications
+const io = new SocketIOServer(server, {
+  cors: {
+    origin: allowedOrigins,
+    methods: ['GET', 'POST'],
+    credentials: true,
+  },
+});
+
+// authenticate socket connections using same JWT logic as HTTP
+io.use((socket, next) => {
+  try {
+    const token = socket.handshake.auth?.token ||
+      (socket.handshake.headers && socket.handshake.headers.authorization
+        ? socket.handshake.headers.authorization.split(' ')[1]
+        : null);
+    if (!token) {
+      return next(new Error('Authentication error: token missing'));
+    }
+    const decoded = require('jsonwebtoken').verify(token, process.env.ACCESS_TOKEN_SECRET || process.env.JWT_SECRET);
+    socket.user = decoded.user || decoded;
+    return next();
+  } catch (err) {
+    return next(new Error('Authentication error'));
+  }
+});
+
+io.on('connection', (socket) => {
+  logger.info('🔌 WebSocket connected', { socketId: socket.id, user: socket.user });
+  socket.on('disconnect', () => {
+    logger.info('🔌 WebSocket disconnected', { socketId: socket.id });
+  });
+});
+
+// export io for other modules to emit events
+module.exports.io = io;
 
 // Timeouts: align with proxy/load balancer to avoid half-open sockets.
 // - headersTimeout slightly above keepAliveTimeout.

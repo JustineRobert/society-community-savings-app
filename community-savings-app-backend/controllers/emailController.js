@@ -1,53 +1,297 @@
-// controllers/emailController.js
-// ============================================================================
-// Email Verification & Password Reset Controller
-// - Production-grade token handling with expiry and rate limiting
-// - Email service abstraction for SendGrid, AWS SES, Mailgun, etc.
-// - Audit logging for security events
-// - Idempotency and error recovery
-// ============================================================================
+// community-savings-app-backend/controllers/emailController.js
 
-const crypto = require('crypto');
+/**
+ * Email Controller
+ *
+ * Handles email-related HTTP requests including:
+ * - Email verification
+ * - Password reset
+ * - Email sending for notifications
+ */
+
+const asyncHandler = require('../utils/asyncHandler');
+const emailService = require('../services/emailService');
 const User = require('../models/User');
 const logger = require('../utils/logger');
-const { sendVerificationEmail, sendPasswordResetEmail } = require('../services/emailService');
-const EmailAudit = require('../models/EmailAudit');
-const rateLimit = require('express-rate-limit');
 
-// Rate limiters for abuse prevention
-const requestVerificationLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  limit: 3, // 3 requests per hour per email
-  keyGenerator: (req) => req.body?.email || req.ip,
-  message: 'Too many verification requests. Please try again later.',
-  standardHeaders: true,
-  legacyHeaders: false,
+/**
+ * Send email verification
+ * POST /api/email/send-verification
+ */
+exports.sendEmailVerification = asyncHandler(async (req, res) => {
+  try {
+    const result = await emailService.sendEmailVerification(req.user._id);
+
+    res.json({
+      success: true,
+      message: result.message
+    });
+
+  } catch (error) {
+    logger.error('Send email verification error:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message || 'Failed to send verification email'
+    });
+  }
 });
 
-const requestResetLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  limit: 5, // 5 requests per hour per email
-  keyGenerator: (req) => req.body?.email || req.ip,
-  message: 'Too many password reset requests. Please try again later.',
-  standardHeaders: true,
-  legacyHeaders: false,
+/**
+ * Verify email with token
+ * POST /api/email/verify
+ */
+exports.verifyEmail = asyncHandler(async (req, res) => {
+  const { token } = req.body;
+
+  if (!token) {
+    return res.status(400).json({
+      success: false,
+      error: 'Verification token is required'
+    });
+  }
+
+  try {
+    const result = await emailService.verifyEmail(token);
+
+    res.json({
+      success: true,
+      message: 'Email verified successfully',
+      data: result.user
+    });
+
+  } catch (error) {
+    logger.error('Email verification error:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message || 'Email verification failed'
+    });
+  }
 });
 
-const resetPasswordLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  limit: 3, // 3 reset attempts per hour
-  keyGenerator: (req) => req.ip,
-  message: 'Too many password reset attempts. Please try again later.',
-  standardHeaders: true,
-  legacyHeaders: false,
+/**
+ * Send password reset email
+ * POST /api/email/send-password-reset
+ */
+exports.sendPasswordReset = asyncHandler(async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({
+      success: false,
+      error: 'Email address is required'
+    });
+  }
+
+  // Basic email validation
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return res.status(400).json({
+      success: false,
+      error: 'Invalid email format'
+    });
+  }
+
+  try {
+    const result = await emailService.sendPasswordReset(email);
+
+    // Always return success for security (don't reveal if email exists)
+    res.json({
+      success: true,
+      message: result.message
+    });
+
+  } catch (error) {
+    logger.error('Send password reset error:', error);
+    // Still return success for security
+    res.json({
+      success: true,
+      message: 'If an account with that email exists, a reset link has been sent'
+    });
+  }
 });
 
-const verifyEmailLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  limit: 5, // 5 verification attempts per hour
-  keyGenerator: (req) => req.ip,
-  message: 'Too many verification attempts. Please try again later.',
-  standardHeaders: true,
+/**
+ * Reset password with token
+ * POST /api/email/reset-password
+ */
+exports.resetPassword = asyncHandler(async (req, res) => {
+  const { token, newPassword } = req.body;
+
+  if (!token || !newPassword) {
+    return res.status(400).json({
+      success: false,
+      error: 'Token and new password are required'
+    });
+  }
+
+  // Validate password strength
+  if (newPassword.length < 8) {
+    return res.status(400).json({
+      success: false,
+      error: 'Password must be at least 8 characters long'
+    });
+  }
+
+  try {
+    const result = await emailService.resetPassword(token, newPassword);
+
+    res.json({
+      success: true,
+      message: result.message
+    });
+
+  } catch (error) {
+    logger.error('Password reset error:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message || 'Password reset failed'
+    });
+  }
+});
+
+/**
+ * Resend email verification (if needed)
+ * POST /api/email/resend-verification
+ */
+exports.resendEmailVerification = asyncHandler(async (req, res) => {
+  try {
+    // Check if user is already verified
+    const user = await User.findById(req.user._id);
+    if (user.isEmailVerified) {
+      return res.status(400).json({
+        success: false,
+        error: 'Email is already verified'
+      });
+    }
+
+    const result = await emailService.sendEmailVerification(req.user._id);
+
+    res.json({
+      success: true,
+      message: result.message
+    });
+
+  } catch (error) {
+    logger.error('Resend email verification error:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message || 'Failed to resend verification email'
+    });
+  }
+});
+
+/**
+ * Check email verification status
+ * GET /api/email/verification-status
+ */
+exports.getEmailVerificationStatus = asyncHandler(async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select('isEmailVerified emailVerifiedAt email');
+
+    res.json({
+      success: true,
+      data: {
+        email: user.email,
+        isVerified: user.isEmailVerified,
+        verifiedAt: user.emailVerifiedAt
+      }
+    });
+
+  } catch (error) {
+    logger.error('Get email verification status error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get verification status'
+    });
+  }
+});
+
+/**
+ * Test email configuration (admin only)
+ * POST /api/email/test
+ */
+exports.testEmailConfiguration = asyncHandler(async (req, res) => {
+  // Only allow admins to test email configuration
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({
+      success: false,
+      error: 'Admin access required'
+    });
+  }
+
+  try {
+    const result = await emailService.testEmailConfiguration();
+
+    if (result.success) {
+      res.json({
+        success: true,
+        message: result.message
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: result.error
+      });
+    }
+
+  } catch (error) {
+    logger.error('Test email configuration error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Email configuration test failed'
+    });
+  }
+});
+
+/**
+ * Send test email (admin only)
+ * POST /api/email/test-send
+ */
+exports.sendTestEmail = asyncHandler(async (req, res) => {
+  // Only allow admins to send test emails
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({
+      success: false,
+      error: 'Admin access required'
+    });
+  }
+
+  const { to, subject, message } = req.body;
+
+  if (!to || !subject || !message) {
+    return res.status(400).json({
+      success: false,
+      error: 'Recipient email, subject, and message are required'
+    });
+  }
+
+  try {
+    const emailData = {
+      to,
+      subject,
+      template: 'test_email',
+      data: {
+        message,
+        sentBy: req.user.name,
+        timestamp: new Date().toISOString()
+      }
+    };
+
+    await emailService.sendEmail(emailData);
+
+    res.json({
+      success: true,
+      message: 'Test email sent successfully'
+    });
+
+  } catch (error) {
+    logger.error('Send test email error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to send test email'
+    });
+  }
+});
   legacyHeaders: false,
 });
 

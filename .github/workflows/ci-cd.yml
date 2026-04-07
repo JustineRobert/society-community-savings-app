@@ -1,0 +1,54 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - name: Install dependencies (root)
+        run: npm run install-all
+      - name: Run backend tests
+        run: npm run test --prefix community-savings-app-backend
+      - name: Run frontend tests
+        run: npm run test --prefix community-savings-app-frontend
+      - name: Build backend
+        run: npm run build --prefix community-savings-app-backend || echo "no build step"
+      - name: Build frontend
+        run: npm run build --prefix community-savings-app-frontend
+      - name: Build Docker images
+        run: |
+          docker build -t registry.example.com/community-backend:latest ./community-savings-app-backend
+          docker build -t registry.example.com/community-frontend:latest ./community-savings-app-frontend
+
+  deploy:
+    name: Deploy to Cloud
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Deploy to AWS ECS
+        run: |
+          echo "# aws cli deploy commands would go here"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+      - name: Deploy to Render
+        run: |
+          echo "# render deploy via api"
+        env:
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}

@@ -12,6 +12,18 @@ Welcome! This is your complete guide to the Community Savings App codebase. Here
 - **Contains**: Installation, configuration, running the app
 - **Next**: Follow the setup steps, then come back to this index
 
+### 1.5 **WINDOWS USERS: WINDOWS_DEV_SETUP.md** 🪟
+- **For**: Windows developers
+- **Time**: 5 minutes
+- **Contains**: Windows-specific setup, MongoDB Atlas option, quick start script
+- **Benefit**: Get running faster on Windows
+
+### 1.75 **DOCKER PRODUCTION SETUP: DOCKER_README.md** 🐳
+- **For**: Production deployment, Docker users
+- **Time**: 10 minutes
+- **Contains**: Complete Docker orchestration, monitoring, scaling
+- **Benefit**: Production-ready containerized deployment
+
 ### 2. **DELIVERABLES.md**
 - **For**: Project managers, team leads
 - **Time**: 10 minutes
@@ -66,6 +78,22 @@ Welcome! This is your complete guide to the Community Savings App codebase. Here
 ---
 
 ## 📁 Project Structure
+
+## 🏢 Enterprise Upgrades (added March 2026)
+
+1. **Docker + NGINX ready** – self‑contained compose file with backend,
+   frontend, redis, Nginx reverse proxy, Prometheus and Grafana.
+2. **Redis-backed queue & rate limiting** – Bull queue for background jobs
+   and express-rate-limit configured with Redis store.
+3. **WebSocket real-time notifications** – socket.io on server and client
+   with automatic connection when user is authenticated.
+4. **CI/CD pipeline** – GitHub Actions workflow scaffolding for tests,
+   builds and deployment to AWS/Render.
+5. **Monitoring with Prometheus & Grafana** – `/metrics` endpoint and
+   exporter containers included.
+
+---
+
 
 ```
 community-savings-app/

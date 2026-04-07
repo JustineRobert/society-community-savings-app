@@ -68,8 +68,7 @@ const RefreshTokenSchema = new Schema(
 
 // Active sessions for a user (revokedAt null)
 RefreshTokenSchema.index({ userId: 1, revokedAt: 1 }); // helps active session listing
-// Expiration scans (cleanup jobs)
-RefreshTokenSchema.index({ expiresAt: 1 });
+// Expiration scans are handled by index: true on expiresAt field
 // Optional: prevent accidental hash reuse (not strictly necessary with 64-byte random tokens)
 // RefreshTokenSchema.index({ tokenHash: 1 }, { unique: true });
 

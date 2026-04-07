@@ -1,140 +1,166 @@
-// routes/payments.js
-// ============================================================================
-// Payment Routes - Mobile Money Integration
-// Handles payment initiation, status checks, and refunds
-// ============================================================================
+// community-savings-app-backend/routes/payments.js
+
+/**
+ * Payment Routes
+ *
+ * Comprehensive payment API endpoints supporting:
+ * - Payment initiation for all methods
+ * - Mobile money processing (M-Pesa, Airtel, MTN)
+ * - Bank transfer processing
+ * - Payment verification and status
+ * - Refunds and cancellations
+ * - Payment history and analytics
+ */
 
 const express = require('express');
-const { body, query, validationResult } = require('express-validator');
-const { verifyToken } = require('../middleware/auth');
-const paymentController = require('../controllers/paymentController');
-const logger = require('../utils/logger');
-
 const router = express.Router();
+const { body, param, query } = require('express-validator');
+const { handleValidation } = require('../utils/validators');
+const auth = require('../middleware/auth');
+const paymentController = require('../controllers/paymentController');
 
 /**
- * Middleware: Validate payment input
+ * All routes require authentication
  */
-const validatePaymentInput = [
-  body('phoneNumber')
-    .notEmpty()
-    .withMessage('Phone number is required')
-    .matches(/^\+?[1-9]\d{1,14}$/)
-    .withMessage('Invalid phone number format. Use E.164 format (e.g., +237123456789)'),
-
-  body('amount')
-    .notEmpty()
-    .withMessage('Amount is required')
-    .isFloat({ min: 100, max: 500000 })
-    .withMessage('Amount must be between 100 and 500,000'),
-
-  body('currency')
-    .optional()
-    .isIn(['XAF', 'EUR', 'USD', 'NGN', 'GHS', 'KES', 'ZAR'])
-    .withMessage('Unsupported currency'),
-
-  body('provider')
-    .notEmpty()
-    .withMessage('Provider is required')
-    .isIn(['MTN_MOMO', 'AIRTEL_MONEY'])
-    .withMessage('Provider must be MTN_MOMO or AIRTEL_MONEY'),
-
-  body('groupId')
-    .optional()
-    .matches(/^[0-9a-fA-F]{24}$/)
-    .withMessage('Invalid group ID format'),
-
-  body('contributionId')
-    .optional()
-    .matches(/^[0-9a-fA-F]{24}$/)
-    .withMessage('Invalid contribution ID format'),
-
-  body('description')
-    .optional()
-    .trim()
-    .isLength({ max: 200 })
-    .withMessage('Description must be less than 200 characters'),
-];
+router.use(auth.verifyToken);
 
 /**
- * Middleware: Handle validation errors
- */
-const handleValidationErrors = (req, res, next) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    logger.warn('Validation errors', {
-      errors: errors.array(),
-      userId: req.user?._id,
-      path: req.path,
-    });
-    return res.status(422).json({
-      message: 'Validation failed',
-      errors: errors.array(),
-    });
-  }
-  next();
-};
-
-/**
+ * Initiate a new payment
  * POST /api/payments/initiate
- * Initiate a new mobile money payment
  */
-router.post(
-  '/initiate',
-  verifyToken,
-  validatePaymentInput,
-  handleValidationErrors,
-  paymentController.createPaymentIntent
-);
+router.post('/initiate', [
+  body('groupId').isMongoId().withMessage('Valid group ID is required'),
+  body('amount').isFloat({ min: 1 }).withMessage('Amount must be greater than 0'),
+  body('method').isIn(['mobile_money', 'bank_transfer', 'card', 'cash'])
+    .withMessage('Invalid payment method'),
+  body('type').isIn(['contribution', 'loan_repayment', 'loan_disbursement', 'referral_bonus', 'withdrawal', 'fee'])
+    .withMessage('Invalid payment type'),
+  body('description').optional().isLength({ max: 500 }).withMessage('Description too long'),
+  handleValidation
+], paymentController.initiatePayment);
 
 /**
- * GET /api/payments/:transactionId/status
- * Check payment status
+ * Process mobile money payment
+ * POST /api/payments/:paymentId/mobile-money
  */
-router.get('/status/:transactionId', verifyToken, paymentController.getPaymentIntent);
+router.post('/:paymentId/mobile-money', [
+  param('paymentId').isMongoId().withMessage('Valid payment ID is required'),
+  body('phoneNumber').matches(/^(\+254|254|0)[17]\d{8}$/)
+    .withMessage('Valid Kenyan phone number required'),
+  body('provider').optional().isIn(['mpesa', 'airtel', 'mtn'])
+    .withMessage('Invalid mobile money provider'),
+  body('accountReference').optional().isLength({ max: 100 }),
+  handleValidation
+], paymentController.processMobileMoneyPayment);
 
 /**
- * POST /api/payments/:transactionId/refund
- * Request refund for a payment
+ * Process bank transfer payment
+ * POST /api/payments/:paymentId/bank-transfer
  */
-router.post(
-  '/:transactionId/refund',
-  verifyToken,
-  body('refundAmount')
-    .optional()
-    .isFloat({ min: 0.01 })
-    .withMessage('Refund amount must be greater than 0'),
-
-  body('refundReason')
-    .notEmpty()
-    .withMessage('Refund reason is required')
-    .trim()
-    .isLength({ min: 10, max: 500 })
-    .withMessage('Refund reason must be between 10 and 500 characters'),
-
-  handleValidationErrors,
-  paymentController.cancelPaymentIntent
-);
+router.post('/:paymentId/bank-transfer', [
+  param('paymentId').isMongoId().withMessage('Valid payment ID is required'),
+  body('bankCode').notEmpty().withMessage('Bank code is required'),
+  body('accountNumber').notEmpty().withMessage('Account number is required'),
+  body('accountName').notEmpty().withMessage('Account name is required'),
+  body('routingNumber').optional(),
+  handleValidation
+], paymentController.processBankTransfer);
 
 /**
- * GET /api/payments
- * Get payment history with filtering
+ * Verify payment status
+ * GET /api/payments/:paymentId
  */
-router.get(
-  '/',
-  verifyToken,
-  query('status').optional().isIn(['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELLED', 'REFUNDED']),
-  query('provider').optional().isIn(['MTN_MOMO', 'AIRTEL_MONEY', 'STRIPE', 'PAYPAL']),
-  query('skip').optional().isInt({ min: 0 }).toInt(),
-  query('limit').optional().isInt({ min: 1, max: 100 }).toInt(),
-  handleValidationErrors,
-  paymentController.listTransactions
-);
+router.get('/:paymentId', [
+  param('paymentId').isMongoId().withMessage('Valid payment ID is required'),
+  handleValidation
+], paymentController.verifyPayment);
 
 /**
- * GET /api/payments/:transactionId
- * Get payment details
+ * Get user payment history
+ * GET /api/payments/history
  */
-router.get('/:transactionId', verifyToken, paymentController.getPaymentIntent);
+router.get('/history', [
+  query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
+  query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
+  query('status').optional().isIn(['pending', 'processing', 'completed', 'failed', 'cancelled', 'refunded']),
+  query('type').optional().isIn(['contribution', 'loan_repayment', 'loan_disbursement', 'referral_bonus', 'withdrawal', 'fee']),
+  query('method').optional().isIn(['mobile_money', 'bank_transfer', 'card', 'cash']),
+  query('startDate').optional().isISO8601().withMessage('Invalid start date format'),
+  query('endDate').optional().isISO8601().withMessage('Invalid end date format'),
+  handleValidation
+], paymentController.getPaymentHistory);
 
-module.exports = router;
+/**
+ * Process refund
+ * POST /api/payments/:paymentId/refund
+ */
+router.post('/:paymentId/refund', [
+  param('paymentId').isMongoId().withMessage('Valid payment ID is required'),
+  body('amount').isFloat({ min: 0.01 }).withMessage('Refund amount must be greater than 0'),
+  body('reason').notEmpty().withMessage('Refund reason is required')
+    .isLength({ max: 500 }).withMessage('Reason too long'),
+  handleValidation
+], paymentController.processRefund);
+
+/**
+ * Get payment analytics
+ * GET /api/payments/analytics
+ */
+router.get('/analytics', [
+  query('userId').optional().isMongoId().withMessage('Valid user ID required'),
+  query('groupId').optional().isMongoId().withMessage('Valid group ID required'),
+  query('startDate').optional().isISO8601().withMessage('Invalid start date'),
+  query('endDate').optional().isISO8601().withMessage('Invalid end date'),
+  handleValidation
+], paymentController.getPaymentAnalytics);
+
+/**
+ * Get payment methods and fees
+ * GET /api/payments/methods
+ */
+router.get('/methods', [
+  query('amount').optional().isFloat({ min: 0 }).withMessage('Amount must be non-negative'),
+  query('currency').optional().isIn(['KES', 'USD', 'EUR', 'TZS', 'UGX'])
+    .withMessage('Unsupported currency'),
+  handleValidation
+], paymentController.getPaymentMethods);
+
+/**
+ * Get payment statistics for dashboard
+ * GET /api/payments/stats
+ */
+router.get('/stats', paymentController.getPaymentStats);
+
+/**
+ * Create a payment intent
+ * POST /api/payments/intents
+ */
+router.post('/intents', [
+  body('amount').isFloat({ min: 1 }).withMessage('Amount must be greater than 0'),
+  body('currency').optional().isIn(['KES', 'USD', 'EUR', 'TZS', 'UGX'])
+    .withMessage('Unsupported currency'),
+  body('description').optional().isString(),
+  body('idempotencyKey').optional().isString(),
+  handleValidation
+], paymentController.createPaymentIntent);
+
+/**
+ * Get a specific payment intent
+ * GET /api/payments/intents/:transactionId
+ */
+router.get('/intents/:transactionId', paymentController.getPaymentIntent);
+
+/**
+ * Webhook endpoint for external payment providers
+ * POST /api/payments/webhooks/:provider
+ */
+router.post('/webhooks/:provider', paymentController.handleWebhook);
+
+/**
+ * List transactions (payment history with additional filters)
+ * GET /api/payments/transactions
+ */
+router.get('/transactions', paymentController.listTransactions);
+
+module.exports = router; // finished defining payment routes
+

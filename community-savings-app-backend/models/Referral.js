@@ -147,8 +147,7 @@ const referralSchema = new mongoose.Schema(
 
 // Indices
 referralSchema.index({ referrer: 1, status: 1 });
-referralSchema.index({ referee: 1 });
-referralSchema.index({ referralCode: 1 });
+// referee and referralCode are already indexed via index: true in schema
 referralSchema.index({ status: 1, expiresAt: 1 });
 referralSchema.index({ 'fraud.isFlagged': 1 });
 

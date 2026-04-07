@@ -1,53 +1,98 @@
-// routes/email.js
-// ============================================================================
-// Email Routes
-// - Email verification
-// - Password reset and recovery
-// - Password change
-// - Rate limiting and security
-// ============================================================================
+// community-savings-app-backend/routes/email.js
+
+/**
+ * Email Routes
+ *
+ * Comprehensive email API endpoints supporting:
+ * - Email verification
+ * - Password reset
+ * - Email testing and configuration
+ */
 
 const express = require('express');
-const { body, validationResult } = require('express-validator');
-const asyncHandler = require('../utils/asyncHandler');
-const { verifyToken } = require('../middleware/auth');
+const router = express.Router();
+const { body, param } = require('express-validator');
+const { handleValidation } = require('../utils/validators');
+const auth = require('../middleware/auth');
 const emailController = require('../controllers/emailController');
 
-const router = express.Router();
-
-// ============================================================================
-// Middleware
-// ============================================================================
-
 /**
- * Validation error handler
+ * All routes require authentication except password reset initiation and email verification
  */
-function handleValidationErrors(req, res, next) {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({
-      message: 'Validation error',
-      errors: errors.array().map((err) => ({
-        field: err.param,
-        message: err.msg,
-      })),
-    });
-  }
-  next();
-}
 
 // ============================================================================
-// Public Routes (no authentication required)
+// Public Routes (No Authentication Required)
 // ============================================================================
 
 /**
+ * Verify email with token
+ * POST /api/email/verify
+ */
+router.post('/verify', [
+  body('token').notEmpty().withMessage('Verification token is required'),
+  handleValidation
+], emailController.verifyEmail);
+
+/**
+ * Send password reset email
+ * POST /api/email/send-password-reset
+ */
+router.post('/send-password-reset', [
+  body('email').isEmail().withMessage('Valid email address is required'),
+  handleValidation
+], emailController.sendPasswordReset);
+
+/**
+ * Reset password with token
+ * POST /api/email/reset-password
+ */
+router.post('/reset-password', [
+  body('token').notEmpty().withMessage('Reset token is required'),
+  body('newPassword').isLength({ min: 8 }).withMessage('Password must be at least 8 characters long')
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/).withMessage('Password must contain uppercase, lowercase, and number'),
+  handleValidation
+], emailController.resetPassword);
+
+// ============================================================================
+// Protected Routes (Authentication Required)
+// ============================================================================
+
+/**
+ * Send email verification (authenticated user)
  * POST /api/email/send-verification
- * Sends verification email to user's email address
- * Rate limited: 3 per hour per email
  */
-router.post(
-  '/send-verification',
-  emailController.requestVerificationLimiter,
+router.post('/send-verification', auth.verifyToken, emailController.sendEmailVerification);
+
+/**
+ * Resend email verification
+ * POST /api/email/resend-verification
+ */
+router.post('/resend-verification', auth.verifyToken, emailController.resendEmailVerification);
+
+/**
+ * Get email verification status
+ * GET /api/email/verification-status
+ */
+router.get('/verification-status', auth.verifyToken, emailController.getEmailVerificationStatus);
+
+/**
+ * Test email configuration (admin only)
+ * POST /api/email/test
+ */
+router.post('/test', auth.verifyToken, emailController.testEmailConfiguration);
+
+/**
+ * Send test email (admin only)
+ * POST /api/email/test-send
+ */
+router.post('/test-send', auth.verifyToken, [
+  body('to').isEmail().withMessage('Valid recipient email is required'),
+  body('subject').notEmpty().withMessage('Subject is required'),
+  body('message').notEmpty().withMessage('Message is required'),
+  handleValidation
+], emailController.sendTestEmail);
+
+module.exports = router;
   [
     body('email')
       .isEmail()

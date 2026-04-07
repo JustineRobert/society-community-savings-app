@@ -2,6 +2,7 @@
 
 const Group = require('../models/Group');
 const logger = require('../utils/logger');
+const { notificationQueue } = require('../services/queue');
 
 /**
  * Create a new group and add the current user as the initial member and creator.
@@ -24,6 +25,18 @@ exports.createGroup = async (req, res) => {
     await group.save();
     
     logger.info(`Group created: ${group._id} by user ${req.user.id}`);
+
+    // enqueue a notification job for other members (or admins)
+    try {
+      notificationQueue.add({
+        type: 'group-created',
+        groupId: group._id,
+        userId: req.user.id,
+        name: group.name,
+      });
+    } catch (qErr) {
+      logger.warn('Failed to enqueue notification job', { error: qErr.message });
+    }
     
     res.status(201).json({
       message: 'Group created successfully',
@@ -59,6 +72,17 @@ exports.joinGroup = async (req, res) => {
     await group.save();
 
     logger.info(`User ${req.user.id} joined group ${groupId}`);
+
+    // enqueue a notification job for group join
+    try {
+      notificationQueue.add({
+        type: 'group-joined',
+        groupId,
+        userId: req.user.id,
+      });
+    } catch (qErr) {
+      logger.warn('Failed to enqueue notification job', { error: qErr.message });
+    }
 
     res.json({
       message: 'Successfully joined group',

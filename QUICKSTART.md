@@ -57,6 +57,18 @@ cp .env.example .env.local
 
 ### Step 4: Start Development Servers
 
+You can also run everything in Docker (useful for production-like testing):
+
+```bash
+# from repo root
+docker-compose up --build
+```
+
+This will start Redis, backend, frontend (served by nginx), Prometheus, Grafana and a
+Redis exporter. Backend will be available on http://localhost:5000 and frontend
+on http://localhost:3000. Grafana UI will be on http://localhost:3001.
+
+
 **Option A: Run Both Simultaneously (from root)**
 ```bash
 npm start

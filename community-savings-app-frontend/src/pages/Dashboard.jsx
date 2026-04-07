@@ -34,6 +34,9 @@ const Dashboard = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
+  // notification counter from websocket
+  const [notifCount, setNotifCount] = useState(0);
+
   // State management
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -52,6 +55,19 @@ const Dashboard = () => {
       console.warn(`Could not access localStorage.${key}:`, err);
       return null;
     }
+  }, []);
+
+  // setup websocket notification listener
+  useEffect(() => {
+    let cleanup;
+    import('../services/socket').then(({ default: socket }) => {
+      const handle = () => setNotifCount((c) => c + 1);
+      socket.on('notification', handle);
+      cleanup = () => socket.off('notification', handle);
+    });
+    return () => {
+      if (cleanup) cleanup();
+    };
   }, []);
 
   /**
@@ -139,7 +155,6 @@ const Dashboard = () => {
   /**
    * Initialize component - verify auth and fetch data
    */
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     mountedRef.current = true;
 
@@ -174,7 +189,8 @@ const Dashboard = () => {
     return () => {
       mountedRef.current = false;
     };
-  }, []); // Empty dependency array for initial load only
+    // Include all referenced values to satisfy exhaustive-deps
+  }, [fetchUser, fetchUserGroups, navigate, safeGetStorageItem]); // << fixed deps
 
   /**
    * Handle logout with error handling
@@ -420,6 +436,12 @@ const Dashboard = () => {
 
         {/* Main Content Area */}
         <main className="dashboard-main" role="main">
+          {notifCount > 0 && (
+            <div className="notification-badge" aria-live="polite">
+              You have {notifCount} new notification{notifCount !== 1 ? 's' : ''}
+            </div>
+          )}
+
           {/* Error Message */}
           {error && (
             <div className="error-container" role="alert" aria-live="assertive">

@@ -7,6 +7,7 @@ import React, {
   useState,
   useCallback,
 } from 'react';
+import socket from '../services/socket';
 import { toast } from 'react-toastify';
 import axios from 'axios';
 
@@ -65,6 +66,28 @@ export const AuthProvider = ({ children }) => {
       localStorage.removeItem('token');
     }
   }, [token]);
+
+  // manage websocket connection whenever auth token updates
+  useEffect(() => {
+    if (token) {
+      socket.auth = { token };
+      socket.connect();
+    } else {
+      socket.disconnect();
+    }
+  }, [token]);
+
+  // global notification listener
+  useEffect(() => {
+    const handleNotification = (data) => {
+      const message = data?.message || 'You have a new notification';
+      toast.info(message);
+    };
+    socket.on('notification', handleNotification);
+    return () => {
+      socket.off('notification', handleNotification);
+    };
+  }, []);
 
   // Response interceptor: on 401 try refresh with exponential backoff, then retry request
   useEffect(() => {

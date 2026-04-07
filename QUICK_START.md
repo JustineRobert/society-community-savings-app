@@ -4,7 +4,79 @@
 
 - Node.js 14+ and npm
 - MongoDB 4.4+ (or MongoDB Atlas)
+- Redis 6+ (for caching, rate limiting, and job queues)
 - Git
+
+### Installing Redis on Windows
+
+#### Option 1: Using Chocolatey (Recommended)
+```bash
+choco install redis-64
+```
+
+#### Option 2: Download from Microsoft
+1. Download Redis for Windows from: https://github.com/microsoftarchive/redis/releases
+2. Extract and run `redis-server.exe`
+
+#### Option 3: Using Docker
+```bash
+docker run -d -p 6379:6379 --name redis redis:7-alpine
+```
+
+### Installing Redis on macOS/Linux
+```bash
+# macOS with Homebrew
+brew install redis
+brew services start redis
+
+# Ubuntu/Debian
+sudo apt update
+sudo apt install redis-server
+sudo systemctl start redis-server
+```
+
+### Installing MongoDB
+
+#### Option 1: Local MongoDB Installation (Recommended for Development)
+
+**Windows:**
+1. Download MongoDB Community Edition from https://www.mongodb.com/try/download/community
+2. Run the installer and follow the setup wizard
+3. MongoDB will start automatically as a Windows Service
+4. Verify with: `mongosh` or `mongo`
+
+**macOS (Homebrew):**
+```bash
+brew tap mongodb/brew
+brew install mongodb-community
+brew services start mongodb-community
+```
+
+**Ubuntu/Debian:**
+```bash
+sudo apt update
+sudo apt install -y mongodb
+sudo systemctl start mongodb
+sudo systemctl enable mongodb
+```
+
+#### Option 2: MongoDB Atlas (Cloud Database - Free Tier Available)
+
+**For easy setup without local installation:**
+
+1. Go to https://www.mongodb.com/cloud/atlas
+2. Create a free account and sign up
+3. Create a new cluster (free tier available)
+4. Create a database user with username and password
+5. Get your connection string (SRV URI format)
+6. Update `.env` with your `MONGO_URI`:
+```bash
+MONGO_URI=mongodb+srv://username:password@cluster.mongodb.net/community-savings?retryWrites=true&w=majority
+```
+
+**Note:** Make sure to:
+- Add your IP to the IP whitelist (or use 0.0.0.0/0 for development)
+- Replace `username:password` with your actual credentials
 
 ## Installation
 
@@ -20,16 +92,85 @@ npm install
 ```bash
 # Copy environment template
 cp .env.example .env
-
-# Edit .env with your configuration
-# Required variables:
-MONGO_URI=mongodb://localhost:27017/community-savings
-JWT_SECRET=your-secret-key-min-32-chars
-NODE_ENV=development
-PORT=5000
 ```
 
-### 3. Database Setup
+Create a `.env` file in the backend directory with the following configuration:
+
+**For Local MongoDB:**
+```env
+NODE_ENV=development
+PORT=5000
+MONGO_URI=mongodb://localhost:27017/community-savings
+JWT_SECRET=your-super-secret-jwt-key-change-this-in-production-min-32-chars
+JWT_REFRESH_SECRET=your-super-secret-refresh-key-change-this-in-production-min-32-chars
+REDIS_URL=redis://localhost:6379
+CORS_ORIGINS=http://localhost:3000,http://localhost:5000
+LOG_LEVEL=debug
+```
+
+**For MongoDB Atlas (Cloud):**
+```env
+NODE_ENV=development
+PORT=5000
+MONGO_URI=mongodb+srv://username:password@cluster.mongodb.net/community-savings?retryWrites=true&w=majority
+JWT_SECRET=your-super-secret-jwt-key-change-this-in-production-min-32-chars
+JWT_REFRESH_SECRET=your-super-secret-refresh-key-change-this-in-production-min-32-chars
+REDIS_URL=redis://localhost:6379
+CORS_ORIGINS=http://localhost:3000,http://localhost:5000
+LOG_LEVEL=debug
+```
+
+**Important Notes:**
+- Replace `username:password` and `cluster` in the MONGO_URI_ATLAS with your actual MongoDB Atlas credentials
+- Keep `JWT_SECRET` and `JWT_REFRESH_SECRET` long and random (minimum 32 characters)
+- Redis is optional for local development (app will fall back to in-memory store if unavailable)
+
+### 3. Start MongoDB and Redis
+
+**If using Local MongoDB:**
+
+Windows (MongoDB runs as a service automatically):
+```bash
+# Verify MongoDB is running
+mongosh
+exit
+```
+
+macOS:
+```bash
+brew services start mongodb-community
+```
+
+Ubuntu/Debian:
+```bash
+sudo systemctl start mongodb
+```
+
+**If using MongoDB Atlas:**
+- No action needed, MongoDB Atlas is always available at the cloud
+
+**For Redis (Optional but Recommended):**
+
+Windows (if you installed via Chocolatey):
+```bash
+redis-server
+# In another terminal:
+redis-cli ping  # Should respond with PONG
+```
+
+macOS:
+```bash
+brew services start redis
+redis-cli ping
+```
+
+Ubuntu/Debian:
+```bash
+sudo systemctl start redis-server
+redis-cli ping
+```
+
+### 4. Database Setup
 
 ```bash
 # Initialize database indexes (one-time)
