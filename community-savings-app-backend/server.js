@@ -71,29 +71,43 @@ connectDB();
 const app = express();
 
 // ----------------------------------------------------------------------------
-// Initialize Services
-// ----------------------------------------------------------------------------
-try {
-  // Payment Service
-  const PaymentService = require('./services/payment/PaymentService');
-  const mobileMoneyProvider = require('./services/mobileMoneyService');
-  app.locals.paymentService = new PaymentService({
-    providers: { mobileMoney: mobileMoneyProvider }
-  });
+// Initialize Services (will be called after Socket.IO is created)
+// This ensures Socket.IO is available for services that need real-time events
+let servicesInitialized = false;
 
-  // Chat Service
-  const ChatService = require('./services/chatService');
-  app.locals.chatService = new ChatService();
+const initializeServices = () => {
+  if (servicesInitialized) return;
+  
+  try {
+    // Socket Emitter Service
+    const SocketEmitter = require('./services/socketEmitter');
+    app.locals.socketEmitter = new SocketEmitter(io);
 
-  // Loan Workflow Service
-  const LoanWorkflowService = require('./services/loanWorkflowService');
-  app.locals.loanWorkflowService = new LoanWorkflowService();
+    // Payment Service
+    const PaymentService = require('./services/payment/PaymentService');
+    const mobileMoneyProvider = require('./services/mobileMoneyService');
+    app.locals.paymentService = new PaymentService({
+      providers: { mobileMoney: mobileMoneyProvider }
+    });
 
-  logger.info('✅ Services initialized successfully');
-} catch (error) {
-  logger.error('❌ Failed to initialize services', { error: error.message });
-  // Don't exit - let the app start with degraded functionality
-}
+    // Chat Service
+    const ChatService = require('./services/chatService');
+    app.locals.chatService = new ChatService();
+
+    // Loan Workflow Service
+    const LoanWorkflowService = require('./services/loanWorkflowService');
+    app.locals.loanWorkflowService = new LoanWorkflowService();
+
+    logger.info('✅ Services initialized successfully');
+    servicesInitialized = true;
+  } catch (error) {
+    logger.error('❌ Failed to initialize services', { error: error.message });
+    // Don't exit - let the app start with degraded functionality
+  }
+};
+
+// Declare io variable (will be initialized after http.createServer)
+let io;
 
 // ----------------------------------------------------------------------------
 // Trust Proxy — required when running behind a load balancer or CDN
@@ -289,6 +303,10 @@ app.use('/api/chats', require('./routes/chat'));
 app.use('/api/referrals', require('./routes/referrals'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/payments', require('./routes/payments'));
+app.use('/api/legal', require('./routes/legal.routes'));
+app.use('/api/help', require('./routes/helpCenter.routes'));
+app.use('/api/faq', require('./routes/faq.routes'));
+app.use('/api/forums', require('./routes/forums.routes'));
 
 // Root info endpoint (non-sensitive)
 app.get('/', (req, res) => {
@@ -313,16 +331,22 @@ app.use(errorHandler);
 // ----------------------------------------------------------------------------
 const server = http.createServer(app);
 
-// attach socket.io for realtime notifications
-const io = new SocketIOServer(server, {
+// ============================================================================
+// Socket.IO Configuration — Real-time Communication
+// ============================================================================
+io = new SocketIOServer(server, {
   cors: {
     origin: allowedOrigins,
     methods: ['GET', 'POST'],
     credentials: true,
   },
+  transports: ['websocket', 'polling'], // fallback to polling if websocket fails
+  pingInterval: 25000,
+  pingTimeout: 20000,
+  maxHttpBufferSize: 1e6, // 1MB
 });
 
-// authenticate socket connections using same JWT logic as HTTP
+// Middleware: Authenticate socket connections using JWT
 io.use((socket, next) => {
   try {
     const token = socket.handshake.auth?.token ||
@@ -332,23 +356,174 @@ io.use((socket, next) => {
     if (!token) {
       return next(new Error('Authentication error: token missing'));
     }
-    const decoded = require('jsonwebtoken').verify(token, process.env.ACCESS_TOKEN_SECRET || process.env.JWT_SECRET);
+    const jwt = require('jsonwebtoken');
+    const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET || process.env.JWT_SECRET);
     socket.user = decoded.user || decoded;
+    socket.userId = decoded.userId || decoded.id;
     return next();
   } catch (err) {
+    logger.error('🔒 Socket authentication failed', { error: err.message });
     return next(new Error('Authentication error'));
   }
 });
 
+// ============================================================================
+// Socket.IO Main Namespace
+// ============================================================================
 io.on('connection', (socket) => {
-  logger.info('🔌 WebSocket connected', { socketId: socket.id, user: socket.user });
+  logger.info('🔌 WebSocket connected', { socketId: socket.id, userId: socket.userId });
+
+  // Join user-specific room for direct notifications
+  socket.join(`user:${socket.userId}`);
+
+  // Track user presence
+  socket.on('presence:status', (status) => {
+    const validStatuses = ['online', 'away', 'offline', 'busy'];
+    if (validStatuses.includes(status)) {
+      io.to(`user:${socket.userId}`).emit('presence:updated', {
+        userId: socket.userId,
+        status,
+        timestamp: new Date(),
+      });
+    }
+  });
+
+  // ========================================================================
+  // Notifications Namespace
+  // ========================================================================
+  socket.on('notifications:subscribe', (groupId) => {
+    socket.join(`notifications:${groupId}`);
+    logger.debug('📬 User subscribed to group notifications', { userId: socket.userId, groupId });
+  });
+
+  socket.on('notifications:unsubscribe', (groupId) => {
+    socket.leave(`notifications:${groupId}`);
+    logger.debug('📬 User unsubscribed from group notifications', { userId: socket.userId, groupId });
+  });
+
+  // ========================================================================
+  // Chat Namespace
+  // ========================================================================
+  socket.on('chat:subscribe', (groupId) => {
+    const chatRoom = `chat:${groupId}`;
+    socket.join(chatRoom);
+    io.to(chatRoom).emit('chat:user-joined', {
+      userId: socket.userId,
+      timestamp: new Date(),
+    });
+    logger.debug('💬 User joined chat room', { userId: socket.userId, groupId });
+  });
+
+  socket.on('chat:unsubscribe', (groupId) => {
+    const chatRoom = `chat:${groupId}`;
+    socket.leave(chatRoom);
+    io.to(chatRoom).emit('chat:user-left', {
+      userId: socket.userId,
+      timestamp: new Date(),
+    });
+    logger.debug('💬 User left chat room', { userId: socket.userId, groupId });
+  });
+
+  socket.on('chat:message', (data) => {
+    try {
+      const { groupId, message } = data;
+      if (!groupId || !message || typeof message !== 'string' || message.trim().length === 0) {
+        return socket.emit('chat:error', { error: 'Invalid message data' });
+      }
+      const chatRoom = `chat:${groupId}`;
+      io.to(chatRoom).emit('chat:message-received', {
+        userId: socket.userId,
+        groupId,
+        message: message.trim(),
+        timestamp: new Date(),
+        socketId: socket.id,
+      });
+    } catch (err) {
+      logger.error('💬 Error emitting chat message', { error: err.message });
+      socket.emit('chat:error', { error: 'Failed to send message' });
+    }
+  });
+
+  socket.on('chat:typing', (data) => {
+    const { groupId } = data;
+    const chatRoom = `chat:${groupId}`;
+    io.to(chatRoom).emit('chat:user-typing', {
+      userId: socket.userId,
+      groupId,
+      timestamp: new Date(),
+    });
+  });
+
+  socket.on('chat:stopped-typing', (data) => {
+    const { groupId } = data;
+    const chatRoom = `chat:${groupId}`;
+    io.to(chatRoom).emit('chat:user-stopped-typing', {
+      userId: socket.userId,
+      groupId,
+    });
+  });
+
+  // ========================================================================
+  // Loans Namespace
+  // ========================================================================
+  socket.on('loans:subscribe', (groupId) => {
+    socket.join(`loans:${groupId}`);
+    logger.debug('📋 User subscribed to loan updates', { userId: socket.userId, groupId });
+  });
+
+  socket.on('loans:unsubscribe', (groupId) => {
+    socket.leave(`loans:${groupId}`);
+    logger.debug('📋 User unsubscribed from loan updates', { userId: socket.userId, groupId });
+  });
+
+  // ========================================================================
+  // Contributions Namespace
+  // ========================================================================
+  socket.on('contributions:subscribe', (groupId) => {
+    socket.join(`contributions:${groupId}`);
+    logger.debug('💰 User subscribed to contribution updates', { userId: socket.userId, groupId });
+  });
+
+  socket.on('contributions:unsubscribe', (groupId) => {
+    socket.leave(`contributions:${groupId}`);
+    logger.debug('💰 User unsubscribed from contribution updates', { userId: socket.userId, groupId });
+  });
+
+  // ========================================================================
+  // Heartbeat / Ping
+  // ========================================================================
+  socket.on('heartbeat', () => {
+    socket.emit('heartbeat-ack', { timestamp: new Date() });
+  });
+
+  // ========================================================================
+  // Disconnect
+  // ========================================================================
   socket.on('disconnect', () => {
-    logger.info('🔌 WebSocket disconnected', { socketId: socket.id });
+    logger.info('🔌 WebSocket disconnected', { socketId: socket.id, userId: socket.userId });
+    // Broadcast user offline status
+    io.emit('presence:updated', {
+      userId: socket.userId,
+      status: 'offline',
+      timestamp: new Date(),
+    });
+  });
+
+  // Error handling
+  socket.on('error', (error) => {
+    logger.error('❌ Socket error', { socketId: socket.id, error: error.message });
   });
 });
 
-// export io for other modules to emit events
+// ============================================================================
+// Socket.IO Administrative Namespace (for server-to-client emits)
+// ============================================================================
+// Make io globally available for controllers and services to emit events
+app.locals.io = io;
 module.exports.io = io;
+
+// Initialize services now that Socket.IO is set up
+initializeServices();
 
 // Timeouts: align with proxy/load balancer to avoid half-open sockets.
 // - headersTimeout slightly above keepAliveTimeout.

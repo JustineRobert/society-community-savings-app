@@ -1,0 +1,226 @@
+# Community Savings App - Staging Deployment Configuration
+# ============================================================================
+# This docker-compose file sets up a complete staging environment including:
+# - Application servers
+# - Database
+# - Cache (Redis)
+# - Load balancer (Nginx)
+# - Monitoring (Prometheus, Grafana)
+# - Log aggregation (Optional ELK)
+
+version: '3.9'
+
+services:
+  # ========================================================================
+  # Reverse Proxy & Load Balancer
+  # ========================================================================
+  nginx:
+    image: nginx:latest
+    container_name: staging-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/staging.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl/:/etc/nginx/ssl/:ro
+      - ./nginx/cache/:/var/cache/nginx/
+    depends_on:
+      - backend
+    networks:
+      - staging-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ========================================================================
+  # Application Backend (Multiple Instances for Load Distribution)
+  # ========================================================================
+  backend:
+    build:
+      context: ./community-savings-app-backend
+      dockerfile: Dockerfile
+    container_name: staging-backend
+    environment:
+      NODE_ENV: staging
+      PORT: 5000
+      MONGO_URI: mongodb://mongodb:27017/community-savings-staging
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-your-staging-jwt-secret}
+      ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET:-your-staging-access-token}
+      REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:-your-staging-refresh-token}
+      
+      # Email Configuration
+      SMTP_HOST: ${SMTP_HOST:-smtp.staging.example.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      MAIL_FROM: ${MAIL_FROM:-noreply@staging.example.com}
+      
+      # Payment Providers
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY_STAGING}
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY_STAGING}
+      MPESA_CONSUMER_KEY: ${MPESA_CONSUMER_KEY_STAGING}
+      MPESA_CONSUMER_SECRET: ${MPESA_CONSUMER_SECRET_STAGING}
+      MPESA_BUSINESS_SHORT_CODE: ${MPESA_BUSINESS_SHORT_CODE_STAGING}
+      MTN_API_KEY: ${MTN_API_KEY_STAGING}
+      AIRTEL_API_KEY: ${AIRTEL_API_KEY_STAGING}
+      
+      # CORS
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,https://staging.example.com}
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:3000}
+      
+      # Monitoring
+      LOG_LEVEL: info
+      PROMETHEUS_ENABLED: "true"
+      
+    volumes:
+      - ./community-savings-app-backend:/app
+      - /app/node_modules
+      - ./logs/backend:/app/logs
+    ports:
+      - "5000"
+    depends_on:
+      - mongodb
+      - redis
+    networks:
+      - staging-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+
+  # ========================================================================
+  # Database
+  # ========================================================================
+  mongodb:
+    image: mongo:latest
+    container_name: staging-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-staging-password}
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb-staging-data:/data/db
+      - mongodb-staging-config:/data/configdb
+      - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/init.js:ro
+    networks:
+      - staging-network
+    restart: unless-stopped
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/admin -u admin -p staging-password
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ========================================================================
+  # Cache Layer
+  # ========================================================================
+  redis:
+    image: redis:latest
+    container_name: staging-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-staging-data:/data
+      - ./redis/staging.conf:/usr/local/etc/redis/redis.conf:ro
+    command: redis-server /usr/local/etc/redis/redis.conf
+    networks:
+      - staging-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ========================================================================
+  # Monitoring - Prometheus
+  # ========================================================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: staging-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/staging.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-staging-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    networks:
+      - staging-network
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  # ========================================================================
+  # Monitoring - Grafana
+  # ========================================================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: staging-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-staging-password}
+      GF_INSTALL_PLUGINS: 'grafana-piechart-panel'
+    volumes:
+      - grafana-staging-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - staging-network
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
+  # ========================================================================
+  # Frontend (Optional)
+  # ========================================================================
+  frontend:
+    build:
+      context: ./community-savings-app-frontend
+      dockerfile: Dockerfile
+      args:
+        REACT_APP_API_URL: http://localhost:5000/api
+        REACT_APP_ENVIRONMENT: staging
+    container_name: staging-frontend
+    ports:
+      - "3000:80"
+    environment:
+      REACT_APP_API_URL: ${REACT_APP_API_URL:-http://localhost:5000/api}
+      REACT_APP_ENVIRONMENT: staging
+    volumes:
+      - ./community-savings-app-frontend/build:/usr/share/nginx/html:ro
+      - ./nginx/frontend.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - staging-network
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+networks:
+  staging-network:
+    driver: bridge
+
+volumes:
+  mongodb-staging-data:
+  mongodb-staging-config:
+  redis-staging-data:
+  prometheus-staging-data:
+  grafana-staging-data:

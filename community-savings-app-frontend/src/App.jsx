@@ -9,6 +9,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import ProtectedRouteWithRole from './components/ProtectedRouteWithRole';
 import Navbar from './components/Navbar';
+import Footer from './components/Footer';
 
 // ✅ NEW: import the ErrorBoundary and default fallback
 import { ErrorBoundary, ErrorFallback } from './components/ErrorBoundary';
@@ -16,6 +17,10 @@ import { ErrorBoundary, ErrorFallback } from './components/ErrorBoundary';
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Login = lazy(() => import('./pages/Login'));
 const Register = lazy(() => import('./pages/Register'));
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
+const ResetPassword = lazy(() => import('./pages/ResetPassword'));
+const TermsOfService = lazy(() => import('./pages/TermsOfService'));
+const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
 const GroupList = lazy(() => import('./pages/GroupList'));
 const GroupDetails = lazy(() => import('./pages/GroupDetails'));
 const CreateGroup = lazy(() => import('./pages/CreateGroup'));
@@ -65,25 +70,31 @@ function reportError(error, errorInfo) {
 
 function AppLayout({ children }) {
   const location = useLocation();
-  const hideNavbarOnPaths = ['/login', '/register'];
+  const hideNavbarOnPaths = ['/login', '/register', '/forgot-password', '/reset-password', '/terms', '/privacy'];
   const shouldHideNavbar = hideNavbarOnPaths.includes(location.pathname);
+  const hideFooeterOnPaths = ['/login', '/register'];
+  const shouldHideFooeter = hideFooeterOnPaths.includes(location.pathname);
 
   return (
-    <>
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
       {!shouldHideNavbar && <Navbar />}
       <ScrollToTop />
 
       {/* ✅ Wrap Suspense with ErrorBoundary and reset on route change */}
-      <ErrorBoundary
-        FallbackComponent={ErrorFallback}
-        fallbackProps={{ context: 'App layout' }}
-        resetKeys={[location.pathname]}
-        onError={reportError}
-      >
-        <Suspense fallback={<RouteFallback />}>
-          {children}
-        </Suspense>
-      </ErrorBoundary>
+      <div style={{ flex: 1 }}>
+        <ErrorBoundary
+          FallbackComponent={ErrorFallback}
+          fallbackProps={{ context: 'App layout' }}
+          resetKeys={[location.pathname]}
+          onError={reportError}
+        >
+          <Suspense fallback={<RouteFallback />}>
+            {children}
+          </Suspense>
+        </ErrorBoundary>
+      </div>
+
+      {!shouldHideFooeter && <Footer />}
 
       <ToastContainer
         position="top-right"
@@ -94,7 +105,7 @@ function AppLayout({ children }) {
         draggable
         theme="colored"
       />
-    </>
+    </div>
   );
 }
 
@@ -127,6 +138,10 @@ export default function App() {
             <Route path="/" element={<HomeRedirect />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/terms" element={<TermsOfService />} />
+            <Route path="/privacy" element={<PrivacyPolicy />} />
 
             <Route
               path="/dashboard"
