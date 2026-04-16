@@ -81,7 +81,7 @@ const Footer = () => {
                 <a href="mailto:info@communitysavings.app">info@communitysavings.app</a>
               </li>
               <li>
-                <a href="tel:+256XXX">+256 (XXX) XXXXXXX</a>
+                <a href="tel:+256XXX">+256 (782) 397907</a>
               </li>
               <li>Kampala, Uganda</li>
             </ul>

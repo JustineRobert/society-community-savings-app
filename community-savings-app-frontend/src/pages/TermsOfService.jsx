@@ -182,7 +182,7 @@ const TermsOfService = () => {
               </p>
               <ul>
                 <li>Email: disputes@communitysavings.app</li>
-                <li>Phone: +256 (XXX) XXXXXXX</li>
+                <li>Phone: +256 (782) 397907</li>
                 <li>Mailing Address: Community Savings Ltd, Kampala, Uganda</li>
               </ul>
               <p>
@@ -228,7 +228,7 @@ const TermsOfService = () => {
               <p>For questions about these Terms of Service, please contact:</p>
               <div className="contact-info">
                 <p><strong>Email:</strong> <a href="mailto:legal@communitysavings.app">legal@communitysavings.app</a></p>
-                <p><strong>Phone:</strong> <a href="tel:+256XXX">+256 (XXX) XXXXXXX</a></p>
+                <p><strong>Phone:</strong> <a href="tel:+256782397907">+256 (782) 397907</a></p>
                 <p><strong>Mailing Address:</strong> Community Savings Ltd, Kampala, Uganda</p>
               </div>
             </section>

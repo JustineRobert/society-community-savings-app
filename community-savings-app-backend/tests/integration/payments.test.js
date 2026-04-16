@@ -24,7 +24,7 @@ describe('Payments (POST /api/payments)', () => {
       email: `payment-test-${Date.now()}@example.com`,
       password: 'SecurePassword123!',
       fullName: 'Payment Test User',
-      phoneNumber: '+254712345678'
+      phoneNumber: '+256782397907'
     };
 
     const registerRes = await request(app)
@@ -38,7 +38,7 @@ describe('Payments (POST /api/payments)', () => {
   describe('POST /api/payments/initiate', () => {
     it('should initiate mobile money payment (M-Pesa)', (done) => {
       const paymentData = {
-        phone: '+254712345678',
+        phone: '+256782397907',
         amount: 100,
         description: 'Contribution Payment',
         provider: 'mpesa',
@@ -102,7 +102,7 @@ describe('Payments (POST /api/payments)', () => {
 
     it('should fail with invalid provider', (done) => {
       const paymentData = {
-        phone: '+254712345678',
+        phone: '+256782397907',
         amount: 100,
         provider: 'invalid-provider'
       };
@@ -121,7 +121,7 @@ describe('Payments (POST /api/payments)', () => {
 
     it('should fail with invalid amount', (done) => {
       const paymentData = {
-        phone: '+254712345678',
+        phone: '+256782397907',
         amount: -100, // negative amount
         provider: 'mpesa'
       };
@@ -140,7 +140,7 @@ describe('Payments (POST /api/payments)', () => {
 
     it('should require authentication', (done) => {
       const paymentData = {
-        phone: '+254712345678',
+        phone: '+256782397907',
         amount: 100,
         provider: 'mpesa'
       };
@@ -163,7 +163,7 @@ describe('Payments (POST /api/payments)', () => {
     beforeAll(async () => {
       // Initiate a payment first
       const paymentData = {
-        phone: '+254712345678',
+        phone: '+256782397907',
         amount: 100,
         description: 'Test Payment',
         provider: 'mpesa'

@@ -285,7 +285,7 @@ const PrivacyPolicy = () => {
               <div className="contact-info">
                 <p><strong>Email:</strong> <a href="mailto:privacy@communitysavings.app">privacy@communitysavings.app</a></p>
                 <p><strong>Data Protection Officer:</strong> <a href="mailto:dpo@communitysavings.app">dpo@communitysavings.app</a></p>
-                <p><strong>Phone:</strong> <a href="tel:+256XXX">+256 (XXX) XXXXXXX</a></p>
+                <p><strong>Phone:</strong> <a href="tel:+256XXX">+256 (782) 397907</a></p>
                 <p><strong>Mailing Address:</strong> Community Savings Ltd, Kampala, Uganda</p>
               </div>
             </section>
