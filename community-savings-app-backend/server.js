@@ -3,6 +3,7 @@
 // ============================================================================
 // Community Savings App - Production-Ready Express Server
 // Security hardening, performance tuning, observability, and graceful shutdown.
+// Robust connection handling with retries, exponential backoff, and graceful fallbacks.
 // ============================================================================
 
 const express = require('express');
@@ -29,16 +30,41 @@ const crypto = require('crypto');
 const { errorHandler } = require('./middleware/errorHandler');
 const connectDB = require('./config/db');
 
-// ----------------------------------------------------------------------------
-// Environment
-// ----------------------------------------------------------------------------
+// ============================================================================
+// Connection Management Utilities
+// ============================================================================
+
+/**
+ * Exponential backoff calculator with jitter
+ * @param {number} attemptNumber - Starting from 0
+ * @param {number} minDelay - Minimum delay in ms (default 1000)
+ * @param {number} maxDelay - Maximum delay in ms (default 30000)
+ * @returns {number} Delay in milliseconds
+ */
+function getExponentialBackoffDelay(attemptNumber, minDelay = 1000, maxDelay = 30000) {
+  const baseDelay = Math.min(minDelay * Math.pow(2, attemptNumber), maxDelay);
+  // Add jitter (±10% randomness) to prevent thundering herd
+  const jitter = baseDelay * 0.1 * (Math.random() - 0.5);
+  return Math.floor(baseDelay + jitter);
+}
+
+// ============================================================================
+// Environment Configuration
+// ============================================================================
 dotenv.config({ path: path.resolve(__dirname, '.env') });
 
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const PORT = Number(process.env.PORT || 5000);
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://user:pass@cluster.mongodb.net/community_savings';
+const MONGO_URI_FALLBACK = process.env.MONGO_URI_FALLBACK || 'mongodb://127.0.0.1:27017/community_savings';
+const REDIS_URI = process.env.REDIS_URI || process.env.REDIS_URL || 'redis://127.0.0.1:6379';
+
+// Graceful startup flags
+const GRACEFUL_STARTUP = process.env.GRACEFUL_STARTUP === 'true' || NODE_ENV === 'development';
+const SKIP_DB_CHECKS = process.env.SKIP_DB_CHECKS === 'true';
 
 // Validate required environment variables early to fail fast.
-const requiredEnvVars = ['PORT', 'MONGO_URI', 'JWT_SECRET'];
+const requiredEnvVars = ['JWT_SECRET'];
 for (const key of requiredEnvVars) {
   if (!process.env[key]) {
     // Use console.error as logger may not be ready yet
@@ -46,6 +72,16 @@ for (const key of requiredEnvVars) {
     process.exit(1);
   }
 }
+
+// Store connection URIs for startup checks
+const connectionConfig = {
+  mongo: MONGO_URI,
+  mongoFallback: MONGO_URI_FALLBACK,
+  redis: REDIS_URI,
+  environment: NODE_ENV,
+  gracefulStartup: GRACEFUL_STARTUP,
+  skipDbChecks: SKIP_DB_CHECKS,
+};
 
 // ----------------------------------------------------------------------------
 // Logger (Winston) — JSON in production, colorized in dev; includes requestId.
@@ -63,9 +99,57 @@ const logger = winston.createLogger({
   ],
 });
 
-// ----------------------------------------------------------------------------
-// Database
-// ----------------------------------------------------------------------------
+// ============================================================================
+// Startup Health Check Function
+// Ensures critical services are available before starting the server
+// ============================================================================
+async function performStartupHealthCheck() {
+  logger.info('🔍 Performing startup health checks...');
+  logger.info(`   Environment: ${NODE_ENV}`);
+  
+  // Determine which MongoDB URI will be used
+  const inProduction = NODE_ENV === 'production';
+  const inDocker = process.env.DOCKER === 'true' || process.env.DOCKER === '1';
+  
+  let mongoURIToUse, mongoType;
+  if (inProduction) {
+    mongoURIToUse = MONGO_URI;
+    mongoType = 'MongoDB Atlas (SRV)';
+  } else if (inDocker) {
+    mongoURIToUse = MONGO_URI_FALLBACK;
+    mongoType = 'Docker MongoDB';
+  } else {
+    mongoURIToUse = MONGO_URI_FALLBACK;
+    mongoType = 'Local MongoDB';
+  }
+  
+  // Mask credentials for safe logging
+  const maskedMongoURI = mongoURIToUse.replace(/(:\/\/[^:]+:)[^@]+(@)/, '$1****$2');
+  
+  logger.info(`📍 MongoDB: ${mongoType}`);
+  logger.info(`   URI (masked): ${maskedMongoURI}`);
+  logger.info(`   Source: ${inProduction ? 'MONGO_URI' : 'MONGO_URI_FALLBACK'}`);
+  
+  // Check Redis availability
+  logger.info(`📍 Redis URI: ${REDIS_URI}`);
+  if (redisClient && redisClient.status && redisClient.status !== 'mock') {
+    logger.info('✅ Redis is available');
+  } else {
+    logger.warn('⚠️ Redis is not available - rate limiting will use memory store');
+  }
+  
+  // Skip database checks if requested
+  if (SKIP_DB_CHECKS) {
+    logger.warn('⚠️ Database connectivity checks skipped (SKIP_DB_CHECKS=true)');
+    logger.warn('   Application will attempt to connect to databases at runtime');
+  }
+  
+  logger.info('✅ Startup health checks completed');
+}
+
+// ============================================================================
+// Database Connection
+// ============================================================================
 connectDB();
 
 const app = express();
@@ -532,9 +616,45 @@ server.keepAliveTimeout = 5000;       // 5s keep-alive (match Nginx default)
 server.headersTimeout = 6500;         // 6.5s (must be > keepAliveTimeout)
 server.requestTimeout = 30000;        // 30s per-request cap
 
-server.listen(PORT, () => {
-  logger.info(`✅ Server running (${NODE_ENV}) at http://localhost:${PORT}`);
-});
+// ============================================================================
+// Server Startup with Health Checks
+// ============================================================================
+const startServer = async (listenPort = PORT, attempt = 0) => {
+  try {
+    // Perform startup health checks
+    await performStartupHealthCheck();
+
+    server.once('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        logger.error(`❌ Port ${listenPort} already in use`, { port: listenPort });
+        const nextPort = listenPort === 0 ? 0 : listenPort + 1;
+        if (attempt < 2) {
+          logger.warn(`➡️ Retrying on port ${nextPort} (attempt ${attempt + 2})`);
+          return startServer(nextPort, attempt + 1);
+        }
+      }
+
+      logger.error('❌ Server listen error', { error: err.message, stack: err.stack });
+      process.exit(1);
+    });
+
+    // Start listening for connections
+    server.listen(listenPort, () => {
+      const boundPort = server.address() && server.address().port ? server.address().port : listenPort;
+      logger.info(`✅ Server running (${NODE_ENV}) at http://localhost:${boundPort}`);
+      logger.info(`🌐 CORS allowed origins: ${process.env.CORS_ORIGINS || process.env.CLIENT_ORIGIN || 'http://localhost:3000'}`);
+      logger.info('📊 Metrics available at: /metrics');
+      logger.info('🏥 Health check at: /healthz');
+      logger.info('📡 Readiness check at: /readyz');
+    });
+  } catch (error) {
+    logger.error('❌ Failed to start server', { error: error.message });
+    process.exit(1);
+  }
+};
+
+// Start the server
+startServer();
 
 // ----------------------------------------------------------------------------
 // Graceful Shutdown

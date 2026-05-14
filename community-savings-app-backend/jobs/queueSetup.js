@@ -3,10 +3,11 @@ const redis = require('redis');
 const logger = require('../middleware/logging');
 
 // Initialize queues
-const paymentRetryQueue = new Queue('payment-retries', process.env.REDIS_URL || 'redis://localhost:6379');
-const emailQueue = new Queue('emails', process.env.REDIS_URL || 'redis://localhost:6379');
-const overdueLoanQueue = new Queue('overdue-loans', process.env.REDIS_URL || 'redis://localhost:6379');
-const notificationQueue = new Queue('notifications', process.env.REDIS_URL || 'redis://localhost:6379');
+const redisUrl = process.env.REDIS_URI || process.env.REDIS_URL || 'redis://localhost:6379';
+const paymentRetryQueue = new Queue('payment-retries', redisUrl);
+const emailQueue = new Queue('emails', redisUrl);
+const overdueLoanQueue = new Queue('overdue-loans', redisUrl);
+const notificationQueue = new Queue('notifications', redisUrl);
 
 // Payment retry processor
 paymentRetryQueue.process(async (job) => {

@@ -14,7 +14,8 @@ const Navbar = () => {
 	return (
 		<nav style={{ padding: '12px 20px', background: '#0b2447', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
 			<div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-				<Link to="/" style={{ color: 'white', fontWeight: 700, textDecoration: 'none' }}>
+				<Link to="/" style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'white', fontWeight: 700, textDecoration: 'none' }}>
+					<img src="/images/Designer.png" alt="Community Savings App Logo" style={{ height: 32, width: 32, borderRadius: 4 }} />
 					Community Savings
 				</Link>
 				<Link to="/dashboard" style={{ color: 'white', textDecoration: 'none' }}>Dashboard</Link>

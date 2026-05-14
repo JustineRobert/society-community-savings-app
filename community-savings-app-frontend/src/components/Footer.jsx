@@ -26,7 +26,7 @@ const Footer = () => {
               Empowering communities through digital savings and lending solutions.
             </p>
             <div className="footer-social">
-              <a href="tel:+256XXX" className="social-link" aria-label="Call us">
+              <a href="tel:+256782397907" className="social-link" aria-label="Call us">
                 <Phone size={20} />
               </a>
               <a href="mailto:info@communitysavings.app" className="social-link" aria-label="Email us">

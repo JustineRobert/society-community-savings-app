@@ -1,0 +1,163 @@
+/* CreateGroup.css */
+.create-group-container {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 2rem;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+.step-indicator {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 2rem;
+}
+
+.step-indicator span {
+  padding: 0.5rem 1rem;
+  background: #e0e0e0;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  color: #666;
+}
+
+.step-indicator span.active {
+  background: #007bff;
+  color: white;
+}
+
+.step-content {
+  margin-bottom: 2rem;
+}
+
+.form-group {
+  margin-bottom: 1.5rem;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+.input-field {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 1rem;
+}
+
+.input-field:focus {
+  outline: none;
+  border-color: #007bff;
+}
+
+.add-email-btn {
+  background: #28a745;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-top: 0.5rem;
+}
+
+.add-email-btn:hover {
+  background: #218838;
+}
+
+.preview-summary {
+  background: #f8f9fa;
+  padding: 1rem;
+  border-radius: 4px;
+  margin-bottom: 1rem;
+}
+
+.preview-summary h4 {
+  margin-top: 0;
+}
+
+.preview-summary ul {
+  padding-left: 1.5rem;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 2rem;
+}
+
+.btn-secondary {
+  background: #6c757d;
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.btn-secondary:hover {
+  background: #5a6268;
+}
+
+.btn-primary {
+  background: #007bff;
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.btn-primary:hover {
+  background: #0056b3;
+}
+
+.submit-btn {
+  background: #28a745;
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+  width: 100%;
+}
+
+.submit-btn:hover {
+  background: #218838;
+}
+
+.submit-btn.loading {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.error-message {
+  color: #dc3545;
+  background: #f8d7da;
+  padding: 0.5rem;
+  border-radius: 4px;
+  margin-bottom: 1rem;
+}
+
+.error-list {
+  margin-top: 0.5rem;
+}
+
+.progress-bar {
+  margin-top: 1rem;
+}
+
+.progress-fill {
+  height: 20px;
+  background: #007bff;
+  border-radius: 10px;
+  transition: width 0.3s ease;
+}
+
+.progress-bar p {
+  margin-top: 0.5rem;
+  text-align: center;
+}

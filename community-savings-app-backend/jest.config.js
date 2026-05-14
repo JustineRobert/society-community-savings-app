@@ -65,11 +65,6 @@ module.exports = {
       classNameTemplate: '{classname}',
       titleTemplate: '{title}',
     }],
-    ['jest-html-reporters', {
-      publicPath: './test-reports',
-      filename: 'report.html',
-      expand: true,
-    }],
   ],
 
   // Bail early on first failure in watch mode
@@ -91,5 +86,7 @@ module.exports = {
   ],
 
   // Timers
-  timers: 'fake',
+  fakeTimers: {
+    enableGlobally: true,
+  },
 };

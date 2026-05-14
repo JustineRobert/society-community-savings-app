@@ -33,7 +33,11 @@
   },
   "dependencies": {
     "ioredis": "^5.10.1",
-    "mongodb": "^7.0.0"
+    "mongodb": "^7.1.1",
+    "mongoose": "^9.6.2",
+    "ping": "^1.0.0",
+    "redis-cli": "^2.1.2",
+    "uuid": "^14.0.0"
   },
   "directories": {
     "test": "tests"

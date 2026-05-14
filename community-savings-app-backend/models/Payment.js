@@ -261,7 +261,6 @@ paymentSchema.pre('save', function (next) {
 
 // Ensure indexes are created
 paymentSchema.index({ userId: 1, createdAt: -1 });
-paymentSchema.index({ groupId: 1, status: 1 });
 // status + createdAt index already defined above
 
 module.exports = mongoose.model('Payment', paymentSchema);

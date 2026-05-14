@@ -1,51 +1,241 @@
 // controllers/groupController.js
 
 const Group = require('../models/Group');
+const User = require('../models/User');
 const logger = require('../utils/logger');
 const { notificationQueue } = require('../services/queue');
 
 /**
- * Create a new group and add the current user as the initial member and creator.
+ * Create a new group with enhanced features:
+ * - Support group type and description
+ * - Support member roles (member, treasurer, secretary)
+ * - Audit logging for group creation
+ * - Batch member invitation
  */
 exports.createGroup = async (req, res) => {
   try {
-    const { name, description } = req.body;
+    const { 
+      name, 
+      type = 'savings', 
+      description = '',
+      members: memberData = [],
+      createdBy = req.user?.id
+    } = req.body;
     
-    if (!name || !req.user || !req.user.id) {
-      return res.status(400).json({ message: 'Invalid request data' });
+    // Validation
+    if (!name || !createdBy) {
+      return res.status(400).json({ message: 'Group name and creator are required' });
     }
 
+    if (name.trim().length < 3 || name.trim().length > 100) {
+      return res.status(400).json({ message: 'Group name must be 3-100 characters' });
+    }
+
+    // RBAC: Only admins can create groups
+    if (req.user?.role !== 'admin') {
+      logger.warn('Non-admin user attempted to create group', { userId: req.user?.id });
+      return res.status(403).json({ message: 'Only administrators can create groups' });
+    }
+
+    // Validate group type
+    const validTypes = ['savings', 'investment', 'community', 'welfare'];
+    if (!validTypes.includes(type)) {
+      return res.status(400).json({ message: `Invalid group type. Valid types: ${validTypes.join(', ')}` });
+    }
+
+    // Process member data (can be array of objects with email and role, or just emails)
+    const processedMembers = [];
+    const invitationEmails = [];
+
+    if (Array.isArray(memberData) && memberData.length > 0) {
+      for (const member of memberData) {
+        const email = typeof member === 'string' ? member : member.email;
+        const role = typeof member === 'object' ? member.role || 'member' : 'member';
+
+        // Validate role
+        const validRoles = ['member', 'treasurer', 'secretary'];
+        if (!validRoles.includes(role)) {
+          return res.status(400).json({ message: `Invalid member role: ${role}` });
+        }
+
+        if (email && email.includes('@')) {
+          invitationEmails.push({ email: email.toLowerCase().trim(), role });
+          processedMembers.push({ email: email.toLowerCase().trim(), role });
+        }
+      }
+    }
+
+    // Deduplicate by email
+    const uniqueEmails = [...new Map(processedMembers.map(m => [m.email, m])).values()];
+
+    // Create group
     const group = new Group({
-      name,
-      description: description || '',
-      members: [req.user.id],
-      createdBy: req.user.id,
+      name: name.trim(),
+      type,
+      description: description.trim(),
+      members: [createdBy], // Creator is automatically first member
+      createdBy,
+      metadata: {
+        createdAt: new Date(),
+        totalInvited: uniqueEmails.length,
+      }
     });
 
     await group.save();
-    
-    logger.info(`Group created: ${group._id} by user ${req.user.id}`);
 
-    // enqueue a notification job for other members (or admins)
-    try {
-      notificationQueue.add({
-        type: 'group-created',
-        groupId: group._id,
-        userId: req.user.id,
-        name: group.name,
-      });
-    } catch (qErr) {
-      logger.warn('Failed to enqueue notification job', { error: qErr.message });
+    // Audit logging
+    logger.info('GROUP_CREATED', {
+      groupId: group._id,
+      groupName: name,
+      type,
+      createdBy,
+      memberCount: 1,
+      invitedCount: uniqueEmails.length,
+    });
+
+    // Queue batch invitations
+    if (uniqueEmails.length > 0) {
+      try {
+        // Add batch invitation job
+        notificationQueue.add({
+          type: 'batch-group-invitation',
+          groupId: group._id,
+          members: uniqueEmails,
+          invitedBy: createdBy,
+          batchSize: 5,
+        });
+      } catch (qErr) {
+        logger.warn('Failed to queue batch invitations', { groupId: group._id, error: qErr.message });
+      }
     }
-    
+
     res.status(201).json({
       message: 'Group created successfully',
-      data: group,
+      groupId: group._id,
+      data: {
+        _id: group._id,
+        name: group.name,
+        type: group.type,
+        description: group.description,
+        members: group.members,
+        createdBy: group.createdBy,
+      },
+      invitedCount: uniqueEmails.length,
     });
   } catch (err) {
-    logger.error('Error creating group:', { userId: req.user.id, error: err.message });
+    logger.error('GROUP_CREATION_ERROR', {
+      userId: req.user?.id,
+      error: err.message,
+      stack: err.stack,
+    });
     res.status(500).json({ 
       message: 'Failed to create group',
+      error: process.env.NODE_ENV === 'production' ? undefined : err.message,
+    });
+  }
+};
+
+/**
+ * Send batch invitations to group members
+ * Supports retry logic and detailed logging
+ */
+exports.sendBatchInvitations = async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const { members = [], batchIndex = 1 } = req.body;
+
+    if (!groupId || !members || members.length === 0) {
+      return res.status(400).json({ message: 'Group ID and members are required' });
+    }
+
+    // RBAC: Only admins or group members can send invitations
+    const group = await Group.findById(groupId);
+    if (!group) {
+      return res.status(404).json({ message: 'Group not found' });
+    }
+
+    if (req.user?.role !== 'admin' && !group.members.includes(req.user?.id)) {
+      logger.warn('Unauthorized invitation attempt', { 
+        userId: req.user?.id, 
+        groupId 
+      });
+      return res.status(403).json({ message: 'Unauthorized' });
+    }
+
+    // Send invitations with retry
+    const results = {
+      successCount: 0,
+      failureCount: 0,
+      failures: [],
+    };
+
+    for (const memberData of members) {
+      const email = typeof memberData === 'string' ? memberData : memberData.email;
+      const role = typeof memberData === 'object' ? memberData.role || 'member' : 'member';
+
+      try {
+        // Queue invitation
+        await notificationQueue.add({
+          type: 'group-invitation',
+          groupId: groupId,
+          email: email.toLowerCase().trim(),
+          role,
+          invitedBy: req.user?.id,
+          retries: 0,
+        }, {
+          attempts: 3,
+          backoff: { type: 'exponential', delay: 2000 },
+        });
+
+        results.successCount++;
+
+        // Audit log
+        logger.debug('INVITATION_QUEUED', {
+          groupId,
+          email,
+          role,
+          batch: batchIndex,
+        });
+      } catch (invErr) {
+        results.failureCount++;
+        results.failures.push({
+          email,
+          error: invErr.message,
+        });
+
+        logger.warn('INVITATION_QUEUE_FAILED', {
+          groupId,
+          email,
+          error: invErr.message,
+        });
+      }
+    }
+
+    // Audit logging
+    logger.info('BATCH_INVITATIONS_PROCESSED', {
+      groupId,
+      batch: batchIndex,
+      sent: members.length,
+      success: results.successCount,
+      failed: results.failureCount,
+      userId: req.user?.id,
+    });
+
+    res.status(200).json({
+      message: 'Invitations processed',
+      successCount: results.successCount,
+      failureCount: results.failureCount,
+      failures: results.failures,
+      batch: batchIndex,
+    });
+  } catch (err) {
+    logger.error('BATCH_INVITATION_ERROR', {
+      groupId: req.params.groupId,
+      userId: req.user?.id,
+      error: err.message,
+    });
+    res.status(500).json({ 
+      message: 'Failed to send invitations',
       error: process.env.NODE_ENV === 'production' ? undefined : err.message,
     });
   }

@@ -1,28 +1,29 @@
 /**
  * src/setupTests.js
- * Jest setup file for test configuration
+ * Vitest setup file for test configuration
  */
+
+import { vi } from 'vitest';
+import '@testing-library/jest-dom';
 
 // This file runs before all tests
 
 // Mock axios to prevent ES module loading issues
-jest.mock('axios', () => ({
+vi.mock('axios', () => ({
   default: {
-    get: jest.fn(),
-    post: jest.fn(),
-    put: jest.fn(),
-    delete: jest.fn(),
-    patch: jest.fn(),
-    request: jest.fn(),
+    get: vi.fn(),
+    post: vi.fn(),
+    put: vi.fn(),
+    delete: vi.fn(),
+    patch: vi.fn(),
+    request: vi.fn(),
   },
-  get: jest.fn(),
-  post: jest.fn(),
-  put: jest.fn(),
-  delete: jest.fn(),
-  patch: jest.fn(),
-  request: jest.fn(),
+  get: vi.fn(),
+  post: vi.fn(),
+  put: vi.fn(),
+  delete: vi.fn(),
+  patch: vi.fn(),
+  request: vi.fn(),
 }));
 
-// Ensure @testing-library/jest-dom matchers are available
-import '@testing-library/jest-dom';
 

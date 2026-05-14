@@ -5,8 +5,9 @@ const Queue = require('bull');
 const redis = require('./redis');
 
 // example notification queue
+const redisUrl = process.env.REDIS_URI || process.env.REDIS_URL || 'redis://localhost:6379';
 const notificationQueue = new Queue('notifications', {
-  redis: { url: process.env.REDIS_URL || 'redis://localhost:6379' },
+  redis: { url: redisUrl },
 });
 
 // process jobs and emit via socket.io

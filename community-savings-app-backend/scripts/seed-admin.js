@@ -24,8 +24,10 @@ function validatePassword(pw) {
   return true;
 }
 
-async function run() {
-  await connectDB();
+async function run({ skipConnect = false } = {}) {
+  if (!skipConnect) {
+    await connectDB();
+  }
 
   const email = process.env.ADMIN_EMAIL || 'admin@example.com';
   let password = process.env.ADMIN_PASS;
@@ -71,4 +73,8 @@ async function run() {
   }
 }
 
-run();
+module.exports = run;
+
+if (require.main === module) {
+  run();
+}

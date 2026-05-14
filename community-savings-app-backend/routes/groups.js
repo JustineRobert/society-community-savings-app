@@ -19,6 +19,7 @@ const {
   joinGroup,
   getGroups,
   seedGroups,
+  sendBatchInvitations,
 } = require('../controllers/groupController');
 
 const { verifyToken } = require('../middleware/auth');
@@ -34,6 +35,19 @@ router.post(
   validationRules.createGroup,
   handleValidation,
   asyncHandler(createGroup)
+);
+
+/**
+ * @route   POST /api/groups/:groupId/send-invitations
+ * @desc    Send batch invitations to group members (supports retry)
+ * @access  Private (Authenticated Users - Admin or Group Admin)
+ */
+router.post(
+  '/:groupId/send-invitations',
+  verifyToken,
+  [param('groupId').isMongoId().withMessage('Invalid group ID')],
+  handleValidation,
+  asyncHandler(sendBatchInvitations)
 );
 
 /**

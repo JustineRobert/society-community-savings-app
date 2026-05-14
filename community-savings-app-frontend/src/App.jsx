@@ -23,7 +23,7 @@ const TermsOfService = lazy(() => import('./pages/TermsOfService'));
 const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
 const GroupList = lazy(() => import('./pages/GroupList'));
 const GroupDetails = lazy(() => import('./pages/GroupDetails'));
-const CreateGroup = lazy(() => import('./pages/CreateGroup'));
+const CreateGroup = lazy(() => import('./pages/CreateGroupV2')); // Enhanced version
 const NotFound = lazy(() => import('./pages/NotFound'));
 
 const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
