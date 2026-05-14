@@ -51,7 +51,7 @@
     "redis": "^4.7.1",
     "socket.io": "^4.7.0",
     "sparse-bitfield": "^3.0.3",
-    "uuid": "^8.3.2",
+    "uuid": "^14.0.0",
     "validator": "^13.11.0",
     "winston": "^3.18.3",
     "winston-daily-rotate-file": "^5.0.0",
