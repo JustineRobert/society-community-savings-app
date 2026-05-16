@@ -1,4 +1,3 @@
-
 // community-savings-app-backend/utils/asyncHandler.js
 
 /**
@@ -13,18 +12,19 @@ module.exports = function asyncHandler(fn) {
 
   if (type !== 'function') {
     const name = fn && fn.name ? ` "${fn.name}"` : '';
-    throw new TypeError(
-      `asyncHandler expects a function, received ${type}${name || ''}`
-    );
+    const msg = `asyncHandler expects a function, received ${type}${name || ''}`;
+    // Instead of crashing the app, log a clear error and return a safe no-op handler
+    console.error(`[AsyncHandler] ${msg}`);
+    return function invalidAsyncHandler(req, res, next) {
+      next(new TypeError(msg));
+    };
   }
 
   // Name the wrapper for better stack traces in logs
   const wrapped = function wrappedAsyncHandler(req, res, next) {
-    // Use a resolved promise to ensure sync throws are captured in .catch
     Promise.resolve()
       .then(() => fn(req, res, next))
       .catch((err) => {
-        // If response already started, delegate to Express to finish correctly
         if (res.headersSent) {
           return next(err);
         }
@@ -32,14 +32,14 @@ module.exports = function asyncHandler(fn) {
       });
   };
 
-  // Preserve original name to aid diagnostics (non-enumerable)
+  // Preserve original name to aid diagnostics
   try {
     Object.defineProperty(wrapped, 'name', {
       value: fn.name || 'anonymousHandler',
       configurable: true,
     });
   } catch (_) {
-    // ignore if not configurable in this environment
+    // ignore if not configurable
   }
 
   return wrapped;
