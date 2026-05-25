@@ -1,4 +1,3 @@
-
 // server.js
 // ============================================================================
 // Community Savings App - Production-Ready Express Server
@@ -28,7 +27,8 @@ const mongoose = require('mongoose');
 const crypto = require('crypto');
 
 const { errorHandler } = require('./middleware/errorHandler');
-const connectDB = require('./config/db');
+// NOTE: replaced external connectDB usage with inline robust connect logic below
+// const connectDB = require('./config/db');
 
 // ============================================================================
 // Connection Management Utilities
@@ -55,8 +55,20 @@ dotenv.config({ path: path.resolve(__dirname, '.env') });
 
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const PORT = Number(process.env.PORT || 5000);
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://user:pass@cluster.mongodb.net/community_savings';
-const MONGO_URI_FALLBACK = process.env.MONGO_URI_FALLBACK || 'mongodb://127.0.0.1:27017/community_savings';
+
+// Build safe defaults and ensure URIs are well-formed
+const DB_USER = process.env.DB_USER || '';
+const DB_PASSWORD = process.env.DB_PASSWORD || '';
+const MONGO_DB = process.env.MONGO_DB || 'community_savings';
+
+// If MONGO_URI is provided, use it; otherwise build from DB_USER/DB_PASSWORD
+let MONGO_URI = process.env.MONGO_URI && process.env.MONGO_URI.trim()
+  ? process.env.MONGO_URI.trim()
+  : (DB_USER && DB_PASSWORD
+      ? `mongodb+srv://${DB_USER}:${DB_PASSWORD}@cluster0.syk98ao.mongodb.net/${MONGO_DB}?retryWrites=true&w=majority`
+      : `mongodb+srv://user:pass@cluster0.mongodb.net/${MONGO_DB}`);
+
+const MONGO_URI_FALLBACK = process.env.MONGO_URI_FALLBACK || `mongodb://127.0.0.1:27017/${MONGO_DB}`;
 const REDIS_URI = process.env.REDIS_URI || process.env.REDIS_URL || 'redis://127.0.0.1:6379';
 
 // Graceful startup flags
@@ -148,9 +160,67 @@ async function performStartupHealthCheck() {
 }
 
 // ============================================================================
+// Robust MongoDB Connection Logic (replaces external connectDB)
+// - Tries MONGO_URI first (SRV), on SRV/DNS errors falls back to MONGO_URI_FALLBACK
+// - Retries with exponential backoff and jitter
+// ============================================================================
+async function connectMongoWithRetries(maxAttempts = 5) {
+  let attempt = 0;
+  let lastError = null;
+  const options = {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+    serverSelectionTimeoutMS: 5000, // fail fast per attempt
+  };
+
+  // Try primary (SRV) first, then fallback if SRV resolution fails
+  const tryUriSequence = [MONGO_URI, MONGO_URI_FALLBACK];
+
+  while (attempt < maxAttempts) {
+    const uriIndex = attempt < tryUriSequence.length ? attempt : 0; // try fallback on second attempt if needed
+    const uriToTry = tryUriSequence[uriIndex] || MONGO_URI;
+    try {
+      logger.info(`🔌 Connecting to MongoDB (Attempt ${attempt + 1}/${maxAttempts})`);
+      logger.info(`   Type: ${uriToTry.startsWith('mongodb+srv') ? 'MongoDB Atlas (SRV)' : 'MongoDB'} | Source: ${uriIndex === 0 ? 'MONGO_URI' : 'MONGO_URI_FALLBACK'}`);
+      const masked = uriToTry.replace(/(:\/\/[^:]+:)[^@]+(@)/, '$1****$2');
+      logger.info(`   URI (masked): ${masked}`);
+      await mongoose.connect(uriToTry, options);
+      logger.info('✅ MongoDB connected');
+      return;
+    } catch (err) {
+      lastError = err;
+      // If SRV/DNS resolution error, log and attempt fallback immediately on next iteration
+      const isSrvDnsError = /querySrv|ENOTFOUND|ECONNREFUSED|EAI_AGAIN/i.test(err.message || err.toString());
+      logger.warn(`]: ⚠️ MongoDB disconnected`);
+      logger.error(`]: ❌ MongoDB connection error (Attempt ${attempt + 1}/${maxAttempts}): ${err.message}`);
+      if (isSrvDnsError && uriIndex === 0) {
+        logger.warn(']:    Detected SRV/DNS error; will attempt fallback URI on next try.');
+      }
+      attempt += 1;
+      const delay = getExponentialBackoffDelay(attempt - 1, 1000, 16000);
+      logger.info(`🔄 Retrying MongoDB connection in ${delay}ms (Attempt ${attempt + 1}/${maxAttempts})`);
+      await new Promise((res) => setTimeout(res, delay));
+    }
+  }
+
+  logger.error('🛑 MongoDB failed to connect after maximum retries.');
+  logger.error(`]:    Attempted ${maxAttempts} connections to: ${MONGO_URI}`);
+  logger.error(`]:    Configuration source: MONGO_URI`);
+  logger.error(`]:    Last error: ${lastError && lastError.message ? lastError.message : lastError}`);
+  throw lastError;
+}
+
+// Kick off connection attempts (non-blocking)
+connectMongoWithRetries().catch((err) => {
+  // Let the server continue to start but mark Mongo as disconnected; the readiness endpoint will reflect this.
+  logger.error('❌ Unrecoverable MongoDB connection error during startup', { error: err?.message });
+  // Do not exit here to allow degraded startup; original behavior crashed — we keep server running but not ready.
+});
+
+// ============================================================================
 // Database Connection
 // ============================================================================
-connectDB();
+// connectDB(); // replaced by connectMongoWithRetries above
 
 const app = express();
 

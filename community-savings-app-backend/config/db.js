@@ -67,11 +67,11 @@ function validateMongoURI(uri) {
     };
   }
 
-  // SRV URIs should NOT have a port (DNS service records handle it)
-  if (isSRV && uri.includes(':') && uri.includes('/', uri.indexOf('://') + 3)) {
-    // Check if there's a port after the host but before the path
+  // SRV URIs should NOT have an explicit port after the host
+  if (isSRV) {
     const afterScheme = uri.substring(uri.indexOf('://') + 3);
     const hostPart = afterScheme.split('/')[0];
+    // If hostPart contains a colon followed by digits at the end, it's a port
     if (hostPart.match(/:\d+$/)) {
       return {
         isValid: false,
@@ -81,15 +81,9 @@ function validateMongoURI(uri) {
     }
   }
 
-  // Standard URIs should have a port
-  if (isStandard && !uri.includes(':27017') && !uri.includes(':') && !uri.includes('@')) {
-    // Skip check if auth credentials are present (they contain colons)
-    return {
-      isValid: true,
-      error: null,
-      isSRV: false,
-      warning: 'Standard mongodb:// URI typically includes port (e.g., :27017)',
-    };
+  // Standard URIs: basic sanity check (allow many valid variants)
+  if (isStandard) {
+    return { isValid: true, error: null, isSRV: false };
   }
 
   return { isValid: true, error: null, isSRV };
@@ -102,28 +96,33 @@ function validateMongoURI(uri) {
  * @returns {string} URI with masked credentials
  */
 function maskCredentials(uri) {
-  return uri.replace(/(:\/\/[^:]+:)[^@]+(@)/, '$1****$2');
+  try {
+    return uri.replace(/(:\/\/[^:]+:)[^@]+(@)/, '$1****$2');
+  } catch (e) {
+    return uri;
+  }
 }
 
 /**
  * Resolve MongoDB URI based on environment and Docker detection
- * - Production: Always use MONGO_URI (Atlas SRV)
+ * - Production: Always use MONGO_URI (Atlas SRV) unless forceFallback is true
  * - Development or Docker: Use MONGO_URI_FALLBACK (local/Docker MongoDB)
- * @returns {object} { uri: string, type: string, source: string }
+ * @param {boolean} forceFallback - when true, prefer fallback URI even in production
+ * @returns {object} { uri: string, type: string, source: string, masked: string, inProduction: boolean, inDocker: boolean }
  */
-const resolveMongoUri = () => {
+const resolveMongoUri = (forceFallback = false) => {
   const inProduction = NODE_ENV === 'production';
   const inDocker = isDockerEnvironment();
-  
+
   let selectedUri, uriType, source;
 
-  if (inProduction) {
-    // Production always uses Atlas
+  if (inProduction && !forceFallback) {
+    // Production prefers Atlas SRV
     selectedUri = MONGO_URI;
     uriType = 'MongoDB Atlas (SRV)';
     source = 'MONGO_URI';
-  } else if (inDocker || NODE_ENV === 'development') {
-    // Development or Docker uses local/fallback
+  } else if (inDocker || NODE_ENV === 'development' || forceFallback) {
+    // Development, Docker, or forced fallback uses local/fallback
     selectedUri = MONGO_URI_FALLBACK;
     uriType = inDocker ? 'Docker MongoDB' : 'Local MongoDB';
     source = 'MONGO_URI_FALLBACK';
@@ -174,14 +173,16 @@ function getRetryDelay(attempt) {
  * Connect to MongoDB with exponential backoff retry strategy
  * Intelligently selects between MONGO_URI (production/Atlas) and
  * MONGO_URI_FALLBACK (development/Docker) based on environment.
+ * If SRV/DNS errors are detected, it will attempt the fallback URI before exiting.
  * @param {number} attempt - Current attempt number (starting from 1)
+ * @param {boolean} forceFallback - When true, prefer fallback URI even in production
  */
-const connectDB = async (attempt = 1) => {
+const connectDB = async (attempt = 1, forceFallback = false) => {
   if (isConnecting && attempt > 1) return;
   if (attempt === 1) isConnecting = true;
 
   // Resolve URI based on environment and Docker detection
-  const uriConfig = resolveMongoUri();
+  const uriConfig = resolveMongoUri(forceFallback);
   const mongoUri = uriConfig.uri;
 
   if (!mongoUri) {
@@ -196,6 +197,12 @@ const connectDB = async (attempt = 1) => {
     logger.error(`   URI (masked): ${uriConfig.masked}`);
     logger.error(`   Type: ${uriConfig.type}`);
     logger.error(`   Source: ${uriConfig.source}`);
+    // If validation fails for SRV due to port, try fallback automatically
+    if (validation.isSRV && !forceFallback) {
+      logger.warn('⚠️ SRV URI validation failed; attempting fallback URI.');
+      isConnecting = false;
+      return connectDB(1, true);
+    }
     process.exit(1);
   }
 
@@ -230,7 +237,7 @@ const connectDB = async (attempt = 1) => {
 
   } catch (error) {
     isConnecting = false;
-    const message = error.message || String(error);
+    const message = (error && error.message) ? error.message : String(error);
 
     logger.error(
       `❌ MongoDB connection error (Attempt ${attempt}/${MAX_RETRIES}): ${message}`
@@ -238,12 +245,19 @@ const connectDB = async (attempt = 1) => {
     logger.error(`   Type: ${uriConfig.type}`);
     logger.error(`   URI (masked): ${uriConfig.masked}`);
 
+    // Detect SRV/DNS/network errors and attempt fallback instead of exiting immediately
+    const isSrvDnsError = /querySrv|ENOTFOUND|ECONNREFUSED|EAI_AGAIN/i.test(message);
+    if (isSrvDnsError && !forceFallback) {
+      logger.warn('⚠️ Detected SRV/DNS error; attempting fallback URI before giving up.');
+      // Try fallback immediately (reset attempt counter for fallback)
+      return connectDB(1, true);
+    }
+
     // Fail fast on configuration errors
     if (
       message.includes('Invalid connection string') ||
       message.includes('Invalid scheme') ||
-      message.includes('Invalid hostname') ||
-      message.includes('ENOTFOUND') && attempt <= 1  // DNS resolution error on first try
+      message.includes('Invalid hostname')
     ) {
       logger.error('🛑 Invalid MongoDB URI configuration.');
       logger.error(`   Check that the URI format is correct: mongodb://host:port/db or mongodb+srv://...`);
@@ -254,10 +268,7 @@ const connectDB = async (attempt = 1) => {
 
     // Fail fast on authentication errors (but retry network timeouts)
     if (
-      message.includes('authentication failed') ||
-      message.includes('auth error') ||
-      message.includes('SASL authentication failed') ||
-      message.includes('Invalid username')
+      /authentication failed|auth error|SASL authentication failed|Invalid username/i.test(message)
     ) {
       logger.error('🛑 MongoDB authentication failed.');
       logger.error(`   Check credentials in ${uriConfig.source} environment variable.`);
@@ -281,8 +292,7 @@ const connectDB = async (attempt = 1) => {
         `🔄 Retrying MongoDB connection in ${delay / 1000}s (Attempt ${attempt + 1}/${MAX_RETRIES})`
       );
       logger.info(`   Will attempt to connect to: ${uriConfig.type}`);
-
-      setTimeout(() => connectDB(attempt + 1), delay);
+      setTimeout(() => connectDB(attempt + 1, forceFallback), delay);
       return;
     }
 
