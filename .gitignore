@@ -1,11 +1,5 @@
+# Community Savings App
 Community Savings App BooK/*.png
-
-node_modules/
-coverage/
-dist/
-build/
-.env
-
 
 # Dependencies
 node_modules/
@@ -17,17 +11,21 @@ logs/
 
 # Environment variables
 .env
+.env.local
+.env.*.local
+
+# Coverage
+coverage/
+
+# Build output
+dist/
+build/
 
 # OS files
 .DS_Store
 Thumbs.db
 
-# npm / node artifacts
+# Node / npm artifacts
 node
 community-savings-backend@*
-
-node_modules/
-logs/
-*.log
-
 community-savings-app-backend/.env
