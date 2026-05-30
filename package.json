@@ -12,7 +12,11 @@
     "install-all": "npm install && npm --prefix community-savings-app-backend install && npm --prefix community-savings-app-frontend install",
     "postman:test": "newman run postman/Community-auth-tests.postman_collection.json -e postman/Group-env.postman_environment.json --reporters cli,json --reporter-json-export postman/reports/newman-report.json",
     "seed-admin": "npm --prefix community-savings-app-backend run seed-admin",
-    "seed-admin-cli": "node scripts/seed-admin-cli.js"
+    "seed-admin-cli": "node scripts/seed-admin-cli.js",
+    "install:all": "bash scripts/setup.sh",
+    "start:backend": "cd community-savings-app-backend && npm run start",
+    "start:frontend": "cd community-savings-app-frontend && npm run dev",
+    "dev": "concurrently \"npm run start:backend\" \"npm run start:frontend\""
   },
   "newman": {
     "collection": "postman/Community-auth-tests.postman_collection.json",
