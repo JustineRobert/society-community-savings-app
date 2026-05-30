@@ -32,12 +32,14 @@
   "author": "Igune Justine Robert, TITech Africa",
   "license": "ISC",
   "devDependencies": {
-    "concurrently": "^8.2.2",
-    "newman": "^2.1.2",
+    "concurrently": "^10.0.0",
+    "newman": "^6.2.2",
     "vite": "^8.0.13"
   },
   "dependencies": {
     "crypto-js": "^4.2.0",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
     "flatted": "^3.4.2",
     "handlebars": "^4.7.9",
     "ioredis": "^5.10.1",
