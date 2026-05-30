@@ -1,21 +1,27 @@
 // jest.config.js
 // ============================================================================
 // Jest Configuration
-// Unit and integration testing framework setup
+// GitHub Copilot assisted configuration
+// Production-ready setup for Community Savings Backend
 // ============================================================================
 
 module.exports = {
   displayName: 'Community Savings Backend Tests',
+
+  // Test environment
   testEnvironment: 'node',
-  
+
   // Root directories to test
   roots: ['<rootDir>/'],
+
+  // Test file patterns
   testMatch: [
     '**/__tests__/**/*.test.js',
-    '**/?(*.)+(spec|test).js'
+    '**/?(*.)+(spec|test).js',
+    '**/tests/**/*.test.js'
   ],
 
-  // Coverage thresholds
+  // Coverage collection
   collectCoverageFrom: [
     'controllers/**/*.js',
     'models/**/*.js',
@@ -27,7 +33,9 @@ module.exports = {
     '!**/node_modules/**',
     '!**/dist/**',
   ],
+  coverageDirectory: 'coverage',
 
+  // Coverage thresholds
   coverageThreshold: {
     global: {
       branches: 70,
@@ -56,7 +64,7 @@ module.exports = {
   // Verbose output
   verbose: true,
 
-  // Reporter
+  // Reporter configuration
   reporters: [
     'default',
     ['jest-junit', {

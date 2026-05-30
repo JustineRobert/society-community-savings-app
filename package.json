@@ -16,7 +16,10 @@
     "install:all": "bash scripts/setup.sh",
     "start:backend": "cd community-savings-app-backend && npm run start",
     "start:frontend": "cd community-savings-app-frontend && npm run dev",
-    "dev": "concurrently \"npm run start:backend\" \"npm run start:frontend\""
+    "dev": "concurrently \"npm run start:backend\" \"npm run start:frontend\"",
+    "lint:frontend": "eslint community-savings-app-frontend/src --ext .js,.jsx,.ts,.tsx",
+    "lint:backend": "eslint community-savings-app-backend --ext .js,.ts",
+    "lint": "npm run lint:backend && npm run lint:frontend"
   },
   "newman": {
     "collection": "postman/Community-auth-tests.postman_collection.json",
@@ -32,8 +35,14 @@
   "author": "Igune Justine Robert, TITech Africa",
   "license": "ISC",
   "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.60.0",
+    "@typescript-eslint/parser": "^8.60.0",
     "concurrently": "^10.0.0",
+    "husky": "^9.1.7",
+    "jest": "^30.4.2",
+    "lint-staged": "^17.0.6",
     "newman": "^6.2.2",
+    "supertest": "^7.2.2",
     "vite": "^8.0.13"
   },
   "dependencies": {
@@ -64,7 +73,7 @@
     "type": "git",
     "url": "git+https://github.com/JustineRobert/society-community-savings-app.git"
   },
-  "type": "commonjs",
+  "type": "module",
   "bugs": {
     "url": "https://github.com/JustineRobert/society-community-savings-app/issues"
   },
