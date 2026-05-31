@@ -1,30 +1,41 @@
 # Backend Dockerfile
-# Multi-stage build to keep image lean
+# =====================================================================
+# GitHub Copilot assisted Dockerfile
+# Multi-stage build to keep image lean and secure
+# =====================================================================
 
+# Stage 1: Builder
 FROM node:18-alpine AS builder
+
 WORKDIR /app
 
-# copy package manifests
+# Copy package manifests first for better caching
 COPY package.json package-lock.json ./
 
-# install dependencies (production only helps reduce size)
+# Install dependencies (production only to reduce image size)
 RUN npm ci --only=production
 
-# copy entire source
+# Copy application source
 COPY . .
 
-# build step (if you have transpilation, etc.)
-# for now, nothing to build since code runs directly
+# Optional build step (transpilation, bundling, etc.)
+# For now, code runs directly without build
+# RUN npm run build
 
+# Stage 2: Runtime
 FROM node:18-alpine
+
 WORKDIR /app
 
-# copy production modules and source from builder
+# Copy production node_modules and source from builder
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app .
 
+# Environment variables
 ENV NODE_ENV=production
 
+# Expose backend port
 EXPOSE 5000
 
-CMD ["node", "server.js"]
+# Use npm start for consistency with package.json scripts
+CMD ["npm", "start"]
