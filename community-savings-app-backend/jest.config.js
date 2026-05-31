@@ -93,8 +93,10 @@ module.exports = {
     'json',
   ],
 
-  // Timers
-  fakeTimers: {
-    enableGlobally: true,
-  },
+  // Timers — disabled to avoid Mongoose warnings
+  // (fakeTimers can interfere with MongoDB driver async operations)
+  // Remove or comment out if not needed
+  // fakeTimers: {
+  //   enableGlobally: true,
+  // },
 };
