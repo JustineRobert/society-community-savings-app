@@ -1,0 +1,992 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="jest tests" tests="120" failures="69" errors="0" time="51.801">
+  <testsuite name="Loan Management Integration Tests" errors="0" failures="30" skipped="0" timestamp="2026-05-31T20:44:58" time="23.158" tests="30">
+    <testcase classname="Loan Management Integration Tests Loan Eligibility Assessment" name="should assess eligibility for new member with insufficient tenure" time="1.148">
+      <failure>ValidationError: Group validation failed: createdBy: Path `createdBy` is required.
+    at model.Object.&lt;anonymous&gt;.Document.invalidate (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3381:32)
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3142:17
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\schemaType.js:1443:9
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)</failure>
+    </testcase>
+    <testcase classname="Loan Management Integration Tests Loan Eligibility Assessment" name="should calculate eligibility with contributions" time="0.608">
+      <failure>ValidationError: Group validation failed: createdBy: Path `createdBy` is required.
+    at model.Object.&lt;anonymous&gt;.Document.invalidate (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3381:32)
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3142:17
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\schemaType.js:1443:9
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)</failure>
+    </testcase>
+    <testcase classname="Loan Management Integration Tests Loan Eligibility Assessment" name="should return detailed scoring breakdown" time="0.412">
+      <failure>ValidationError: Group validation failed: createdBy: Path `createdBy` is required.
+    at model.Object.&lt;anonymous&gt;.Document.invalidate (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3381:32)
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3142:17
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\schemaType.js:1443:9
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)</failure>
+    </testcase>
+    <testcase classname="Loan Management Integration Tests Loan Eligibility Assessment" name="should reject user with recent default" time="0.437">
+      <failure>ValidationError: Group validation failed: createdBy: Path `createdBy` is required.
+    at model.Object.&lt;anonymous&gt;.Document.invalidate (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3381:32)
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3142:17
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\schemaType.js:1443:9
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)</failure>
+    </testcase>
+    <testcase classname="Loan Management Integration Tests Loan Eligibility Assessment" name="should factor in active loans for risk assessment" time="0.433">
+      <failure>ValidationError: Group validation failed: createdBy: Path `createdBy` is required.
+    at model.Object.&lt;anonymous&gt;.Document.invalidate (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3381:32)
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3142:17
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\schemaType.js:1443:9
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)</failure>
+    </testcase>
+    <testcase classname="Loan Management Integration Tests Loan Eligibility Assessment" name="should allow admin override of eligibility" time="0.365">
+      <failure>ValidationError: Group validation failed: createdBy: Path `createdBy` is required.
+    at model.Object.&lt;anonymous&gt;.Document.invalidate (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3381:32)
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3142:17
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\schemaType.js:1443:9
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)</failure>
+    </testcase>
+    <testcase classname="Loan Management Integration Tests Loan Eligibility Assessment" name="should deny admin override when explicitly set to false" time="0.418">
+      <failure>ValidationError: Group validation failed: createdBy: Path `createdBy` is required.
+    at model.Object.&lt;anonymous&gt;.Document.invalidate (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3381:32)
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3142:17
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\schemaType.js:1443:9
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)</failure>
+    </testcase>
+    <testcase classname="Loan Management Integration Tests Loan Eligibility Assessment" name="should cache eligibility assessment and reuse if valid" time="0.485">
+      <failure>ValidationError: Group validation failed: createdBy: Path `createdBy` is required.
+    at model.Object.&lt;anonymous&gt;.Document.invalidate (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3381:32)
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3142:17
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\schemaType.js:1443:9
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)</failure>
+    </testcase>
+    <testcase classname="Loan Management Integration Tests Loan Application Workflow" name="should create loan application for eligible user" time="0.998">
+      <failure>ValidationError: Group validation failed: createdBy: Path `createdBy` is required.
+    at model.Object.&lt;anonymous&gt;.Document.invalidate (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3381:32)
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3142:17
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\schemaType.js:1443:9
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)</failure>
+    </testcase>
+    <testcase classname="Loan Management Integration Tests Loan Application Workflow" name="should reject loan application for ineligible user" time="0.505">
+      <failure>ValidationError: Group validation failed: createdBy: Path `createdBy` is required.
+    at model.Object.&lt;anonymous&gt;.Document.invalidate (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3381:32)
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3142:17
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\schemaType.js:1443:9
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)</failure>
+    </testcase>
+    <testcase classname="Loan Management Integration Tests Loan Application Workflow" name="should enforce idempotency for loan applications" time="0.411">
+      <failure>ValidationError: Group validation failed: createdBy: Path `createdBy` is required.
+    at model.Object.&lt;anonymous&gt;.Document.invalidate (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3381:32)
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3142:17
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\schemaType.js:1443:9
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)</failure>
+    </testcase>
+    <testcase classname="Loan Management Integration Tests Loan Application Workflow" name="should prevent multiple pending loans in same group" time="0.444">
+      <failure>ValidationError: Group validation failed: createdBy: Path `createdBy` is required.
+    at model.Object.&lt;anonymous&gt;.Document.invalidate (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3381:32)
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3142:17
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\schemaType.js:1443:9
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)</failure>
+    </testcase>
+    <testcase classname="Loan Management Integration Tests Loan Application Workflow" name="should validate loan amount against eligibility maximum" time="0.408">
+      <failure>ValidationError: Group validation failed: createdBy: Path `createdBy` is required.
+    at model.Object.&lt;anonymous&gt;.Document.invalidate (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3381:32)
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3142:17
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\schemaType.js:1443:9
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)</failure>
+    </testcase>
+    <testcase classname="Loan Management Integration Tests Loan Approval &amp; Disbursement" name="should approve pending loan with interest and repayment terms" time="0.509">
+      <failure>ValidationError: Group validation failed: createdBy: Path `createdBy` is required.
+    at model.Object.&lt;anonymous&gt;.Document.invalidate (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3381:32)
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3142:17
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\schemaType.js:1443:9
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)</failure>
+    </testcase>
+    <testcase classname="Loan Management Integration Tests Loan Approval &amp; Disbursement" name="should reject loan with reason" time="0.448">
+      <failure>ValidationError: Group validation failed: createdBy: Path `createdBy` is required.
+    at model.Object.&lt;anonymous&gt;.Document.invalidate (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3381:32)
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3142:17
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\schemaType.js:1443:9
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)</failure>
+    </testcase>
+    <testcase classname="Loan Management Integration Tests Loan Approval &amp; Disbursement" name="should prevent approval of non-pending loan" time="0.654">
+      <failure>ValidationError: Group validation failed: createdBy: Path `createdBy` is required.
+    at model.Object.&lt;anonymous&gt;.Document.invalidate (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3381:32)
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3142:17
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\schemaType.js:1443:9
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)</failure>
+    </testcase>
+    <testcase classname="Loan Management Integration Tests Loan Approval &amp; Disbursement" name="should create repayment schedule on disbursement" time="0.503">
+      <failure>ValidationError: Group validation failed: createdBy: Path `createdBy` is required.
+    at model.Object.&lt;anonymous&gt;.Document.invalidate (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3381:32)
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3142:17
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\schemaType.js:1443:9
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)</failure>
+    </testcase>
+    <testcase classname="Loan Management Integration Tests Loan Approval &amp; Disbursement" name="should validate repayment period bounds" time="0.404">
+      <failure>ValidationError: Group validation failed: createdBy: Path `createdBy` is required.
+    at model.Object.&lt;anonymous&gt;.Document.invalidate (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3381:32)
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3142:17
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\schemaType.js:1443:9
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)</failure>
+    </testcase>
+    <testcase classname="Loan Management Integration Tests Loan Repayment" name="should record partial repayment" time="0.521">
+      <failure>ValidationError: Group validation failed: createdBy: Path `createdBy` is required.
+    at model.Object.&lt;anonymous&gt;.Document.invalidate (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3381:32)
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3142:17
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\schemaType.js:1443:9
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)</failure>
+    </testcase>
+    <testcase classname="Loan Management Integration Tests Loan Repayment" name="should track on-time and late payments" time="0.462">
+      <failure>ValidationError: Group validation failed: createdBy: Path `createdBy` is required.
+    at model.Object.&lt;anonymous&gt;.Document.invalidate (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3381:32)
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3142:17
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\schemaType.js:1443:9
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)</failure>
+    </testcase>
+    <testcase classname="Loan Management Integration Tests Loan Repayment" name="should mark loan as repaid when all installments paid" time="0.42">
+      <failure>ValidationError: Group validation failed: createdBy: Path `createdBy` is required.
+    at model.Object.&lt;anonymous&gt;.Document.invalidate (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3381:32)
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3142:17
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\schemaType.js:1443:9
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)</failure>
+    </testcase>
+    <testcase classname="Loan Management Integration Tests Loan Repayment" name="should detect defaulted loan" time="0.453">
+      <failure>ValidationError: Group validation failed: createdBy: Path `createdBy` is required.
+    at model.Object.&lt;anonymous&gt;.Document.invalidate (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3381:32)
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3142:17
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\schemaType.js:1443:9
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)</failure>
+    </testcase>
+    <testcase classname="Loan Management Integration Tests Error Handling &amp; Edge Cases" name="should handle invalid loan ID gracefully" time="0.425">
+      <failure>ValidationError: Group validation failed: createdBy: Path `createdBy` is required.
+    at model.Object.&lt;anonymous&gt;.Document.invalidate (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3381:32)
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3142:17
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\schemaType.js:1443:9
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)</failure>
+    </testcase>
+    <testcase classname="Loan Management Integration Tests Error Handling &amp; Edge Cases" name="should prevent non-group-members from applying" time="0.586">
+      <failure>ValidationError: Group validation failed: createdBy: Path `createdBy` is required.
+    at model.Object.&lt;anonymous&gt;.Document.invalidate (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3381:32)
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3142:17
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\schemaType.js:1443:9
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)</failure>
+    </testcase>
+    <testcase classname="Loan Management Integration Tests Error Handling &amp; Edge Cases" name="should validate interest rate bounds" time="0.41">
+      <failure>ValidationError: Group validation failed: createdBy: Path `createdBy` is required.
+    at model.Object.&lt;anonymous&gt;.Document.invalidate (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3381:32)
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3142:17
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\schemaType.js:1443:9
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)</failure>
+    </testcase>
+    <testcase classname="Loan Management Integration Tests Error Handling &amp; Edge Cases" name="should handle concurrent loan disbursements safely" time="0.379">
+      <failure>ValidationError: Group validation failed: createdBy: Path `createdBy` is required.
+    at model.Object.&lt;anonymous&gt;.Document.invalidate (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3381:32)
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3142:17
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\schemaType.js:1443:9
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)</failure>
+    </testcase>
+    <testcase classname="Loan Management Integration Tests Loan Queries &amp; Reporting" name="should retrieve user loans paginated" time="0.415">
+      <failure>ValidationError: Group validation failed: createdBy: Path `createdBy` is required.
+    at model.Object.&lt;anonymous&gt;.Document.invalidate (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3381:32)
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3142:17
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\schemaType.js:1443:9
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)</failure>
+    </testcase>
+    <testcase classname="Loan Management Integration Tests Loan Queries &amp; Reporting" name="should filter loans by status" time="0.452">
+      <failure>ValidationError: Group validation failed: createdBy: Path `createdBy` is required.
+    at model.Object.&lt;anonymous&gt;.Document.invalidate (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3381:32)
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3142:17
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\schemaType.js:1443:9
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)</failure>
+    </testcase>
+    <testcase classname="Loan Management Integration Tests Loan Queries &amp; Reporting" name="should retrieve group loans with proper authorization" time="0.5">
+      <failure>ValidationError: Group validation failed: createdBy: Path `createdBy` is required.
+    at model.Object.&lt;anonymous&gt;.Document.invalidate (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3381:32)
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3142:17
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\schemaType.js:1443:9
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)</failure>
+    </testcase>
+    <testcase classname="Loan Management Integration Tests Loan Queries &amp; Reporting" name="should aggregate loan statistics" time="0.474">
+      <failure>ValidationError: Group validation failed: createdBy: Path `createdBy` is required.
+    at model.Object.&lt;anonymous&gt;.Document.invalidate (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3381:32)
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\document.js:3142:17
+    at D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\mongoose\lib\schemaType.js:1443:9
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)</failure>
+    </testcase>
+  </testsuite>
+  <testsuite name="Payment Service" errors="0" failures="13" skipped="0" timestamp="2026-05-31T20:45:29" time="1.921" tests="20">
+    <testcase classname="Payment Service calculateFees" name="should calculate mobile money fees correctly" time="0.003">
+    </testcase>
+    <testcase classname="Payment Service calculateFees" name="should calculate bank transfer fees correctly" time="0.001">
+    </testcase>
+    <testcase classname="Payment Service calculateFees" name="should calculate card fees correctly" time="0.001">
+    </testcase>
+    <testcase classname="Payment Service calculateFees" name="should return 0 for cash payments" time="0.001">
+    </testcase>
+    <testcase classname="Payment Service validatePaymentAmount" name="should validate valid amounts" time="0.002">
+    </testcase>
+    <testcase classname="Payment Service validatePaymentAmount" name="should reject invalid amounts" time="0.01">
+    </testcase>
+    <testcase classname="Payment Service validatePaymentAmount" name="should validate mobile money limits" time="0.002">
+    </testcase>
+    <testcase classname="Payment Service initiatePayment" name="should initiate contribution payment successfully" time="0.001">
+      <failure>TypeError: User.findById.mockResolvedValue is not a function
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\paymentService.test.js:93:21)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusHook (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:281:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:246:5)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Payment Service initiatePayment" name="should calculate fees and total amount correctly" time="0.001">
+      <failure>TypeError: User.findById.mockResolvedValue is not a function
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\paymentService.test.js:93:21)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusHook (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:281:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:246:5)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Payment Service initiatePayment" name="should update user contribution stats for contribution payments" time="0">
+      <failure>TypeError: User.findById.mockResolvedValue is not a function
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\paymentService.test.js:93:21)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusHook (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:281:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:246:5)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Payment Service initiatePayment" name="should create contribution record for contribution payments" time="0.001">
+      <failure>TypeError: User.findById.mockResolvedValue is not a function
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\paymentService.test.js:93:21)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusHook (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:281:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:246:5)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Payment Service processMobileMoneyPayment" name="should process mobile money payment successfully" time="0">
+      <failure>TypeError: Payment.findById.mockResolvedValue is not a function
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\paymentService.test.js:188:24)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusHook (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:281:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:246:5)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Payment Service processMobileMoneyPayment" name="should handle mobile money payment failure" time="0">
+      <failure>TypeError: Payment.findById.mockResolvedValue is not a function
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\paymentService.test.js:188:24)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusHook (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:281:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:246:5)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Payment Service processMobileMoneyPayment" name="should validate phone number format" time="0">
+      <failure>TypeError: Payment.findById.mockResolvedValue is not a function
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\paymentService.test.js:188:24)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusHook (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:281:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:246:5)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Payment Service verifyPayment" name="should return payment details with populated user and group" time="0.001">
+      <failure>TypeError: Payment.findById.mockReturnValue is not a function
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\paymentService.test.js:252:24)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:316:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:252:3)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Payment Service verifyPayment" name="should throw error for non-existent payment" time="0.001">
+      <failure>TypeError: Payment.findById.mockReturnValue is not a function
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\paymentService.test.js:268:24)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:316:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:252:3)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Payment Service processRefund" name="should process refund successfully" time="0.001">
+      <failure>TypeError: Payment.findById.mockResolvedValue is not a function
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\paymentService.test.js:296:24)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusHook (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:281:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:246:5)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Payment Service processRefund" name="should reject refund for non-completed payments" time="0.001">
+      <failure>TypeError: Payment.findById.mockResolvedValue is not a function
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\paymentService.test.js:296:24)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusHook (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:281:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:246:5)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Payment Service processRefund" name="should prevent over-refund" time="0">
+      <failure>TypeError: Payment.findById.mockResolvedValue is not a function
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\paymentService.test.js:296:24)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusHook (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:281:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:246:5)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Payment Service getPaymentAnalytics" name="should return payment analytics grouped by method and type" time="0.001">
+      <failure>TypeError: Payment.aggregate.mockResolvedValue is not a function
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\paymentService.test.js:346:25)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:316:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:252:3)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+  </testsuite>
+  <testsuite name="Utility Functions" errors="0" failures="1" skipped="0" timestamp="2026-05-31T20:45:38" time="1.364" tests="20">
+    <testcase classname="Utility Functions Phone Number Validation" name="should validate international phone format" time="0.002">
+    </testcase>
+    <testcase classname="Utility Functions Phone Number Validation" name="should reject invalid phone numbers" time="0.008">
+      <failure>Error: expect(received).toBe(expected) // Object.is equality
+
+Expected: false
+Received: true
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\utils.test.js:23:48)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:316:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:252:3)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Utility Functions Email Validation" name="should validate email addresses" time="0.001">
+    </testcase>
+    <testcase classname="Utility Functions Email Validation" name="should reject invalid emails" time="0.002">
+    </testcase>
+    <testcase classname="Utility Functions Amount Formatting" name="should format amounts as currency" time="0.145">
+    </testcase>
+    <testcase classname="Utility Functions Amount Formatting" name="should support different currencies" time="0.001">
+    </testcase>
+    <testcase classname="Utility Functions Date Utilities" name="should calculate date one month later" time="0.001">
+    </testcase>
+    <testcase classname="Utility Functions Date Utilities" name="should format date as YYYY-MM-DD" time="0.002">
+    </testcase>
+    <testcase classname="Utility Functions Password Validation" name="should validate strong passwords" time="0.001">
+    </testcase>
+    <testcase classname="Utility Functions Password Validation" name="should reject weak passwords" time="0.001">
+    </testcase>
+    <testcase classname="Utility Functions JSON Web Token Utilities" name="should create and verify tokens" time="0.014">
+    </testcase>
+    <testcase classname="Utility Functions JSON Web Token Utilities" name="should reject expired tokens" time="0.002">
+    </testcase>
+    <testcase classname="Utility Functions JSON Web Token Utilities" name="should reject tampered tokens" time="0.002">
+    </testcase>
+    <testcase classname="Utility Functions Array Utilities" name="should chunk arrays" time="0.001">
+    </testcase>
+    <testcase classname="Utility Functions Array Utilities" name="should get unique values" time="0.001">
+    </testcase>
+    <testcase classname="Utility Functions Array Utilities" name="should sum array values" time="0.001">
+    </testcase>
+    <testcase classname="Utility Functions Error Handling" name="should handle async errors" time="0.002">
+    </testcase>
+    <testcase classname="Utility Functions Cache Utilities" name="should cache and retrieve values" time="0.001">
+    </testcase>
+    <testcase classname="Utility Functions Cache Utilities" name="should expire cached values" time="0.156">
+    </testcase>
+    <testcase classname="Utility Functions Pagination Utilities" name="should paginate arrays" time="0.001">
+    </testcase>
+  </testsuite>
+  <testsuite name="User Model" errors="0" failures="0" skipped="0" timestamp="2026-05-31T20:45:39" time="4.104" tests="15">
+    <testcase classname="User Model User Creation" name="should create user with valid data" time="0.808">
+    </testcase>
+    <testcase classname="User Model User Creation" name="should fail with missing required fields" time="0.01">
+    </testcase>
+    <testcase classname="User Model User Creation" name="should fail with invalid email" time="0.007">
+    </testcase>
+    <testcase classname="User Model User Creation" name="should enforce unique email" time="0.357">
+    </testcase>
+    <testcase classname="User Model User Creation" name="should hash password before saving" time="0.208">
+    </testcase>
+    <testcase classname="User Model Password Methods" name="matchPassword should return true for correct password" time="0.255">
+    </testcase>
+    <testcase classname="User Model Password Methods" name="matchPassword should return false for incorrect password" time="0.24">
+    </testcase>
+    <testcase classname="User Model Password Methods" name="should generate reset token" time="0.196">
+    </testcase>
+    <testcase classname="User Model Password Methods" name="should generate verification token" time="0.17">
+    </testcase>
+    <testcase classname="User Model Login Lockout" name="should track failed login attempts" time="0.14">
+    </testcase>
+    <testcase classname="User Model Login Lockout" name="should lock account after threshold exceeded" time="0.131">
+    </testcase>
+    <testcase classname="User Model Login Lockout" name="should reset failed login attempts" time="0.13">
+    </testcase>
+    <testcase classname="User Model User Serialization" name="should not return password in toJSON" time="0.125">
+    </testcase>
+    <testcase classname="User Model User Serialization" name="should not return sensitive fields in toJSON" time="0.151">
+    </testcase>
+    <testcase classname="User Model User Serialization" name="should normalize id field" time="0.14">
+    </testcase>
+  </testsuite>
+  <testsuite name="Referral Service" errors="0" failures="7" skipped="0" timestamp="2026-05-31T20:45:43" time="0.681" tests="8">
+    <testcase classname="Referral Service generateCode" name="should generate unique referral code" time="0.001">
+      <failure>TypeError: Referral.findOne.mockResolvedValue is not a function
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\referralService.test.js:40:24)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:316:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:252:3)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Referral Service generateCode" name="should return existing code if available" time="0.001">
+      <failure>TypeError: Referral.findOne.mockResolvedValue is not a function
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\referralService.test.js:57:24)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:316:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:252:3)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Referral Service redeemCode" name="should redeem referral code successfully" time="0.001">
+      <failure>TypeError: Referral.findOne.mockResolvedValue is not a function
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\referralService.test.js:81:24)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:316:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:252:3)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Referral Service redeemCode" name="should prevent self-referral" time="0.001">
+      <failure>TypeError: Referral.findOne.mockResolvedValue is not a function
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\referralService.test.js:100:24)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:316:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:252:3)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Referral Service redeemCode" name="should reject invalid code" time="0.001">
+      <failure>TypeError: Referral.findOne.mockResolvedValue is not a function
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\referralService.test.js:108:24)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:316:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:252:3)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Referral Service redeemCode" name="should reject expired code" time="0">
+      <failure>TypeError: Referral.findOne.mockResolvedValue is not a function
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\referralService.test.js:123:24)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:316:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:252:3)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Referral Service getReferralStats" name="should return referral statistics" time="0">
+      <failure>TypeError: Referral.findOne.mockResolvedValue is not a function
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\referralService.test.js:141:24)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:316:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:252:3)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Referral Service generateReferralLink" name="should generate referral link with code" time="0.002">
+    </testcase>
+  </testsuite>
+  <testsuite name="TokenBucketLimiter" errors="0" failures="1" skipped="0" timestamp="2026-05-31T20:45:44" time="2.596" tests="10">
+    <testcase classname="TokenBucketLimiter allow" name="should allow request when tokens available" time="0.003">
+    </testcase>
+    <testcase classname="TokenBucketLimiter allow" name="should deny request when tokens exhausted" time="0.002">
+    </testcase>
+    <testcase classname="TokenBucketLimiter allow" name="should refill tokens over time" time="0.001">
+    </testcase>
+    <testcase classname="TokenBucketLimiter allow" name="should initialize new bucket on first request" time="0.001">
+    </testcase>
+    <testcase classname="TokenBucketLimiter allow" name="should fail open on Redis error" time="0.126">
+      <failure>Error: expect(received).toBe(expected) // Object.is equality
+
+Expected: 1000
+Received: 59
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\utils\rateLimiter.test.js:78:32)</failure>
+    </testcase>
+    <testcase classname="TokenBucketLimiter allow" name="should respect per-user limits" time="0.001">
+    </testcase>
+    <testcase classname="TokenBucketLimiter allow" name="should handle multiple concurrent requests" time="0.001">
+    </testcase>
+    <testcase classname="TokenBucketLimiter getBucket" name="should retrieve bucket from Redis" time="0.001">
+    </testcase>
+    <testcase classname="TokenBucketLimiter getBucket" name="should return null for non-existent bucket" time="0.001">
+    </testcase>
+    <testcase classname="TokenBucketLimiter getBucket" name="should handle bucket retrieval errors gracefully" time="0.043">
+    </testcase>
+  </testsuite>
+  <testsuite name="Email Verification Service" errors="0" failures="6" skipped="0" timestamp="2026-05-31T20:45:47" time="0.973" tests="6">
+    <testcase classname="Email Verification Service generateTokenAndSend" name="should generate verification token and send email" time="0.001">
+      <failure>SyntaxError: Unexpected identifier &apos;Object&apos;
+    at new Function (&lt;anonymous&gt;)
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\emailVerificationService.test.js:36:23)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:316:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:252:3)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Email Verification Service generateTokenAndSend" name="should throw error if email already verified" time="0">
+      <failure>SyntaxError: Unexpected identifier &apos;Object&apos;
+    at new Function (&lt;anonymous&gt;)
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\emailVerificationService.test.js:56:23)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:316:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:252:3)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Email Verification Service generateTokenAndSend" name="should enforce resend throttling" time="0">
+      <failure>SyntaxError: Unexpected identifier &apos;Object&apos;
+    at new Function (&lt;anonymous&gt;)
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\emailVerificationService.test.js:66:23)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:316:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:252:3)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Email Verification Service verifyToken" name="should verify token and update user email" time="0">
+      <failure>TypeError: EmailVerificationToken.findOne.mockResolvedValue is not a function
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\emailVerificationService.test.js:95:38)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:316:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:252:3)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Email Verification Service verifyToken" name="should throw error for invalid token" time="0.001">
+      <failure>TypeError: EmailVerificationToken.findOne.mockResolvedValue is not a function
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\emailVerificationService.test.js:112:38)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:316:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:252:3)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Email Verification Service verifyToken" name="should throw error for expired token" time="0">
+      <failure>TypeError: EmailVerificationToken.findOne.mockResolvedValue is not a function
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\emailVerificationService.test.js:128:38)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:316:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:252:3)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+  </testsuite>
+  <testsuite name="Loan Workflow Service" errors="0" failures="6" skipped="0" timestamp="2026-05-31T20:45:48" time="0.925" tests="6">
+    <testcase classname="Loan Workflow Service createLoanApplication" name="should create loan application" time="0.002">
+      <failure>TypeError: Loan.create.mockResolvedValue is not a function
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\loanWorkflowService.test.js:41:19)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:316:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:252:3)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Loan Workflow Service createLoanApplication" name="should throw error for invalid parameters" time="0.001">
+      <failure>TypeError: service.createLoanApplication is not a function
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\loanWorkflowService.test.js:60:17)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:316:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:252:3)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Loan Workflow Service changeLoanStatus" name="should change loan status successfully" time="0">
+      <failure>TypeError: Loan.findById.mockResolvedValue is not a function
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\loanWorkflowService.test.js:72:21)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:316:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:252:3)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Loan Workflow Service changeLoanStatus" name="should validate status transitions" time="0.001">
+      <failure>TypeError: Loan.findById.mockResolvedValue is not a function
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\loanWorkflowService.test.js:90:21)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:316:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:252:3)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Loan Workflow Service changeLoanStatus" name="should throw error for non-existent loan" time="0">
+      <failure>TypeError: Loan.findById.mockResolvedValue is not a function
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\loanWorkflowService.test.js:104:21)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:316:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:252:3)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Loan Workflow Service generateRepaymentSchedule" name="should generate repayment schedule" time="0.001">
+      <failure>TypeError: LoanRepaymentSchedule.create.mockResolvedValue is not a function
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\loanWorkflowService.test.js:116:36)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:316:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:252:3)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+  </testsuite>
+  <testsuite name="Password Reset Service" errors="0" failures="5" skipped="0" timestamp="2026-05-31T20:45:49" time="0.827" tests="5">
+    <testcase classname="Password Reset Service createResetToken" name="should create reset token and send email" time="0.002">
+      <failure>TypeError: PasswordResetToken.create.mockResolvedValue is not a function
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\passwordResetService.test.js:33:33)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:316:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:252:3)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Password Reset Service resetPassword" name="should reset password successfully" time="0.001">
+      <failure>TypeError: PasswordResetToken.findOne.mockResolvedValue is not a function
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\passwordResetService.test.js:61:34)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:316:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:252:3)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Password Reset Service resetPassword" name="should reject weak passwords" time="0.001">
+      <failure>TypeError: service.resetPassword is not a function
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\passwordResetService.test.js:82:17)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:316:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:252:3)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Password Reset Service resetPassword" name="should throw error for invalid token" time="0.001">
+      <failure>TypeError: PasswordResetToken.findOne.mockResolvedValue is not a function
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\passwordResetService.test.js:89:34)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:316:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:252:3)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Password Reset Service resetPassword" name="should throw error for expired token" time="0.001">
+      <failure>TypeError: PasswordResetToken.findOne.mockResolvedValue is not a function
+    at Object.&lt;anonymous&gt; (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\tests\unit\services\passwordResetService.test.js:103:34)
+    at Promise.then.completed (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\utils.js:231:10)
+    at _callCircusTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:316:40)
+    at _runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:252:3)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:126:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at _runTestsForDescribeBlock (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:121:9)
+    at run (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\run.js:71:3)
+    at runAndTransformResultsToJestFormat (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:122:21)
+    at jestAdapter (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:79:19)
+    at runTestInternal (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:367:16)
+    at runTest (D:\TITech Projects\society-community-savings-app\community-savings-app-backend\node_modules\jest-runner\build\runTest.js:444:34)</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

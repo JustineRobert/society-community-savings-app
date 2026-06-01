@@ -21,6 +21,7 @@ const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 const TermsOfService = lazy(() => import('./pages/TermsOfService'));
 const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
+const Legal = lazy(() => import('./pages/Legal'));
 const GroupList = lazy(() => import('./pages/GroupList'));
 const GroupDetails = lazy(() => import('./pages/GroupDetails'));
 const CreateGroup = lazy(() => import('./pages/CreateGroupV2')); // Enhanced version
@@ -70,7 +71,7 @@ function reportError(error, errorInfo) {
 
 function AppLayout({ children }) {
   const location = useLocation();
-  const hideNavbarOnPaths = ['/login', '/register', '/forgot-password', '/reset-password', '/terms', '/privacy'];
+  const hideNavbarOnPaths = ['/login', '/register', '/forgot-password', '/reset-password', '/terms', '/privacy', '/legal'];
   const shouldHideNavbar = hideNavbarOnPaths.includes(location.pathname);
   const hideFooeterOnPaths = ['/login', '/register'];
   const shouldHideFooeter = hideFooeterOnPaths.includes(location.pathname);
@@ -142,6 +143,7 @@ export default function App() {
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/terms" element={<TermsOfService />} />
             <Route path="/privacy" element={<PrivacyPolicy />} />
+            <Route path="/legal" element={<Legal />} />
 
             <Route
               path="/dashboard"

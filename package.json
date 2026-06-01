@@ -19,7 +19,11 @@
     "dev": "concurrently \"npm run start:backend\" \"npm run start:frontend\"",
     "lint:frontend": "eslint community-savings-app-frontend/src --ext .js,.jsx,.ts,.tsx",
     "lint:backend": "eslint community-savings-app-backend --ext .js,.ts",
-    "lint": "npm run lint:backend && npm run lint:frontend"
+    "lint": "npm run lint:backend && npm run lint:frontend",
+    "lint:fix": "npm run lint:backend -- --fix && npm run lint:frontend -- --fix",
+    "format": "prettier --write \"community-savings-app-backend/**/*.{js,json,md}\" \"community-savings-app-frontend/src/**/*.{js,jsx,json,css,md}\"",
+    "format:check": "prettier --check \"community-savings-app-backend/**/*.{js,json,md}\" \"community-savings-app-frontend/src/**/*.{js,jsx,json,css,md}\"",
+    "quality": "npm run lint && npm run format:check && npm run test"
   },
   "newman": {
     "collection": "postman/Community-auth-tests.postman_collection.json",

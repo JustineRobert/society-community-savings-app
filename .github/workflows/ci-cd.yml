@@ -4,51 +4,219 @@ on:
   push:
     branches:
       - main
+      - develop
   pull_request:
     branches:
       - main
+      - develop
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
-    name: Build & Test
+  # ============================================================================
+  # CODE QUALITY CHECKS
+  # ============================================================================
+  quality:
+    name: Code Quality & Linting
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ['24.15.0']
     steps:
-      - uses: actions/checkout@v3
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
         with:
-          node-version: '18'
-      - name: Install dependencies (root)
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+      
+      - name: Install dependencies
         run: npm run install-all
-      - name: Run backend tests
-        run: npm run test --prefix community-savings-app-backend
+      
+      - name: Lint backend code
+        run: npm run lint:backend
+        continue-on-error: false
+      
+      - name: Lint frontend code
+        run: npm run lint:frontend
+        continue-on-error: false
+      
+      - name: Check code formatting
+        run: npm run format:check
+        continue-on-error: false
+      
+      - name: Report linting results
+        if: always()
+        run: echo "✅ Code quality checks completed"
+
+  # ============================================================================
+  # UNIT & INTEGRATION TESTS
+  # ============================================================================
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    needs: quality
+    strategy:
+      matrix:
+        node-version: ['24.15.0']
+      fail-fast: false
+    services:
+      mongodb:
+        image: mongo:7.0
+        options: >-
+          --health-cmd mongosh
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 27017:27017
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm run install-all
+      
+      - name: Run backend unit tests
+        run: npm run test:unit --prefix community-savings-app-backend
+        env:
+          MONGODB_URI: mongodb://localhost:27017/test
+          REDIS_URL: redis://localhost:6379
+          NODE_ENV: test
+      
+      - name: Run backend integration tests
+        run: npm run test:integration --prefix community-savings-app-backend
+        env:
+          MONGODB_URI: mongodb://localhost:27017/test
+          REDIS_URL: redis://localhost:6379
+          NODE_ENV: test
+      
+      - name: Run backend tests with coverage
+        run: npm run test:ci --prefix community-savings-app-backend
+        env:
+          MONGODB_URI: mongodb://localhost:27017/test
+          REDIS_URL: redis://localhost:6379
+          NODE_ENV: test
+      
+      - name: Upload backend coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./community-savings-app-backend/coverage/coverage-final.json
+          flags: backend
+          fail_ci_if_error: false
+      
       - name: Run frontend tests
         run: npm run test --prefix community-savings-app-frontend
+      
+      - name: Report test results
+        if: always()
+        run: echo "✅ Test suite completed"
+
+  # ============================================================================
+  # BUILD & DOCKER
+  # ============================================================================
+  build:
+    name: Build & Docker
+    runs-on: ubuntu-latest
+    needs: test
+    strategy:
+      matrix:
+        node-version: ['24.15.0']
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm run install-all
+      
       - name: Build backend
-        run: npm run build --prefix community-savings-app-backend || echo "no build step"
+        run: npm run build --prefix community-savings-app-backend || true
+      
       - name: Build frontend
         run: npm run build --prefix community-savings-app-frontend
-      - name: Build Docker images
-        run: |
-          docker build -t registry.example.com/community-backend:latest ./community-savings-app-backend
-          docker build -t registry.example.com/community-frontend:latest ./community-savings-app-frontend
+      
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v4
+      
+      - name: Build backend Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./community-savings-app-backend
+          push: false
+          tags: community-savings-backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      
+      - name: Build frontend Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./community-savings-app-frontend
+          push: false
+          tags: community-savings-frontend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      
+      - name: Report build status
+        if: always()
+        run: echo "✅ Build completed successfully"
 
-  deploy:
-    name: Deploy to Cloud
-    needs: build
+  # ============================================================================
+  # SECURITY CHECKS (Optional)
+  # ============================================================================
+  security:
+    name: Security Scanning
     runs-on: ubuntu-latest
+    needs: quality
     steps:
-      - uses: actions/checkout@v3
-      - name: Deploy to AWS ECS
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Run npm audit
+        run: npm audit --audit-level=moderate
+        continue-on-error: true
+      
+      - name: Report security status
+        if: always()
+        run: echo "⚠️ Security scanning completed (non-blocking)"
+
+  # ============================================================================
+  # FINAL STATUS CHECK
+  # ============================================================================
+  check-status:
+    name: Final Status Check
+    runs-on: ubuntu-latest
+    needs: [quality, test, build, security]
+    if: always()
+    steps:
+      - name: Check job statuses
         run: |
-          echo "# aws cli deploy commands would go here"
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: ${{ secrets.AWS_REGION }}
-      - name: Deploy to Render
-        run: |
-          echo "# render deploy via api"
-        env:
-          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          if [ "${{ needs.quality.result }}" != "success" ] || [ "${{ needs.test.result }}" != "success" ] || [ "${{ needs.build.result }}" != "success" ]; then
+            echo "❌ Pipeline failed"
+            exit 1
+          fi
+          echo "✅ All required checks passed"

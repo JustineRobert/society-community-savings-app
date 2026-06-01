@@ -62,6 +62,9 @@ const Footer = () => {
             <h4 className="footer-section-title">Legal</h4>
             <ul className="footer-links">
               <li>
+                <Link to="/legal">Legal Information</Link>
+              </li>
+              <li>
                 <Link to="/terms">Terms of Service</Link>
               </li>
               <li>
@@ -95,11 +98,11 @@ const Footer = () => {
               &copy; {currentYear} Community Savings App. All rights reserved.
             </p>
             <div className="footer-legal-bottom">
+              <Link to="/legal" className="footer-link-small">Legal</Link>
+              <span className="divider">•</span>
               <Link to="/terms" className="footer-link-small">Terms</Link>
               <span className="divider">•</span>
               <Link to="/privacy" className="footer-link-small">Privacy</Link>
-              <span className="divider">•</span>
-              <a href="mailto:legal@communitysavings.app" className="footer-link-small">Legal</a>
             </div>
           </div>
         </div>

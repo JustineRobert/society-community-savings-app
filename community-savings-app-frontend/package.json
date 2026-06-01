@@ -10,7 +10,11 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:watch": "vitest --watch",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src --ext .js,.jsx,.ts,.tsx",
+    "lint:fix": "eslint src --ext .js,.jsx,.ts,.tsx --fix",
+    "format": "prettier --write \"src/**/*.{js,jsx,json,css,md}\"",
+    "format:check": "prettier --check \"src/**/*.{js,jsx,json,css,md}\""
   },
   "dependencies": {
     "@testing-library/dom": "^10.4.0",
@@ -39,8 +43,12 @@
     "@vitest/ui": "^1.0.0",
     "autoprefixer": "^10.4.21",
     "dotenv": "^16.5.0",
+    "eslint": "^8.57.0",
+    "eslint-plugin-react": "^7.34.0",
+    "eslint-plugin-react-hooks": "^4.6.0",
     "jsdom": "^23.0.0",
     "postcss": "^8.5.6",
+    "prettier": "^3.2.5",
     "sass": "^1.89.2",
     "tailwindcss": "^4.1.10",
     "terser": "^5.47.1",
