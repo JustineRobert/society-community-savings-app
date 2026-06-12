@@ -84,7 +84,7 @@ const PrivacyPolicy = () => {
             <section id="section-1" className="legal-section">
               <h2>1. Introduction</h2>
               <p>
-                Community Savings App ("we", "us", "our", or "Company") operates the Community
+                TITech Community Capital ("we", "us", "our", or "Company") operates the Community
                 Savings App platform (the "Platform"). This page informs you of our policies
                 regarding the collection, use, and disclosure of personal data when you use the
                 Platform.
@@ -449,10 +449,10 @@ const PrivacyPolicy = () => {
                   <a href="mailto:dpo@communitysavings.app">dpo@communitysavings.app</a>
                 </p>
                 <p>
-                  <strong>Phone:</strong> <a href="tel:+256XXX">+256 (782) 397907</a>
+                  <strong>Phone:</strong> <a href="tel:+256XXX">+256 (394) 324760</a>
                 </p>
                 <p>
-                  <strong>Mailing Address:</strong> Community Savings Ltd, Kampala, Uganda
+                  <strong>Mailing Address:</strong> TITech Community Capital Ltd, Plot 69-71 Jinja Road, Kampala, Uganda
                 </p>
               </div>
             </section>

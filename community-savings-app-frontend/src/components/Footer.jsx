@@ -21,7 +21,7 @@ const Footer = () => {
         <div className="footer-main">
           {/* Company Info */}
           <div className="footer-section">
-            <h3 className="footer-title">TITech Community Savings</h3>
+            <h3 className="footer-title">TITech Community Capital</h3>
             <p className="footer-description">
               Empowering communities through digital savings and lending solutions.
             </p>

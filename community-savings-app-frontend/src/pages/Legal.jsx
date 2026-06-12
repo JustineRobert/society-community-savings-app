@@ -38,8 +38,8 @@ const Legal = () => {
           <p className="legal-subtitle">Terms of Service, Privacy Policy & Disclaimer</p>
           <p className="legal-description">
             Please read all legal documents carefully. We recommend reviewing our Terms of Service
-            and Privacy Policy to understand your rights and responsibilities when using Community
-            Savings App.
+            and Privacy Policy to understand your rights and responsibilities when using TITech Community
+            Capital Platform.
           </p>
         </div>
       </div>
@@ -125,7 +125,7 @@ const Legal = () => {
               <section id="tos-1" className="legal-section">
                 <h3>1. Acceptance of Terms</h3>
                 <p>
-                  By accessing and using the Community Savings App ("Platform"), you accept and
+                  By accessing and using the TITech Community Capital ("Platform"), you accept and
                   agree to be bound by the terms and provision of this agreement. If you do not
                   agree to abide by the above, please do not use this service.
                 </p>
@@ -141,7 +141,7 @@ const Legal = () => {
               <section id="tos-2" className="legal-section">
                 <h3>2. User Rights & Responsibilities</h3>
                 <p>
-                  As a user of the Community Savings App, you are granted a limited, non-exclusive,
+                  As a user of the TITech Community Capital Platform, you are granted a limited, non-exclusive,
                   non-transferable license to use the Platform in accordance with these Terms of
                   Service.
                 </p>
@@ -198,7 +198,7 @@ const Legal = () => {
               <section id="tos-4" className="legal-section">
                 <h3>4. Payment Terms</h3>
                 <p>
-                  Community Savings App facilitates financial transactions between group members.
+                  TITech Community Capital facilitates financial transactions between group members.
                   The following terms apply to all payments processed through the Platform:
                 </p>
                 <h4>Payment Processing:</h4>
@@ -226,7 +226,7 @@ const Legal = () => {
               <section id="tos-5" className="legal-section">
                 <h3>5. Loan Agreements</h3>
                 <p>
-                  The Community Savings App facilitates informal lending between group members. The
+                  The TITech Community Capital Platform facilitates informal lending between group members. The
                   following terms apply:
                 </p>
                 <ul>
@@ -239,7 +239,7 @@ const Legal = () => {
                   <li>Users acknowledge the risks associated with informal lending</li>
                 </ul>
                 <div className="highlight">
-                  <strong>Important:</strong> Community Savings App is not a financial institution
+                  <strong>Important:</strong> TITech Community Capital is not a financial institution
                   and does not provide financial advice. Always seek professional legal and
                   financial counsel before entering into loan agreements.
                 </div>
@@ -249,13 +249,13 @@ const Legal = () => {
               <section id="tos-6" className="legal-section">
                 <h3>6. Limitation of Liability</h3>
                 <p>
-                  To the fullest extent permitted by law, Community Savings App shall not be liable
+                  To the fullest extent permitted by law, TITech Community Capital shall not be liable
                   for any indirect, incidental, special, consequential, or punitive damages,
                   including lost profits, even if advised of the possibility of such damages.
                 </p>
                 <p>
-                  In no event shall Community Savings App's total liability to you exceed the amount
-                  you have paid to Community Savings App in the 12 months preceding the event giving
+                  In no event shall TITech Community Capital's total liability to you exceed the amount
+                  you have paid to TITech Community Capital in the 12 months preceding the event giving
                   rise to liability.
                 </p>
                 <p>
@@ -438,7 +438,7 @@ const Legal = () => {
               <section id="disclaimer" className="legal-section">
                 <h3>General Disclaimer</h3>
                 <p>
-                  The Community Savings App is provided on an "as-is" and "as-available" basis
+                  The TITech Community Capital Platform is provided on an "as-is" and "as-available" basis
                   without any representations, warranties, or conditions of any kind, either express
                   or implied, including any implied warranties of merchantability, fitness for a
                   particular purpose, or non-infringement.
@@ -466,7 +466,7 @@ const Legal = () => {
                 <h3>Financial Disclaimer</h3>
                 <p>
                   <strong>
-                    IMPORTANT: Community Savings App is not a licensed financial institution and
+                    IMPORTANT: TITech Community Capital is not a licensed financial institution and
                     does not provide financial advice, investment advice, or legal advice.
                   </strong>
                 </p>
