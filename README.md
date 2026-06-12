@@ -1,6 +1,6 @@
-# 🏦 Community Savings App
+# 🏦 TITech Community Capital
 
-**A Production-Ready Full-Stack Community Savings Platform**
+**A Production-Ready Full-Stack TITech Community Capital Platform**
 
 [![CI/CD Pipeline](https://github.com/JustineRobert/society-community-savings-app/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/JustineRobert/society-community-savings-app/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
