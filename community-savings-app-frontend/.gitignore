@@ -1,5 +1,63 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
+
+# --- General ---
+node_modules/
+*.log
+*.gz
+.DS_Store
+Thumbs.db
+
+# --- Environment files ---
+.env
+.env.local
+.env.*.local
+community-savings-app-backend/.env
+community-savings-app-frontend/.env
+
+# --- Build outputs ---
+dist/
+build/
+coverage/
+.vite/
+.vitest/
+
+# --- Docker ---
+docker-compose.override.yml
+*.pid
+*.seed
+
+# --- Test reports ---
+test-reports/
+junit.xml
+*.coverage
+*.lcov
+
+# --- Backend specific ---
+community-savings-app-backend/nodemon.json
+community-savings-app-backend/package-lock.json
+community-savings-app-backend/node_modules/
+community-savings-app-backend/logs/
+community-savings-app-backend/tmp/
+
+# --- Frontend specific ---
+community-savings-app-frontend/package-lock.json
+community-savings-app-frontend/node_modules/
+community-savings-app-frontend/logs/
+community-savings-app-frontend/tmp/
+community-savings-app-frontend/public/images/*.png
+
+# --- OS / IDE ---
+.vscode/
+.idea/
+*.swp
+
+
+
+
+
+
+
 # dependencies
 /node_modules
 /.pnp
@@ -38,3 +96,8 @@ logs/
 # OS / editor
 .DS_Store
 .vscode/
+
+node_modules/
+.env
+*.env.*
+*.log

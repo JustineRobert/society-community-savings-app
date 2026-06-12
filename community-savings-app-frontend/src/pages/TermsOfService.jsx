@@ -79,7 +79,7 @@ const TermsOfService = () => {
             <section id="section-1" className="legal-section">
               <h2>1. Acceptance of Terms</h2>
               <p>
-                By accessing and using the Community Savings App ("Platform"), you accept and agree
+                By accessing and using the TITech Community Capital ("Platform"), you accept and agree
                 to be bound by the terms and provision of this agreement. If you do not agree to
                 abide by the above, please do not use this service.
               </p>
@@ -95,7 +95,7 @@ const TermsOfService = () => {
             <section id="section-2" className="legal-section">
               <h2>2. User Rights & Responsibilities</h2>
               <p>
-                As a user of the Community Savings App, you are granted a limited, non-exclusive,
+                As a user of the TITech Community Capital ("Platform"), you are granted a limited, non-exclusive,
                 non-transferable license to use the Platform in accordance with these Terms of
                 Service.
               </p>
@@ -135,7 +135,7 @@ const TermsOfService = () => {
             <section id="section-4" className="legal-section">
               <h2>4. Payment Terms</h2>
               <p>
-                Community Savings App facilitates financial transactions between group members. The
+                TITech Community Capital facilitates financial transactions between group members. The
                 following terms apply to all payments processed through the Platform:
               </p>
               <h3>Payment Processing:</h3>
@@ -161,7 +161,7 @@ const TermsOfService = () => {
             <section id="section-5" className="legal-section">
               <h2>5. Loan Agreements</h2>
               <p>
-                The Community Savings App facilitates informal lending between group members. The
+                The TITech Community Capital facilitates informal lending between group members. The
                 following terms apply:
               </p>
               <ul>
@@ -172,7 +172,7 @@ const TermsOfService = () => {
                 <li>The Platform is not liable for loan defaults or disputes</li>
               </ul>
               <p className="highlight">
-                <strong>Important:</strong> Community Savings App is not a financial institution and
+                <strong>Important:</strong> TITech Community Capital is not a financial institution and
                 does not provide financial advice. Always seek professional legal and financial
                 counsel before entering into loan agreements.
               </p>
@@ -232,17 +232,17 @@ const TermsOfService = () => {
             <section id="section-9" className="legal-section">
               <h2>9. Limitation of Liability</h2>
               <p className="highlight">
-                COMMUNITY SAVINGS APP IS PROVIDED ON AN "AS IS" BASIS. WE MAKE NO WARRANTY, EXPRESS
+                TITech Community Capital IS PROVIDED ON AN "AS IS" BASIS. WE MAKE NO WARRANTY, EXPRESS
                 OR IMPLIED, REGARDING THE PLATFORM'S OPERATION OR THE INFORMATION, CONTENT, OR
                 MATERIALS INCLUDED ON THE PLATFORM.
               </p>
               <p>
-                To the fullest extent permissible by applicable law, Community Savings App disclaims
+                To the fullest extent permissible by applicable law, TITech Community Capital disclaims
                 all warranties, express or implied, including, but not limited to, implied
                 warranties of merchantability and fitness for a particular purpose.
               </p>
               <p>
-                Community Savings App will not be liable for any indirect, incidental, special,
+                TITech Community Capital will not be liable for any indirect, incidental, special,
                 consequential, or punitive damages resulting from your use of or inability to use
                 the Platform or the services, even if we have been advised of the possibility of
                 such damages.
@@ -276,7 +276,7 @@ const TermsOfService = () => {
                   <strong>Phone:</strong> <a href="tel:+256782397907">+256 (782) 397907</a>
                 </p>
                 <p>
-                  <strong>Mailing Address:</strong> Community Savings Ltd, Kampala, Uganda
+                  <strong>Mailing Address:</strong> TITech Community Capital Ltd, Kampala, Uganda
                 </p>
               </div>
             </section>
