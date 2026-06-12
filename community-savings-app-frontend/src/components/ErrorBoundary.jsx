@@ -1,4 +1,3 @@
-
 // src/components/ErrorBoundary.jsx
 import React from 'react';
 
@@ -41,9 +40,7 @@ export function ErrorFallback({ error, resetErrorBoundary, context }) {
         </pre>
       )}
 
-      {context && (
-        <p style={{ fontSize: 12, opacity: 0.8 }}>Context: {context}</p>
-      )}
+      {context && <p style={{ fontSize: 12, opacity: 0.8 }}>Context: {context}</p>}
 
       <button
         type="button"
@@ -97,8 +94,10 @@ export class ErrorBoundary extends React.Component {
   componentDidUpdate(prevProps) {
     const { resetKeys = [] } = this.props;
     // If any reset key changed, clear the error state
-    const hasReset = Array.isArray(resetKeys) && resetKeys.length > 0
-      && resetKeys.some((key, i) => !Object.is(key, prevProps.resetKeys?.[i]));
+    const hasReset =
+      Array.isArray(resetKeys) &&
+      resetKeys.length > 0 &&
+      resetKeys.some((key, i) => !Object.is(key, prevProps.resetKeys?.[i]));
     if (hasReset && this.state.hasError) {
       this.reset();
     }
@@ -127,4 +126,4 @@ export class ErrorBoundary extends React.Component {
     }
     return children;
   }
-}  
+}

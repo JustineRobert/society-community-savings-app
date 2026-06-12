@@ -106,7 +106,7 @@ describe('HelpCenter Component', () => {
       helpService.searchArticles.mockResolvedValue(mockSearchResults);
 
       render(<HelpCenter />);
-      
+
       const searchInput = await screen.findByPlaceholderText(/search help/i);
       const searchButton = screen.getByRole('button', { name: /search/i });
 
@@ -122,7 +122,7 @@ describe('HelpCenter Component', () => {
       helpService.searchArticles.mockResolvedValue([]);
 
       render(<HelpCenter />);
-      
+
       const searchInput = await screen.findByPlaceholderText(/search help/i);
       const searchButton = screen.getByRole('button', { name: /search/i });
 
@@ -136,7 +136,7 @@ describe('HelpCenter Component', () => {
 
     it('should clear search results', async () => {
       render(<HelpCenter />);
-      
+
       const clearButton = await screen.findByRole('button', { name: /clear/i });
       fireEvent.click(clearButton);
 
@@ -152,7 +152,7 @@ describe('HelpCenter Component', () => {
       helpService.getArticlesByCategory.mockResolvedValue(mockCategoryArticles);
 
       render(<HelpCenter />);
-      
+
       const categoryButton = await screen.findByRole('button', { name: /account/i });
       fireEvent.click(categoryButton);
 
@@ -163,7 +163,7 @@ describe('HelpCenter Component', () => {
 
     it('should highlight selected category', async () => {
       render(<HelpCenter />);
-      
+
       const categoryButton = await screen.findByRole('button', { name: /basics/i });
       fireEvent.click(categoryButton);
 
@@ -176,7 +176,7 @@ describe('HelpCenter Component', () => {
   describe('Article Viewing', () => {
     it('should display article details when clicked', async () => {
       render(<HelpCenter />);
-      
+
       const articleLink = await screen.findByText(mockArticles[0].title);
       fireEvent.click(articleLink);
 
@@ -187,7 +187,7 @@ describe('HelpCenter Component', () => {
 
     it('should show article metadata', async () => {
       render(<HelpCenter />);
-      
+
       const articleLink = await screen.findByText(mockArticles[0].title);
       fireEvent.click(articleLink);
 
@@ -198,7 +198,7 @@ describe('HelpCenter Component', () => {
 
     it('should have back button in article view', async () => {
       render(<HelpCenter />);
-      
+
       const articleLink = await screen.findByText(mockArticles[0].title);
       fireEvent.click(articleLink);
 
@@ -209,7 +209,7 @@ describe('HelpCenter Component', () => {
 
     it('should return to list when back button is clicked', async () => {
       render(<HelpCenter />);
-      
+
       const articleLink = await screen.findByText(mockArticles[0].title);
       fireEvent.click(articleLink);
 
@@ -227,7 +227,7 @@ describe('HelpCenter Component', () => {
       helpService.markArticleHelpful.mockResolvedValue({ success: true });
 
       render(<HelpCenter />);
-      
+
       const articleLink = await screen.findByText(mockArticles[0].title);
       fireEvent.click(articleLink);
 
@@ -243,7 +243,7 @@ describe('HelpCenter Component', () => {
       helpService.markArticleUnhelpful.mockResolvedValue({ success: true });
 
       render(<HelpCenter />);
-      
+
       const articleLink = await screen.findByText(mockArticles[0].title);
       fireEvent.click(articleLink);
 
@@ -259,7 +259,7 @@ describe('HelpCenter Component', () => {
       helpService.markArticleHelpful.mockResolvedValue({ success: true });
 
       render(<HelpCenter />);
-      
+
       const articleLink = await screen.findByText(mockArticles[0].title);
       fireEvent.click(articleLink);
 
@@ -301,7 +301,7 @@ describe('HelpCenter Component', () => {
   describe('Loading States', () => {
     it('should show loading indicator while fetching', () => {
       helpService.getArticles.mockImplementation(
-        () => new Promise(resolve => setTimeout(() => resolve(mockArticles), 1000))
+        () => new Promise((resolve) => setTimeout(() => resolve(mockArticles), 1000))
       );
 
       render(<HelpCenter />);

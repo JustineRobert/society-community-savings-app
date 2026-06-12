@@ -326,6 +326,7 @@ For Overview:             VITE_MIGRATION_INDEX.md (this file)
 🎉 **Community Savings App has been successfully migrated from Create React App to Vite!**
 
 **Key Achievements:**
+
 - ⚡ 75-80% faster development server startup
 - ⚡ 90% faster hot module replacement
 - 📦 20-30% smaller production bundles
@@ -339,5 +340,5 @@ Ready to get started? Run: `npm install && npm start`
 
 ---
 
-*Migration Complete | May 4, 2026*
-*Vite 5.0.0+ | React 18.3.1 | Vitest 1.0.0+*
+_Migration Complete | May 4, 2026_
+_Vite 5.0.0+ | React 18.3.1 | Vitest 1.0.0+_

@@ -9,10 +9,10 @@ const termsAndPrivacy = require('../services/termsAndPrivacy');
 
 /**
  * Middleware to check if user has accepted latest Terms of Service and Privacy Policy
- * 
+ *
  * Usage:
  *   app.use('/api/protected-route', requireLegalAcceptance, controllerHandler);
- * 
+ *
  * Returns 403 Forbidden if user has not accepted current versions
  */
 const requireLegalAcceptance = async (req, res, next) => {
@@ -21,7 +21,7 @@ const requireLegalAcceptance = async (req, res, next) => {
     if (!req.user || !req.user.id) {
       return res.status(401).json({
         success: false,
-        message: 'Authentication required'
+        message: 'Authentication required',
       });
     }
 
@@ -39,9 +39,9 @@ const requireLegalAcceptance = async (req, res, next) => {
         privacyAccepted: status.acceptedPrivacy,
         requiredVersions: {
           terms: status.currentTermsVersion,
-          privacy: status.currentPrivacyVersion
+          privacy: status.currentPrivacyVersion,
         },
-        acceptanceLink: '/legal'
+        acceptanceLink: '/legal',
       });
     }
 
@@ -55,7 +55,7 @@ const requireLegalAcceptance = async (req, res, next) => {
     return res.status(500).json({
       success: false,
       message: 'Error verifying legal acceptance',
-      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
+      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message,
     });
   }
 };
@@ -69,7 +69,7 @@ const logLegalAcceptance = async (req, res, next) => {
     if (req.user && req.user.id) {
       const status = await termsAndPrivacy.getAcceptanceStatus(req.user.id);
       req.legalAcceptance = status;
-      
+
       // Log acceptance status
       if (!status.acceptedTerms || !status.acceptedPrivacy) {
         console.warn(`User ${req.user.id} accessing endpoint without full legal acceptance`);
@@ -92,7 +92,7 @@ const requireAcceptanceForTransaction = async (req, res, next) => {
     if (!req.user || !req.user.id) {
       return res.status(401).json({
         success: false,
-        message: 'Authentication required'
+        message: 'Authentication required',
       });
     }
 
@@ -104,7 +104,7 @@ const requireAcceptanceForTransaction = async (req, res, next) => {
         success: false,
         message: 'You must accept Terms of Service and Privacy Policy before making transactions',
         action: 'REQUIRE_LEGAL_ACCEPTANCE',
-        acceptanceLink: '/legal'
+        acceptanceLink: '/legal',
       });
     }
 
@@ -115,7 +115,7 @@ const requireAcceptanceForTransaction = async (req, res, next) => {
     return res.status(500).json({
       success: false,
       message: 'Error verifying transaction eligibility',
-      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
+      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message,
     });
   }
 };
@@ -123,5 +123,5 @@ const requireAcceptanceForTransaction = async (req, res, next) => {
 module.exports = {
   requireLegalAcceptance,
   logLegalAcceptance,
-  requireAcceptanceForTransaction
+  requireAcceptanceForTransaction,
 };

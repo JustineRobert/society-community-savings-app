@@ -75,7 +75,9 @@ async function connectWithRetry(uri, source, maxAttempts = 10) {
 async function main() {
   const args = parseArgs(process.argv);
   if (args.help || args.h) {
-    console.log('Usage: node scripts/seed-groups-cli.js --admin <email> --name <groupName> --description <desc> [--type <groupType>] [--mongo <mongoUri>]');
+    console.log(
+      'Usage: node scripts/seed-groups-cli.js --admin <email> --name <groupName> --description <desc> [--type <groupType>] [--mongo <mongoUri>]'
+    );
     process.exit(0);
   }
 
@@ -118,7 +120,13 @@ async function main() {
     process.exit(1);
   }
 
-  const seedPath = path.join(__dirname, '..', 'community-savings-app-backend', 'scripts', 'seed-group.js');
+  const seedPath = path.join(
+    __dirname,
+    '..',
+    'community-savings-app-backend',
+    'scripts',
+    'seed-group.js'
+  );
   let runSeed;
   try {
     runSeed = require(seedPath);
@@ -134,7 +142,9 @@ async function main() {
 
   try {
     await runSeed({ skipConnect: true });
-    console.log(`✅ Group "${process.env.GROUP_NAME}" seeded successfully for Admin ${process.env.GROUP_ADMIN_EMAIL}`);
+    console.log(
+      `✅ Group "${process.env.GROUP_NAME}" seeded successfully for Admin ${process.env.GROUP_ADMIN_EMAIL}`
+    );
   } catch (err) {
     console.error('Failed to execute group seed script:', err);
     process.exit(1);

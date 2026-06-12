@@ -3,16 +3,19 @@
 ## Error 1: MODULE_NOT_FOUND - migrate-group-schema.js
 
 ### Problem
+
 ```
 Error: Cannot find module 'D:\TITech Projects\society-community-savings-app\scripts\migrate-group-schema.js'
 ```
 
 ### Root Cause
+
 The file `migrate-group-schema.js` does not exist. The actual migration script is `migrate.js`.
 
 ### Solution
 
 **Step 1: Verify Available Migration Scripts**
+
 ```powershell
 # Windows PowerShell
 cd "D:\TITech Projects\society-community-savings-app\community-savings-app-backend\scripts"
@@ -24,6 +27,7 @@ Get-ChildItem -Filter "*migrate*"
 ```
 
 **Step 2: Use Correct Migration Command**
+
 ```powershell
 # Windows PowerShell
 cd "D:\TITech Projects\society-community-savings-app\community-savings-app-backend"
@@ -36,6 +40,7 @@ node scripts/migrate.js up
 
 **Step 3: Update Documentation**
 Replace all references to `migrate-group-schema.js` with `migrate.js` in:
+
 - `GROUP_CREATION_IMPLEMENTATION_COMPLETE.md` (line 267)
 - `ENHANCED_GROUP_CREATION_DOCS.md`
 - Any deployment guides
@@ -45,16 +50,19 @@ Replace all references to `migrate-group-schema.js` with `migrate.js` in:
 ## Error 2: Bash Command Error - `d: command not found`
 
 ### Problem
+
 ```bash
 bash: d: command not found
 ```
 
 ### Root Cause
+
 Typo in bash command. User typed `d community-savings-app-frontend` instead of `cd community-savings-app-frontend`.
 
 ### Solution
 
 **Windows PowerShell** (Recommended):
+
 ```powershell
 # Use cd (works same as Unix)
 cd "D:\TITech Projects\society-community-savings-app\community-savings-app-frontend"
@@ -64,6 +72,7 @@ Set-Location "D:\TITech Projects\society-community-savings-app\community-savings
 ```
 
 **Git Bash** (Correct):
+
 ```bash
 # Use cd with forward slashes
 cd "/d/TITech Projects/society-community-savings-app/community-savings-app-frontend"
@@ -74,17 +83,18 @@ cd /d/TITech\ Projects/society-community-savings-app/community-savings-app-front
 
 **Quick Reference - Navigation**
 
-| OS | Correct Command | Example |
-|----|-----------------|---------|
-| **PowerShell** | `cd "path"` | `cd "D:\TITech Projects\society-community-savings-app"` |
-| **Git Bash** | `cd /path` | `cd "/d/TITech Projects/society-community-savings-app"` |
-| **Bash (WSL)** | `cd /path` | `cd "/mnt/d/TITech Projects/society-community-savings-app"` |
+| OS             | Correct Command | Example                                                     |
+| -------------- | --------------- | ----------------------------------------------------------- |
+| **PowerShell** | `cd "path"`     | `cd "D:\TITech Projects\society-community-savings-app"`     |
+| **Git Bash**   | `cd /path`      | `cd "/d/TITech Projects/society-community-savings-app"`     |
+| **Bash (WSL)** | `cd /path`      | `cd "/mnt/d/TITech Projects/society-community-savings-app"` |
 
 ---
 
 ## Error 3: EBADENGINE Warning - Node.js Version Mismatch
 
 ### Problem
+
 ```
 npm warn EBADENGINE Unsupported engine {
   package: 'react-router@7.14.x',
@@ -94,11 +104,13 @@ npm warn EBADENGINE Unsupported engine {
 ```
 
 ### Root Cause
+
 Your project uses `react-router@7.14.x` which requires **Node.js v20+**, but you have **v18.20.8**.
 
 ### Solution
 
 **Step 1: Check Current Node Version**
+
 ```powershell
 # PowerShell
 node --version
@@ -111,6 +123,7 @@ npm --version
 **Step 2: Upgrade Node.js to v20+**
 
 #### Option A: Using NVM for Windows (Recommended)
+
 ```powershell
 # Install nvm-windows from: https://github.com/coreybutler/nvm-windows
 # Then:
@@ -121,14 +134,17 @@ node --version              # Verify: v20.15.1
 ```
 
 #### Option B: Direct Installation
+
 1. Uninstall Node.js v18 (Control Panel → Programs → Uninstall)
 2. Download Node.js v20 LTS from [nodejs.org](https://nodejs.org)
 3. Install and verify:
+
 ```powershell
 node --version  # Should be v20.x.x
 ```
 
 #### Option C: Docker (Avoid Host Version Conflicts)
+
 ```dockerfile
 # Use official Node.js v20 image
 FROM node:20-alpine
@@ -139,6 +155,7 @@ CMD ["npm", "run", "dev"]
 ```
 
 **Step 3: Reinstall Dependencies**
+
 ```powershell
 cd "D:\TITech Projects\society-community-savings-app\community-savings-app-frontend"
 rm -r node_modules package-lock.json
@@ -147,6 +164,7 @@ npm run build
 ```
 
 **Step 4: Verify No EBADENGINE Warnings**
+
 ```powershell
 npm install --verbose
 # Output should NOT contain EBADENGINE warnings
@@ -157,17 +175,20 @@ npm install --verbose
 ## Error 4: Vite CJS Deprecation Warning
 
 ### Problem
+
 ```
 Warning: The CJS build of Vite's Node API is deprecated.
 See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.
 ```
 
 ### Root Cause
+
 `vite build` is using the CommonJS build of Vite's Node API, which is being phased out.
 
 ### Solution
 
 **Step 1: Update Vite (Upgrade to Latest)**
+
 ```powershell
 cd "D:\TITech Projects\society-community-savings-app\community-savings-app-frontend"
 npm install vite@latest
@@ -178,26 +199,28 @@ Ensure your `vite.config.js` uses ESM syntax:
 
 ```javascript
 // vite.config.js - Correct ESM format
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
   build: {
     outDir: 'dist',
     sourcemap: false,
-    minify: 'terser'
-  }
-})
+    minify: 'terser',
+  },
+});
 ```
 
 **Step 3: Run Build Again**
+
 ```powershell
 npm run build
 # Warning should be gone or minimized
 ```
 
 **Important: The Build IS Still Valid**
+
 - ✅ The warning is about the build tool's internal API, NOT the output
 - ✅ Your `dist/` folder is correctly built and production-ready
 - ✅ The warning doesn't affect functionality or performance
@@ -208,13 +231,16 @@ npm run build
 ## Error 5: MongoDB Windows Service Not Responding
 
 ### Problem
+
 ```
 net start MongoDB
 The service is not responding to the control function. (NET HELPMSG 2186)
 ```
 
 ### Root Cause
+
 MongoDB Windows service is:
+
 1. Not installed, OR
 2. Corrupted/crashed, OR
 3. Port 27017 already in use
@@ -222,6 +248,7 @@ MongoDB Windows service is:
 ### Solution
 
 **Step 1: Check If MongoDB Service Exists**
+
 ```powershell
 # PowerShell (Run as Administrator)
 Get-Service | Where-Object { $_.Name -like "*mongo*" }
@@ -230,6 +257,7 @@ Get-Service | Where-Object { $_.Name -like "*mongo*" }
 ```
 
 **Step 2: Start MongoDB Manually (Immediate Fix)**
+
 ```powershell
 # PowerShell (Run as Administrator)
 
@@ -243,6 +271,7 @@ mongod --dbpath "C:\Program Files\MongoDB\Server\7.0\data" --logpath "C:\Program
 **Step 3: Install/Reinstall MongoDB Service (Permanent Fix)**
 
 #### Option A: Using Chocolatey (Easiest)
+
 ```powershell
 # PowerShell (Run as Administrator)
 choco install mongodb-community
@@ -255,14 +284,18 @@ net start MongoDB
 ```
 
 #### Option B: Manual Installation
+
 1. Download MongoDB Community from [mongodb.com/download](https://www.mongodb.com/download-center/community)
 2. Extract to `C:\Program Files\MongoDB\`
 3. Create data directory:
+
 ```powershell
 mkdir "C:\data\db"
 mkdir "C:\data\log"
 ```
+
 4. Create MongoDB as Windows Service:
+
 ```powershell
 # PowerShell (Run as Administrator)
 # Navigate to MongoDB bin directory
@@ -276,6 +309,7 @@ net start MongoDB
 ```
 
 **Step 4: Verify MongoDB is Running**
+
 ```powershell
 # Test connection
 mongosh
@@ -287,6 +321,7 @@ node -e "const mongoose = require('mongoose'); mongoose.connect('mongodb://local
 
 **Step 5: Update .env Configuration**
 Ensure your backend `.env` has correct MongoDB URI:
+
 ```bash
 # .env (Backend)
 MONGODB_URI=mongodb://localhost:27017/community-savings
@@ -299,6 +334,7 @@ NODE_ENV=development
 ## Complete Setup Verification Checklist
 
 ### Node.js & npm
+
 ```powershell
 ✅ node --version          # Should be v20.x.x or higher
 ✅ npm --version           # Should be 10.x.x or higher
@@ -306,6 +342,7 @@ NODE_ENV=development
 ```
 
 ### Frontend Setup
+
 ```powershell
 ✅ cd community-savings-app-frontend
 ✅ npm install             # No EBADENGINE warnings
@@ -314,6 +351,7 @@ NODE_ENV=development
 ```
 
 ### Backend Setup
+
 ```powershell
 ✅ cd community-savings-app-backend
 ✅ npm install             # No warnings
@@ -322,6 +360,7 @@ NODE_ENV=development
 ```
 
 ### Database & Cache
+
 ```powershell
 ✅ mongosh                 # Should connect to MongoDB
 ✅ redis-cli              # Should connect to Redis (if using)
@@ -333,6 +372,7 @@ NODE_ENV=development
 ## Quick Command Reference
 
 ### Windows PowerShell
+
 ```powershell
 # Navigate
 cd "D:\TITech Projects\society-community-savings-app"
@@ -352,6 +392,7 @@ npm run preview
 ```
 
 ### Git Bash
+
 ```bash
 # Navigate
 cd "/d/TITech Projects/society-community-savings-app"
@@ -373,13 +414,13 @@ npm run dev
 
 ## Summary of Fixes
 
-| Error | Cause | Fix |
-|-------|-------|-----|
-| **migrate-group-schema.js not found** | File doesn't exist | Use `migrate.js` instead |
-| **bash: d: command not found** | Typo (`d` instead of `cd`) | Use correct `cd` command |
-| **EBADENGINE - Node v18 too old** | react-router@7 needs Node >=v20 | Upgrade to Node.js v20+ using nvm or installer |
-| **Vite CJS deprecation warning** | Using old CJS API | Update vite.config.js to ESM (build is still valid) |
-| **MongoDB service not responding** | Service crashed/not installed | Start mongod manually or reinstall MongoDB service |
+| Error                                 | Cause                           | Fix                                                 |
+| ------------------------------------- | ------------------------------- | --------------------------------------------------- |
+| **migrate-group-schema.js not found** | File doesn't exist              | Use `migrate.js` instead                            |
+| **bash: d: command not found**        | Typo (`d` instead of `cd`)      | Use correct `cd` command                            |
+| **EBADENGINE - Node v18 too old**     | react-router@7 needs Node >=v20 | Upgrade to Node.js v20+ using nvm or installer      |
+| **Vite CJS deprecation warning**      | Using old CJS API               | Update vite.config.js to ESM (build is still valid) |
+| **MongoDB service not responding**    | Service crashed/not installed   | Start mongod manually or reinstall MongoDB service  |
 
 ---
 

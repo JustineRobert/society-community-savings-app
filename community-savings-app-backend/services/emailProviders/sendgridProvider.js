@@ -14,7 +14,9 @@ try {
     sgMail.setApiKey(process.env.SENDGRID_API_KEY);
   }
 } catch (err) {
-  logger.warn('[EmailProvider:SendGrid] @sendgrid/mail not installed. Install with: npm install @sendgrid/mail');
+  logger.warn(
+    '[EmailProvider:SendGrid] @sendgrid/mail not installed. Install with: npm install @sendgrid/mail'
+  );
 }
 
 /**

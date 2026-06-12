@@ -11,9 +11,15 @@
 
 const express = require('express');
 const router = express.Router();
-const { body, param } = require('express-validator');
-const { handleValidation } = require('../utils/validators');
-const auth = require('../middleware/auth');
+
+const { body } = require('express-validator');
+
+const asyncHandler = require('../utils/asyncHandler');
+
+const { handleValidationErrors } = require('../utils/validators');
+
+const { verifyToken } = require('../middleware/auth');
+
 const emailController = require('../controllers/emailController');
 
 /**
@@ -28,30 +34,42 @@ const emailController = require('../controllers/emailController');
  * Verify email with token
  * POST /api/email/verify
  */
-router.post('/verify', [
-  body('token').notEmpty().withMessage('Verification token is required'),
-  handleValidation
-], emailController.verifyEmail);
+router.post(
+  '/verify',
+  [body('token').notEmpty().withMessage('Verification token is required'), handleValidationErrors],
+  emailController.verifyEmail
+);
 
 /**
  * Send password reset email
  * POST /api/email/send-password-reset
  */
-router.post('/send-password-reset', [
-  body('email').isEmail().withMessage('Valid email address is required'),
-  handleValidation
-], emailController.sendPasswordReset);
+router.post(
+  '/send-password-reset',
+  [
+    body('email').isEmail().withMessage('Valid email address is required'),
+    handleValidationErrors
+  ],
+  emailController.sendPasswordReset
+);
 
 /**
  * Reset password with token
  * POST /api/email/reset-password
  */
-router.post('/reset-password', [
-  body('token').notEmpty().withMessage('Reset token is required'),
-  body('newPassword').isLength({ min: 8 }).withMessage('Password must be at least 8 characters long')
-    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/).withMessage('Password must contain uppercase, lowercase, and number'),
-  handleValidation
-], emailController.resetPassword);
+router.post(
+  '/reset-password',
+  [
+    body('token').notEmpty().withMessage('Reset token is required'),
+    body('newPassword')
+      .isLength({ min: 8 })
+      .withMessage('Password must be at least 8 characters long')
+      .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+      .withMessage('Password must contain uppercase, lowercase, and number'),
+    handleValidationErrors,
+  ],
+  emailController.resetPassword
+);
 
 // ============================================================================
 // Protected Routes (Authentication Required)
@@ -61,47 +79,69 @@ router.post('/reset-password', [
  * Send email verification (authenticated user)
  * POST /api/email/send-verification
  */
-router.post('/send-verification', auth.verifyToken, emailController.sendEmailVerification);
+router.post(
+  '/send-verification',
+  verifyToken,
+  emailController.sendEmailVerification
+);
 
 /**
  * Resend email verification
  * POST /api/email/resend-verification
  */
-router.post('/resend-verification', auth.verifyToken, emailController.resendEmailVerification);
+router.post(
+  '/resend-verification', 
+  verifyToken, 
+  emailController.resendEmailVerification
+);
 
 /**
  * Get email verification status
  * GET /api/email/verification-status
  */
-router.get('/verification-status', auth.verifyToken, emailController.getEmailVerificationStatus);
+router.get(
+  '/verification-status', 
+  verifyToken, 
+  emailController.getEmailVerificationStatus
+);
 
 /**
  * Test email configuration (admin only)
  * POST /api/email/test
  */
-router.post('/test', auth.verifyToken, emailController.testEmailConfiguration);
+router.post(
+  '/test', 
+  verifyToken, 
+  emailController.testEmailConfiguration
+);
 
 /**
  * Send test email (admin only)
  * POST /api/email/test-send
  */
-router.post('/test-send', auth.verifyToken, [
-  body('to').isEmail().withMessage('Valid recipient email is required'),
-  body('subject').notEmpty().withMessage('Subject is required'),
-  body('message').notEmpty().withMessage('Message is required'),
-  handleValidation
-], emailController.sendTestEmail);
-
-module.exports = router;
+// ✅ Test email route (already correct)
+router.post(
+  '/test-send',
+  verifyToken,
   [
-    body('email')
-      .isEmail()
-      .normalizeEmail()
-      .withMessage('Valid email is required'),
+    body('to').isEmail().withMessage('Valid recipient email is required'),
+    body('subject').notEmpty().withMessage('Subject is required'),
+    body('message').notEmpty().withMessage('Message is required'),
+    handleValidationErrors,
   ],
+  emailController.sendTestEmail
+);
+
+// ✅ Verification email route (FIXED)
+router.post(
+  '/send-verification',
+  [body('email').isEmail().normalizeEmail().withMessage('Valid email is required')],
   handleValidationErrors,
   asyncHandler(emailController.sendVerificationEmailRequest)
 );
+
+module.exports = router;
+``;
 
 /**
  * POST /api/email/verify
@@ -131,12 +171,7 @@ router.post(
 router.post(
   '/request-password-reset',
   emailController.requestResetLimiter,
-  [
-    body('email')
-      .isEmail()
-      .normalizeEmail()
-      .withMessage('Valid email is required'),
-  ],
+  [body('email').isEmail().normalizeEmail().withMessage('Valid email is required')],
   handleValidationErrors,
   asyncHandler(emailController.requestPasswordReset)
 );
@@ -161,9 +196,7 @@ router.post(
       .withMessage('Password must be at least 8 characters')
       .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])/)
       .withMessage('Password must contain uppercase, lowercase, number, and special character'),
-    body('confirmPassword')
-      .notEmpty()
-      .withMessage('Password confirmation is required'),
+    body('confirmPassword').notEmpty().withMessage('Password confirmation is required'),
   ],
   handleValidationErrors,
   asyncHandler(emailController.resetPassword)
@@ -182,17 +215,13 @@ router.post(
   '/change-password',
   verifyToken,
   [
-    body('currentPassword')
-      .notEmpty()
-      .withMessage('Current password is required'),
+    body('currentPassword').notEmpty().withMessage('Current password is required'),
     body('newPassword')
       .isLength({ min: 8 })
       .withMessage('New password must be at least 8 characters')
       .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])/)
       .withMessage('Password must contain uppercase, lowercase, number, and special character'),
-    body('confirmPassword')
-      .notEmpty()
-      .withMessage('Password confirmation is required'),
+    body('confirmPassword').notEmpty().withMessage('Password confirmation is required'),
   ],
   handleValidationErrors,
   asyncHandler(emailController.changePassword)

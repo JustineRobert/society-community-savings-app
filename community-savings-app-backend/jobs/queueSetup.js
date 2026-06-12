@@ -80,7 +80,11 @@ notificationQueue.process(async (job) => {
       const loan = await Loan.findById(loanId);
       const user = await User.findById(loan.user);
       // Queue email notification
-      await emailQueue.add({ to: user.email, subject: 'Loan Payment Overdue', text: `Your loan is overdue.` });
+      await emailQueue.add({
+        to: user.email,
+        subject: 'Loan Payment Overdue',
+        text: `Your loan is overdue.`,
+      });
     }
     logger.info('Notification sent', { type, loanId });
   } catch (err) {
@@ -102,5 +106,5 @@ module.exports = {
   paymentRetryQueue,
   emailQueue,
   overdueLoanQueue,
-  notificationQueue
+  notificationQueue,
 };

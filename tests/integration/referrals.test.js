@@ -50,18 +50,24 @@ describe('Referral System Tests', () => {
     });
 
     test('Invalid code rejected', async () => {
-      await expect(ReferralService.redeemCode('INVALID', user2._id)).rejects.toThrow('Invalid code');
+      await expect(ReferralService.redeemCode('INVALID', user2._id)).rejects.toThrow(
+        'Invalid code'
+      );
     });
 
     test('Self-referral prevented', async () => {
       const code = await ReferralService.generateCode(user1._id);
-      await expect(ReferralService.redeemCode(code, user1._id)).rejects.toThrow('Self-referral not allowed');
+      await expect(ReferralService.redeemCode(code, user1._id)).rejects.toThrow(
+        'Self-referral not allowed'
+      );
     });
 
     test('Code single-use enforcement', async () => {
       const code = await ReferralService.generateCode(user1._id);
       await ReferralService.redeemCode(code, user2._id);
-      await expect(ReferralService.redeemCode(code, user3._id)).rejects.toThrow('Code already used');
+      await expect(ReferralService.redeemCode(code, user3._id)).rejects.toThrow(
+        'Code already used'
+      );
     });
   });
 

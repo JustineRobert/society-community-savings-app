@@ -1,6 +1,7 @@
 # Before & After - Code Comparison
 
 ## Overview
+
 This document shows the key changes made during the refactoring with before/after code snippets.
 
 ---
@@ -8,6 +9,7 @@ This document shows the key changes made during the refactoring with before/afte
 ## 1. Server.js - Connection Management
 
 ### BEFORE
+
 ```javascript
 // server.js (old)
 dotenv.config({ path: path.resolve(__dirname, '.env') });
@@ -26,6 +28,7 @@ for (const key of requiredEnvVars) {
 ```
 
 ### AFTER
+
 ```javascript
 // server.js (new)
 const NODE_ENV = process.env.NODE_ENV || 'development';
@@ -34,7 +37,7 @@ const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/community_
 const REDIS_URI = process.env.REDIS_URI || 'redis://127.0.0.1:6379';
 
 // Validate only truly required environment variables
-const requiredEnvVars = ['JWT_SECRET'];  // MONGO_URI now has a default
+const requiredEnvVars = ['JWT_SECRET']; // MONGO_URI now has a default
 for (const key of requiredEnvVars) {
   if (!process.env[key]) {
     console.error(`❌ Missing required environment variable: ${key}`);
@@ -50,6 +53,7 @@ const connectionConfig = {
 ```
 
 **Benefits**:
+
 - Defaults provided for non-critical configs
 - Connection URIs centralized
 - Easier to override via environment
@@ -59,9 +63,11 @@ const connectionConfig = {
 ## 2. Server.js - Exponential Backoff Function
 
 ### BEFORE
+
 ❌ Not present - Backoff calculation was in db.js as simple multiplication
 
 ### AFTER
+
 ```javascript
 /**
  * Exponential backoff calculator with jitter
@@ -79,6 +85,7 @@ function getExponentialBackoffDelay(attemptNumber, minDelay = 1000, maxDelay = 3
 ```
 
 **Benefits**:
+
 - Reusable across services
 - Jitter prevents thundering herd
 - Configurable min/max delays
@@ -88,9 +95,11 @@ function getExponentialBackoffDelay(attemptNumber, minDelay = 1000, maxDelay = 3
 ## 3. Server.js - Startup Health Check
 
 ### BEFORE
+
 ❌ Not present - No startup validation
 
 ### AFTER
+
 ```javascript
 /**
  * Startup Health Check Function
@@ -98,14 +107,14 @@ function getExponentialBackoffDelay(attemptNumber, minDelay = 1000, maxDelay = 3
  */
 async function performStartupHealthCheck() {
   logger.info('🔍 Performing startup health checks...');
-  
+
   let mongoAvailable = false;
   let redisAvailable = false;
   let hasErrors = false;
-  
+
   // Check MongoDB availability (handled separately by connectDB)
   logger.info(`📍 MongoDB URI: ${MONGO_URI}`);
-  
+
   // Check Redis availability
   logger.info(`📍 Redis URI: ${REDIS_URI}`);
   if (redisClient && redisClient.status && redisClient.status !== 'mock') {
@@ -114,12 +123,13 @@ async function performStartupHealthCheck() {
   } else {
     logger.warn('⚠️ Redis is not available - rate limiting will use memory store');
   }
-  
+
   logger.info('✅ Startup health checks completed');
 }
 ```
 
 **Benefits**:
+
 - Validates services before accepting requests
 - Clear logging of configuration
 - Early detection of problems
@@ -129,6 +139,7 @@ async function performStartupHealthCheck() {
 ## 4. Server.js - Server Startup
 
 ### BEFORE
+
 ```javascript
 server.listen(PORT, () => {
   logger.info(`✅ Server running (${NODE_ENV}) at http://localhost:${PORT}`);
@@ -136,16 +147,19 @@ server.listen(PORT, () => {
 ```
 
 ### AFTER
+
 ```javascript
 const startServer = async () => {
   try {
     // Perform startup health checks
     await performStartupHealthCheck();
-    
+
     // Start listening for connections
     server.listen(PORT, () => {
       logger.info(`✅ Server running (${NODE_ENV}) at http://localhost:${PORT}`);
-      logger.info(`🌐 CORS allowed origins: ${process.env.CORS_ORIGINS || 'http://localhost:3000'}`);
+      logger.info(
+        `🌐 CORS allowed origins: ${process.env.CORS_ORIGINS || 'http://localhost:3000'}`
+      );
       logger.info('📊 Metrics available at: /metrics');
       logger.info('🏥 Health check at: /healthz');
       logger.info('📡 Readiness check at: /readyz');
@@ -160,6 +174,7 @@ startServer();
 ```
 
 **Benefits**:
+
 - Async/await pattern for better readability
 - Health checks before listening
 - Detailed startup information logged
@@ -169,6 +184,7 @@ startServer();
 ## 5. MongoDB Config - Retry Logic
 
 ### BEFORE
+
 ```javascript
 // config/db.js (old)
 const { NODE_ENV, MONGO_URI, MONGO_URI_FALLBACK } = process.env;
@@ -200,7 +216,6 @@ const connectDB = async (attempt = 1) => {
 
     logger.info('✅ MongoDB connected successfully');
     isConnecting = false;
-
   } catch (error) {
     isConnecting = false;
     const message = error.message;
@@ -235,6 +250,7 @@ const connectDB = async (attempt = 1) => {
 ```
 
 ### AFTER
+
 ```javascript
 // config/db.js (new)
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/community_savings';
@@ -247,10 +263,7 @@ const MAX_RETRY_DELAY = 30000; // 30 seconds
  * Calculate exponential backoff with jitter
  */
 function getRetryDelay(attempt) {
-  const baseDelay = Math.min(
-    INITIAL_RETRY_DELAY * Math.pow(2, attempt - 1),
-    MAX_RETRY_DELAY
-  );
+  const baseDelay = Math.min(INITIAL_RETRY_DELAY * Math.pow(2, attempt - 1), MAX_RETRY_DELAY);
   // Add jitter (±10% randomness) to prevent thundering herd
   const jitter = baseDelay * 0.1 * (Math.random() - 0.5);
   return Math.floor(baseDelay + jitter);
@@ -260,7 +273,7 @@ const connectDB = async (attempt = 1) => {
   if (isConnecting && attempt > 1) return;
   if (attempt === 1) isConnecting = true;
 
-  const mongoUri = MONGO_URI;  // Always use same URI
+  const mongoUri = MONGO_URI; // Always use same URI
 
   if (!mongoUri) {
     logger.error('❌ MongoDB URI is missing. Check MONGO_URI environment variable or defaults.');
@@ -268,9 +281,7 @@ const connectDB = async (attempt = 1) => {
   }
 
   try {
-    logger.info(
-      `🔌 Connecting to MongoDB (Attempt ${attempt}/${MAX_RETRIES})`
-    );
+    logger.info(`🔌 Connecting to MongoDB (Attempt ${attempt}/${MAX_RETRIES})`);
 
     await mongoose.connect(mongoUri, {
       maxPoolSize: 10,
@@ -282,7 +293,6 @@ const connectDB = async (attempt = 1) => {
 
     logger.info('✅ MongoDB connected successfully');
     isConnecting = false;
-
   } catch (error) {
     isConnecting = false;
     const message = error.message || String(error);
@@ -325,6 +335,7 @@ const connectDB = async (attempt = 1) => {
 ```
 
 **Improvements**:
+
 - Proper exponential backoff (2s, 4s, 8s, 16s) instead of linear
 - Jitter randomization prevents thundering herd
 - More error types detected (authentication, etc.)
@@ -336,6 +347,7 @@ const connectDB = async (attempt = 1) => {
 ## 6. Redis Service - Configuration
 
 ### BEFORE
+
 ```javascript
 // services/redis.js (old)
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
@@ -350,22 +362,24 @@ const errorLogThrottle = NODE_ENV === 'production' ? ERROR_LOG_THROTTLE_MS : 500
 ```
 
 ### AFTER
+
 ```javascript
 // services/redis.js (new)
-const REDIS_URI = process.env.REDIS_URI || 'redis://127.0.0.1:6379';  // Changed var name
+const REDIS_URI = process.env.REDIS_URI || 'redis://127.0.0.1:6379'; // Changed var name
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
 const MIN_RECONNECT_DELAY = 1000;
 const MAX_RECONNECT_DELAY = 30000;
 const BACKOFF_MULTIPLIER = 1.5;
-const MAX_RETRY_ATTEMPTS = 10;  // Added explicit max
+const MAX_RETRY_ATTEMPTS = 10; // Added explicit max
 
-const ERROR_LOG_THROTTLE_MS = NODE_ENV === 'production' ? 30000 : 5000;  // Simplified
+const ERROR_LOG_THROTTLE_MS = NODE_ENV === 'production' ? 30000 : 5000; // Simplified
 
-let gracefullyDegraded = false;  // Track degradation state
+let gracefullyDegraded = false; // Track degradation state
 ```
 
 **Benefits**:
+
 - `REDIS_URI` matches server.js pattern
 - Consistent default format (127.0.0.1 not localhost)
 - Explicit max retry attempts
@@ -376,6 +390,7 @@ let gracefullyDegraded = false;  // Track degradation state
 ## 7. Redis Service - Retry Strategy
 
 ### BEFORE
+
 ```javascript
 retryStrategy: (times) => {
   if (times > 10) {
@@ -388,6 +403,7 @@ retryStrategy: (times) => {
 ```
 
 ### AFTER
+
 ```javascript
 retryStrategy: (times) => {
   if (times > MAX_RETRY_ATTEMPTS) {
@@ -412,6 +428,7 @@ retryStrategy: (times) => {
 ```
 
 **Benefits**:
+
 - Clear logging of exhaustion
 - Tracks degradation state
 - Shows attempt ratio (e.g., 5/10)
@@ -422,15 +439,17 @@ retryStrategy: (times) => {
 ## 8. Redis Service - Helper Methods
 
 ### BEFORE
+
 ❌ Not present - No status checking methods
 
 ### AFTER
+
 ```javascript
 /**
  * Check if Redis is available and connected
  * @returns {boolean} true if Redis is available
  */
-redis.isAvailable = function() {
+redis.isAvailable = function () {
   return this.status === 'ready' || this.status === 'connected';
 };
 
@@ -438,12 +457,13 @@ redis.isAvailable = function() {
  * Get current connection status
  * @returns {string} Status: 'ready', 'connecting', 'mock', etc.
  */
-redis.getStatus = function() {
+redis.getStatus = function () {
   return this.status || 'unknown';
 };
 ```
 
 **Benefits**:
+
 - Controllers can check Redis status
 - Graceful feature flags based on Redis availability
 - Easy testing and monitoring
@@ -453,36 +473,39 @@ redis.getStatus = function() {
 ## 9. Payment Model - Duplicate Index
 
 ### BEFORE
+
 ```javascript
 // models/Payment.js (old) - DUPLICATES
-paymentSchema.index({ transactionId: 1, provider: 1 });      // Line 181
-paymentSchema.index({ groupId: 1, status: 1 });              // Line 182
-paymentSchema.index({ status: 1, createdAt: -1 });           // Line 183
-paymentSchema.index({ initiatedAt: -1 });                    // Line 184
+paymentSchema.index({ transactionId: 1, provider: 1 }); // Line 181
+paymentSchema.index({ groupId: 1, status: 1 }); // Line 182
+paymentSchema.index({ status: 1, createdAt: -1 }); // Line 183
+paymentSchema.index({ initiatedAt: -1 }); // Line 184
 
 // ... other code ...
 
 // Ensure indexes are created
-paymentSchema.index({ userId: 1, createdAt: -1 });           // Line 263
-paymentSchema.index({ groupId: 1, status: 1 });              // Line 264 - DUPLICATE!
+paymentSchema.index({ userId: 1, createdAt: -1 }); // Line 263
+paymentSchema.index({ groupId: 1, status: 1 }); // Line 264 - DUPLICATE!
 ```
 
 ### AFTER
+
 ```javascript
 // models/Payment.js (new) - CLEAN
-paymentSchema.index({ transactionId: 1, provider: 1 });      // Line 181
-paymentSchema.index({ groupId: 1, status: 1 });              // Line 182 (SINGLE)
-paymentSchema.index({ status: 1, createdAt: -1 });           // Line 183
-paymentSchema.index({ initiatedAt: -1 });                    // Line 184
+paymentSchema.index({ transactionId: 1, provider: 1 }); // Line 181
+paymentSchema.index({ groupId: 1, status: 1 }); // Line 182 (SINGLE)
+paymentSchema.index({ status: 1, createdAt: -1 }); // Line 183
+paymentSchema.index({ initiatedAt: -1 }); // Line 184
 
 // ... other code ...
 
 // Ensure indexes are created
-paymentSchema.index({ userId: 1, createdAt: -1 });           // Line 263
+paymentSchema.index({ userId: 1, createdAt: -1 }); // Line 263
 // Line 264 REMOVED - duplicate of line 182
 ```
 
 **Benefits**:
+
 - No redundant index creation
 - Cleaner, more maintainable code
 - Slightly faster model initialization
@@ -491,23 +514,24 @@ paymentSchema.index({ userId: 1, createdAt: -1 });           // Line 263
 
 ## Summary of Changes
 
-| Aspect | Before | After |
-|--------|--------|-------|
-| **MongoDB URI** | Required or fallback | Default provided |
-| **Redis URI** | `REDIS_URL` | `REDIS_URI` |
-| **Retry strategy** | Linear (5000*attempt) | Exponential (2^attempt) |
-| **Jitter** | No | Yes (±10%) |
-| **Redis failure** | Errors logged | Graceful fallback |
-| **Error messages** | Generic | Detailed with guidance |
-| **Status checking** | No methods | `isAvailable()`, `getStatus()` |
-| **Duplicate indexes** | Yes (1 in Payment) | No |
-| **Health checks** | Missing | Complete |
+| Aspect                | Before                 | After                          |
+| --------------------- | ---------------------- | ------------------------------ |
+| **MongoDB URI**       | Required or fallback   | Default provided               |
+| **Redis URI**         | `REDIS_URL`            | `REDIS_URI`                    |
+| **Retry strategy**    | Linear (5000\*attempt) | Exponential (2^attempt)        |
+| **Jitter**            | No                     | Yes (±10%)                     |
+| **Redis failure**     | Errors logged          | Graceful fallback              |
+| **Error messages**    | Generic                | Detailed with guidance         |
+| **Status checking**   | No methods             | `isAvailable()`, `getStatus()` |
+| **Duplicate indexes** | Yes (1 in Payment)     | No                             |
+| **Health checks**     | Missing                | Complete                       |
 
 ---
 
 ## Testing the Changes
 
 ### Test MongoDB Retry
+
 ```bash
 # Kill MongoDB
 killall mongod
@@ -519,6 +543,7 @@ npm start
 ```
 
 ### Test Redis Graceful Degradation
+
 ```bash
 # Kill Redis
 redis-cli shutdown
@@ -530,6 +555,7 @@ npm start
 ```
 
 ### Test Custom URIs
+
 ```bash
 MONGO_URI="mongodb://custom:27017/db" \
 REDIS_URI="redis://custom:6379" \

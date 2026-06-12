@@ -115,7 +115,9 @@ describe('Forum Component', () => {
       render(<Forum />);
       await waitFor(() => {
         mockCategories.forEach((category) => {
-          expect(screen.getByRole('button', { name: new RegExp(category, 'i') })).toBeInTheDocument();
+          expect(
+            screen.getByRole('button', { name: new RegExp(category, 'i') })
+          ).toBeInTheDocument();
         });
       });
     });
@@ -176,7 +178,7 @@ describe('Forum Component', () => {
       forumService.getTopicsByCategory.mockResolvedValue(filteredTopics);
 
       render(<Forum />);
-      
+
       const categoryButton = await screen.findByRole('button', { name: /security/i });
       fireEvent.click(categoryButton);
 
@@ -187,7 +189,7 @@ describe('Forum Component', () => {
 
     it('should highlight selected category', async () => {
       render(<Forum />);
-      
+
       const categoryButton = await screen.findByRole('button', { name: /security/i });
       fireEvent.click(categoryButton);
 
@@ -198,7 +200,7 @@ describe('Forum Component', () => {
 
     it('should show all categories when Reset is clicked', async () => {
       render(<Forum />);
-      
+
       const categoryButton = await screen.findByRole('button', { name: /general/i });
       fireEvent.click(categoryButton);
 
@@ -220,7 +222,7 @@ describe('Forum Component', () => {
       forumService.getTopics.mockResolvedValue([mockTopics[0], mockTopics[1], mockTopics[2]]);
 
       render(<Forum />);
-      
+
       const sortSelect = await screen.findByDisplayValue(/newest/i);
       expect(sortSelect.value).toBe('newest');
     });
@@ -230,7 +232,7 @@ describe('Forum Component', () => {
       forumService.getTopics.mockResolvedValue(sortedTopics);
 
       render(<Forum />);
-      
+
       const sortSelect = await screen.findByDisplayValue(/newest/i);
       await userEvent.selectOption(sortSelect, 'active');
 
@@ -244,7 +246,7 @@ describe('Forum Component', () => {
       forumService.getTopics.mockResolvedValue(sortedTopics);
 
       render(<Forum />);
-      
+
       const sortSelect = await screen.findByDisplayValue(/newest/i);
       await userEvent.selectOption(sortSelect, 'viewed');
 
@@ -260,7 +262,7 @@ describe('Forum Component', () => {
       forumService.getTopics.mockResolvedValue(unansweredTopics);
 
       render(<Forum />);
-      
+
       const filterSelect = await screen.findByDisplayValue(/all/i);
       await userEvent.selectOption(filterSelect, 'unanswered');
 
@@ -274,7 +276,7 @@ describe('Forum Component', () => {
       forumService.getTopics.mockResolvedValue(solvedTopics);
 
       render(<Forum />);
-      
+
       const filterSelect = await screen.findByDisplayValue(/all/i);
       await userEvent.selectOption(filterSelect, 'solved');
 
@@ -287,7 +289,7 @@ describe('Forum Component', () => {
   describe('New Topic Modal', () => {
     it('should open new topic modal when button is clicked', async () => {
       render(<Forum />);
-      
+
       const newTopicButton = await screen.findByRole('button', { name: /new topic/i });
       fireEvent.click(newTopicButton);
 
@@ -298,7 +300,7 @@ describe('Forum Component', () => {
 
     it('should close modal when close button is clicked', async () => {
       render(<Forum />);
-      
+
       const newTopicButton = await screen.findByRole('button', { name: /new topic/i });
       fireEvent.click(newTopicButton);
 
@@ -306,7 +308,9 @@ describe('Forum Component', () => {
       fireEvent.click(closeButton);
 
       await waitFor(() => {
-        expect(screen.queryByRole('heading', { name: /create new topic/i })).not.toBeInTheDocument();
+        expect(
+          screen.queryByRole('heading', { name: /create new topic/i })
+        ).not.toBeInTheDocument();
       });
     });
 
@@ -314,7 +318,7 @@ describe('Forum Component', () => {
       forumService.createTopic.mockResolvedValue({ id: 4, title: 'New Topic' });
 
       render(<Forum />);
-      
+
       const newTopicButton = await screen.findByRole('button', { name: /new topic/i });
       fireEvent.click(newTopicButton);
 
@@ -336,7 +340,7 @@ describe('Forum Component', () => {
 
     it('should validate required fields', async () => {
       render(<Forum />);
-      
+
       const newTopicButton = await screen.findByRole('button', { name: /new topic/i });
       fireEvent.click(newTopicButton);
 
@@ -352,7 +356,7 @@ describe('Forum Component', () => {
   describe('Topic Interaction', () => {
     it('should navigate to topic details when clicked', async () => {
       render(<Forum />);
-      
+
       const topicLink = await screen.findByText(mockTopics[0].title);
       fireEvent.click(topicLink);
 
@@ -365,7 +369,7 @@ describe('Forum Component', () => {
       forumService.incrementTopicViews.mockResolvedValue({ success: true });
 
       render(<Forum />);
-      
+
       const topicLink = await screen.findByText(mockTopics[0].title);
       fireEvent.click(topicLink);
 
@@ -392,7 +396,7 @@ describe('Forum Component', () => {
       forumService.getTopics.mockResolvedValueOnce(page2Topics);
 
       render(<Forum />);
-      
+
       const nextButton = await screen.findByRole('button', { name: /next/i });
       fireEvent.click(nextButton);
 
@@ -403,7 +407,7 @@ describe('Forum Component', () => {
 
     it('should disable previous button on first page', async () => {
       render(<Forum />);
-      
+
       const prevButton = await screen.findByRole('button', { name: /previous/i });
       expect(prevButton).toBeDisabled();
     });
@@ -454,7 +458,7 @@ describe('Forum Component', () => {
   describe('Loading States', () => {
     it('should show loading indicator while fetching', () => {
       forumService.getTopics.mockImplementation(
-        () => new Promise(resolve => setTimeout(() => resolve(mockTopics), 1000))
+        () => new Promise((resolve) => setTimeout(() => resolve(mockTopics), 1000))
       );
 
       render(<Forum />);
@@ -493,7 +497,7 @@ describe('Forum Component', () => {
 
     it('should support keyboard navigation', async () => {
       render(<Forum />);
-      
+
       const newTopicButton = await screen.findByRole('button', { name: /new topic/i });
       newTopicButton.focus();
       expect(newTopicButton).toHaveFocus();

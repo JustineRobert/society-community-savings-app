@@ -1,4 +1,5 @@
 # Backend API Implementation Guide
+
 ## Help Center, FAQ & Community Forum
 
 This document outlines the backend API requirements for the Help Center, FAQ, and Community Forum features.
@@ -6,6 +7,7 @@ This document outlines the backend API requirements for the Help Center, FAQ, an
 ---
 
 ## Table of Contents
+
 1. [Database Schema](#database-schema)
 2. [API Endpoints](#api-endpoints)
 3. [Request/Response Examples](#requestresponse-examples)
@@ -193,6 +195,7 @@ CREATE TABLE content_reports (
 ### Help Center Endpoints
 
 #### Get Articles
+
 ```
 GET /api/help/articles
 Query Parameters:
@@ -212,6 +215,7 @@ Response:
 ```
 
 #### Search Articles
+
 ```
 GET /api/help/search
 Query Parameters:
@@ -228,6 +232,7 @@ Response:
 ```
 
 #### Get Article by ID
+
 ```
 GET /api/help/articles/:id
 
@@ -247,6 +252,7 @@ Response:
 ```
 
 #### Get Article Categories
+
 ```
 GET /api/help/categories
 
@@ -264,6 +270,7 @@ Response:
 ```
 
 #### Mark Article Helpful
+
 ```
 POST /api/help/articles/:id/helpful
 
@@ -276,6 +283,7 @@ Response:
 ```
 
 #### Get Featured Articles
+
 ```
 GET /api/help/articles/featured
 Query Parameters:
@@ -288,6 +296,7 @@ Response:
 ```
 
 #### Create Article (Admin)
+
 ```
 POST /api/help/articles
 Headers:
@@ -308,6 +317,7 @@ Response:
 ```
 
 #### Update Article (Admin)
+
 ```
 PUT /api/help/articles/:id
 Headers:
@@ -326,6 +336,7 @@ Response:
 ```
 
 #### Delete Article (Admin)
+
 ```
 DELETE /api/help/articles/:id
 Headers:
@@ -343,6 +354,7 @@ Response:
 ### FAQ Endpoints
 
 #### Get FAQs
+
 ```
 GET /api/faq
 Query Parameters:
@@ -360,6 +372,7 @@ Response:
 ```
 
 #### Search FAQs
+
 ```
 GET /api/faq/search
 Query Parameters:
@@ -373,6 +386,7 @@ Response:
 ```
 
 #### Get FAQ Categories
+
 ```
 GET /api/faq/categories
 
@@ -383,6 +397,7 @@ Response:
 ```
 
 #### Mark FAQ Helpful
+
 ```
 POST /api/faq/:id/helpful
 
@@ -394,6 +409,7 @@ Response:
 ```
 
 #### Get Popular FAQs
+
 ```
 GET /api/faq/popular
 Query Parameters:
@@ -406,6 +422,7 @@ Response:
 ```
 
 #### Create FAQ (Admin)
+
 ```
 POST /api/faq
 Headers:
@@ -426,6 +443,7 @@ Response:
 ```
 
 #### Update FAQ (Admin)
+
 ```
 PUT /api/faq/:id
 Headers:
@@ -444,6 +462,7 @@ Response:
 ```
 
 #### Bulk Import FAQs (Admin)
+
 ```
 POST /api/faq/bulk-import
 Headers:
@@ -466,6 +485,7 @@ Response:
 ### Forum Endpoints
 
 #### Get Topics
+
 ```
 GET /api/forum/topics
 Query Parameters:
@@ -499,6 +519,7 @@ Response:
 ```
 
 #### Get Single Topic
+
 ```
 GET /api/forum/topics/:id
 
@@ -526,6 +547,7 @@ Response:
 ```
 
 #### Create Topic
+
 ```
 POST /api/forum/topics
 Headers:
@@ -546,6 +568,7 @@ Response:
 ```
 
 #### Update Topic
+
 ```
 PUT /api/forum/topics/:id
 Headers:
@@ -565,6 +588,7 @@ Response:
 ```
 
 #### Delete Topic
+
 ```
 DELETE /api/forum/topics/:id
 Headers:
@@ -578,6 +602,7 @@ Response:
 ```
 
 #### Create Reply
+
 ```
 POST /api/forum/topics/:topicId/replies
 Headers:
@@ -595,6 +620,7 @@ Response:
 ```
 
 #### Update Reply
+
 ```
 PUT /api/forum/topics/:topicId/replies/:replyId
 Headers:
@@ -612,6 +638,7 @@ Response:
 ```
 
 #### Delete Reply
+
 ```
 DELETE /api/forum/topics/:topicId/replies/:replyId
 Headers:
@@ -625,6 +652,7 @@ Response:
 ```
 
 #### Mark as Solution
+
 ```
 POST /api/forum/topics/:topicId/replies/:replyId/mark-solution
 Headers:
@@ -638,6 +666,7 @@ Response:
 ```
 
 #### Get Topic Replies
+
 ```
 GET /api/forum/topics/:topicId/replies
 Query Parameters:
@@ -654,6 +683,7 @@ Response:
 ```
 
 #### Vote on Reply
+
 ```
 POST /api/forum/topics/:topicId/replies/:replyId/vote
 Headers:
@@ -673,6 +703,7 @@ Response:
 ```
 
 #### Mark Sticky
+
 ```
 POST /api/forum/topics/:id/sticky
 Headers:
@@ -686,6 +717,7 @@ Response:
 ```
 
 #### Lock Topic
+
 ```
 POST /api/forum/topics/:id/lock
 Headers:
@@ -699,6 +731,7 @@ Response:
 ```
 
 #### Get Forum Categories
+
 ```
 GET /api/forum/categories
 
@@ -709,6 +742,7 @@ Response:
 ```
 
 #### Get Forum Statistics
+
 ```
 GET /api/forum/stats
 
@@ -723,6 +757,7 @@ Response:
 ```
 
 #### Search Topics
+
 ```
 GET /api/forum/search
 Query Parameters:
@@ -738,6 +773,7 @@ Response:
 ```
 
 #### Get Recent Topics
+
 ```
 GET /api/forum/topics/recent
 Query Parameters:
@@ -750,6 +786,7 @@ Response:
 ```
 
 #### Get Popular Topics
+
 ```
 GET /api/forum/topics/popular
 Query Parameters:
@@ -763,6 +800,7 @@ Response:
 ```
 
 #### Follow/Unfollow Topic
+
 ```
 POST /api/forum/topics/:id/follow
 Headers:
@@ -775,6 +813,7 @@ Response:
 ```
 
 #### Report Content
+
 ```
 POST /api/forum/report
 Headers:
@@ -797,6 +836,7 @@ Response:
 ```
 
 #### Get Trending Topics
+
 ```
 GET /api/forum/topics/trending
 Query Parameters:
@@ -863,14 +903,14 @@ curl -X GET \
 
 ### Common Error Codes
 
-| Code | HTTP Status | Description |
-|------|-------------|-------------|
-| NOT_FOUND | 404 | Resource not found |
-| UNAUTHORIZED | 401 | Authentication required |
-| FORBIDDEN | 403 | Insufficient permissions |
-| VALIDATION_ERROR | 400 | Invalid request data |
-| DUPLICATE_ENTRY | 409 | Resource already exists |
-| SERVER_ERROR | 500 | Internal server error |
+| Code             | HTTP Status | Description              |
+| ---------------- | ----------- | ------------------------ |
+| NOT_FOUND        | 404         | Resource not found       |
+| UNAUTHORIZED     | 401         | Authentication required  |
+| FORBIDDEN        | 403         | Insufficient permissions |
+| VALIDATION_ERROR | 400         | Invalid request data     |
+| DUPLICATE_ENTRY  | 409         | Resource already exists  |
+| SERVER_ERROR     | 500         | Internal server error    |
 
 ---
 
@@ -879,6 +919,7 @@ curl -X GET \
 ### Authentication Methods
 
 1. **Bearer Token (JWT)**
+
    ```
    Authorization: Bearer <token>
    ```
@@ -890,12 +931,12 @@ curl -X GET \
 
 ### Authorization Levels
 
-| Level | Permissions |
-|-------|------------|
-| Public | Read articles, FAQs, forum topics |
-| User | Create topics, replies, feedback |
-| Moderator | Edit/delete other users' content, lock topics |
-| Admin | Full CRUD operations, user management, reports |
+| Level     | Permissions                                    |
+| --------- | ---------------------------------------------- |
+| Public    | Read articles, FAQs, forum topics              |
+| User      | Create topics, replies, feedback               |
+| Moderator | Edit/delete other users' content, lock topics  |
+| Admin     | Full CRUD operations, user management, reports |
 
 ### Protected Endpoints
 
@@ -908,6 +949,7 @@ Endpoints requiring authentication are marked with `Headers: Authorization: Bear
 ### Rate Limit Headers
 
 All responses include:
+
 ```
 X-RateLimit-Limit: 1000
 X-RateLimit-Remaining: 999
@@ -916,12 +958,12 @@ X-RateLimit-Reset: 1640000000
 
 ### Limits
 
-| Endpoint Type | Limit | Window |
-|---------------|-------|--------|
-| Read operations | 1000 | Per hour |
-| Write operations | 100 | Per hour |
-| Search | 200 | Per hour |
-| Admin operations | 50 | Per hour |
+| Endpoint Type    | Limit | Window   |
+| ---------------- | ----- | -------- |
+| Read operations  | 1000  | Per hour |
+| Write operations | 100   | Per hour |
+| Search           | 200   | Per hour |
+| Admin operations | 50    | Per hour |
 
 ### Rate Limit Response
 

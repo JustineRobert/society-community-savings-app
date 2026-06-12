@@ -133,13 +133,11 @@ const HelpCenter = () => {
           <section className="help-featured">
             <h2>Featured Articles</h2>
             <div className="help-featured-grid">
-              {featured.map(article => (
+              {featured.map((article) => (
                 <div key={article.id} className="help-featured-card">
                   <h3>{article.title}</h3>
                   <p>{article.summary}</p>
-                  <button onClick={() => handleArticleClick(article.id)}>
-                    Read More
-                  </button>
+                  <button onClick={() => handleArticleClick(article.id)}>Read More</button>
                 </div>
               ))}
             </div>
@@ -153,7 +151,7 @@ const HelpCenter = () => {
             <aside className="help-sidebar">
               <h3>Categories</h3>
               <div className="help-categories">
-                {categories.map(category => (
+                {categories.map((category) => (
                   <button
                     key={category.id}
                     className={`help-category-btn ${selectedCategory === category.id ? 'active' : ''}`}
@@ -175,7 +173,7 @@ const HelpCenter = () => {
                 <p>Loading articles...</p>
               ) : (searchQuery ? searchResults : articles).length > 0 ? (
                 <ul className="help-articles-list">
-                  {(searchQuery ? searchResults : articles).map(article => (
+                  {(searchQuery ? searchResults : articles).map((article) => (
                     <li key={article.id}>
                       <button
                         onClick={() => handleArticleClick(article.id)}
@@ -208,9 +206,7 @@ const HelpCenter = () => {
                 <span>👁️ {selectedArticle.views} views</span>
               </div>
 
-              <div className="help-article-content">
-                {selectedArticle.content}
-              </div>
+              <div className="help-article-content">{selectedArticle.content}</div>
 
               <div className="help-article-feedback">
                 <p>Was this article helpful?</p>

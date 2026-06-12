@@ -2,7 +2,7 @@
  * M-Pesa Payment Provider Adapter
  * Integrates with Safaricom's Daraja API for M-Pesa payments
  * Supports: STK Push, C2B, B2C, account balance, and transaction reversal
- * 
+ *
  * Documentation: https://developer.safaricom.co.ke/
  */
 
@@ -74,12 +74,15 @@ class MpesaProvider extends BasePaymentProvider {
     try {
       const auth = Buffer.from(`${this.consumerKey}:${this.consumerSecret}`).toString('base64');
 
-      const response = await axios.get(`${this.baseUrl}/oauth/v1/generate?grant_type=client_credentials`, {
-        headers: {
-          Authorization: `Basic ${auth}`,
-        },
-        timeout: this.requestTimeout,
-      });
+      const response = await axios.get(
+        `${this.baseUrl}/oauth/v1/generate?grant_type=client_credentials`,
+        {
+          headers: {
+            Authorization: `Basic ${auth}`,
+          },
+          timeout: this.requestTimeout,
+        }
+      );
 
       this.accessToken = response.data.access_token;
       // Token expires in 3600s; refresh after 3500s to be safe
@@ -99,7 +102,7 @@ class MpesaProvider extends BasePaymentProvider {
   /**
    * Create payment intent using STK Push
    * Initiates a payment prompt on the user's phone
-   * 
+   *
    * @param {Object} params
    *   - amount: Payment amount in KES
    *   - currency: Currency code (default: KES)
@@ -133,8 +136,7 @@ class MpesaProvider extends BasePaymentProvider {
       throw new Error('[Mpesa] Phone number required in metadata');
     }
 
-    const accountReference =
-      metadata.accountReference || metadata.userId || `CSA${Date.now()}`;
+    const accountReference = metadata.accountReference || metadata.userId || `CSA${Date.now()}`;
     const transactionDesc = description || metadata.description || 'Community Savings Payment';
 
     try {
@@ -144,7 +146,11 @@ class MpesaProvider extends BasePaymentProvider {
       const timestamp = this.generateTimestamp();
 
       // Generate password (Base64 encoded: shortcode + passkey + timestamp)
-      const password = this.generatePassword(this.businessShortCode, this.lipaNaMpesaOnlinePassKey, timestamp);
+      const password = this.generatePassword(
+        this.businessShortCode,
+        this.lipaNaMpesaOnlinePassKey,
+        timestamp
+      );
 
       // Normalize phone number to international format (254XXXXXXXXX)
       const normalizedPhone = this.normalizePhoneNumber(phoneNumber);
@@ -230,7 +236,11 @@ class MpesaProvider extends BasePaymentProvider {
     try {
       const accessToken = await this.getAccessToken();
       const timestamp = this.generateTimestamp();
-      const password = this.generatePassword(this.businessShortCode, this.lipaNaMpesaOnlinePassKey, timestamp);
+      const password = this.generatePassword(
+        this.businessShortCode,
+        this.lipaNaMpesaOnlinePassKey,
+        timestamp
+      );
 
       const payload = {
         BusinessShortCode: this.businessShortCode,
@@ -240,17 +250,13 @@ class MpesaProvider extends BasePaymentProvider {
       };
 
       const response = await this.retryWithBackoff(async () => {
-        return await axios.post(
-          `${this.baseUrl}/mpesa/stkpushquery/v1/query`,
-          payload,
-          {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              'Content-Type': 'application/json',
-            },
-            timeout: this.requestTimeout,
-          }
-        );
+        return await axios.post(`${this.baseUrl}/mpesa/stkpushquery/v1/query`, payload, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          timeout: this.requestTimeout,
+        });
       });
 
       const { ResultCode, ResultDesc } = response.data;
@@ -288,7 +294,7 @@ class MpesaProvider extends BasePaymentProvider {
   /**
    * Verify M-Pesa webhook signature
    * M-Pesa includes a validation key in headers that needs verification
-   * 
+   *
    * @param {Object} payload - Webhook payload
    * @param {Object} headers - Webhook headers
    * @returns {Boolean}
@@ -370,7 +376,11 @@ class MpesaProvider extends BasePaymentProvider {
     try {
       const accessToken = await this.getAccessToken();
       const timestamp = this.generateTimestamp();
-      const password = this.generatePassword(this.businessShortCode, this.lipaNaMpesaOnlinePassKey, timestamp);
+      const password = this.generatePassword(
+        this.businessShortCode,
+        this.lipaNaMpesaOnlinePassKey,
+        timestamp
+      );
 
       const payload = {
         Initiator: process.env.MPESA_INITIATOR_USERNAME || 'testapi',
@@ -389,17 +399,13 @@ class MpesaProvider extends BasePaymentProvider {
       };
 
       const response = await this.retryWithBackoff(async () => {
-        return await axios.post(
-          `${this.baseUrl}/mpesa/reversal/v1/request`,
-          payload,
-          {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              'Content-Type': 'application/json',
-            },
-            timeout: this.requestTimeout,
-          }
-        );
+        return await axios.post(`${this.baseUrl}/mpesa/reversal/v1/request`, payload, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          timeout: this.requestTimeout,
+        });
       });
 
       logger.info('[Mpesa] Refund initiated', {

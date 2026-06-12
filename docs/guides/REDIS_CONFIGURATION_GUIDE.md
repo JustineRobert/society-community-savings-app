@@ -5,7 +5,7 @@
 This guide documents the three-part Redis optimization implemented for the Community Savings App:
 
 1. **Reduced Error Verbosity** - Throttled logging to suppress spam
-2. **Exponential Backoff** - Intelligent reconnection delays 
+2. **Exponential Backoff** - Intelligent reconnection delays
 3. **Docker Integration** - Pre-configured Redis container
 
 ---
@@ -13,6 +13,7 @@ This guide documents the three-part Redis optimization implemented for the Commu
 ## Part 1: Reduced Error Verbosity
 
 ### Problem Addressed
+
 Redis was attempting to reconnect too frequently, filling logs with repeated error messages every few milliseconds.
 
 ### Solution Implemented
@@ -20,6 +21,7 @@ Redis was attempting to reconnect too frequently, filling logs with repeated err
 **File: `community-savings-app-backend/services/redis.js`**
 
 #### Throttled Error Logging
+
 ```javascript
 const errorLogThrottle = NODE_ENV === 'production' ? 30000 : 5000; // 30s or 5s
 
@@ -33,12 +35,14 @@ function logErrorThrottled(message, error) {
 ```
 
 **Result:**
+
 - ✅ Production: Errors logged once every 30 seconds (not 10+ times per second)
 - ✅ Development: Errors logged once every 5 seconds for debugging
 - ✅ logs stay clean and readable
 - ✅ No important errors are lost
 
 #### Event Logging Control
+
 ```javascript
 // Suppress verbose events in production
 redis.on('reconnecting', () => {
@@ -60,14 +64,16 @@ redis.on('close', () => {
 ## Part 2: Exponential Backoff
 
 ### Problem Addressed
+
 Redis was attempting reconnection with constant delays, causing CPU overhead and failed connection storms when Redis was unavailable.
 
 ### Solution Implemented
 
 #### Exponential Backoff Algorithm
+
 ```javascript
-const MIN_RECONNECT_DELAY = 1000;      // 1 second
-const MAX_RECONNECT_DELAY = 30000;     // 30 seconds
+const MIN_RECONNECT_DELAY = 1000; // 1 second
+const MAX_RECONNECT_DELAY = 30000; // 30 seconds
 const BACKOFF_MULTIPLIER = 1.5;
 
 function getBackoffDelay(attemptCount) {
@@ -82,6 +88,7 @@ function getBackoffDelay(attemptCount) {
 ```
 
 #### Reconnection Strategy
+
 ```javascript
 retryStrategy: (times) => {
   if (times > 10) {
@@ -91,24 +98,26 @@ retryStrategy: (times) => {
   const delay = getBackoffDelay(times - 1);
   logErrorThrottled(`🔄 Redis reconnection attempt ${times}, backing off for ${delay}ms`, null);
   return delay;
-}
+};
 ```
 
 #### Backoff Schedule
+
 | Attempt | Delay (base) | Delay (with jitter) | Cumulative Time |
-|---------|-------------|-------------------|-----------------|
-| 1 | 1,500ms | 1,350-1,650ms | 1.5s |
-| 2 | 2,250ms | 2,025-2,475ms | 3.8s |
-| 3 | 3,375ms | 3,037-3,712ms | 7.1s |
-| 4 | 5,062ms | 4,555-5,569ms | 12.2s |
-| 5 | 7,593ms | 6,833-8,352ms | 19.8s |
-| 6 | 11,390ms | 10,251-12,529ms | 31.2s |
-| 7 | 17,085ms | 15,376-18,793ms | 48.3s |
-| 8 | 25,627ms | 23,064-28,189ms | 73.9s |
-| 9 | 30,000ms | 27,000-30,000ms | 103.9s |
-| 10 | 30,000ms | 27,000-30,000ms | 133.9s |
+| ------- | ------------ | ------------------- | --------------- |
+| 1       | 1,500ms      | 1,350-1,650ms       | 1.5s            |
+| 2       | 2,250ms      | 2,025-2,475ms       | 3.8s            |
+| 3       | 3,375ms      | 3,037-3,712ms       | 7.1s            |
+| 4       | 5,062ms      | 4,555-5,569ms       | 12.2s           |
+| 5       | 7,593ms      | 6,833-8,352ms       | 19.8s           |
+| 6       | 11,390ms     | 10,251-12,529ms     | 31.2s           |
+| 7       | 17,085ms     | 15,376-18,793ms     | 48.3s           |
+| 8       | 25,627ms     | 23,064-28,189ms     | 73.9s           |
+| 9       | 30,000ms     | 27,000-30,000ms     | 103.9s          |
+| 10      | 30,000ms     | 27,000-30,000ms     | 133.9s          |
 
 **Result:**
+
 - ✅ Intelligent exponential backoff prevents connection storms
 - ✅ Jitter prevents "thundering herd" problem
 - ✅ Max delay caps at 30 seconds to avoid excessive wait times
@@ -120,6 +129,7 @@ retryStrategy: (times) => {
 ## Part 3: Docker Integration
 
 ### Problem Addressed
+
 Running Redis locally requires manual setup and installation. Docker provides pre-configured, production-ready Redis with proper configuration.
 
 ### Docker Compose Configuration
@@ -127,13 +137,14 @@ Running Redis locally requires manual setup and installation. Docker provides pr
 **File: `docker-compose.yml`**
 
 #### Redis Service
+
 ```yaml
 redis:
-  image: redis:7-alpine          # Lightweight Alpine Linux image
+  image: redis:7-alpine # Lightweight Alpine Linux image
   ports:
     - '6379:6379'
   volumes:
-    - redis-data:/data           # Persistent data storage
+    - redis-data:/data # Persistent data storage
   command: >
     redis-server
     --appendonly yes             # Enable AOF persistence
@@ -142,25 +153,26 @@ redis:
     --tcp-keepalive 300          # TCP keepalive for long connections
   restart: unless-stopped
   healthcheck:
-    test: ["CMD", "redis-cli", "ping"]
+    test: ['CMD', 'redis-cli', 'ping']
     interval: 10s
     timeout: 5s
     retries: 5
   logging:
-    driver: "json-file"
+    driver: 'json-file'
     options:
-      max-size: "100m"
-      max-file: "3"
+      max-size: '100m'
+      max-file: '3'
 ```
 
 #### Backend Service Dependencies
+
 ```yaml
 backend:
   depends_on:
     mongodb:
-      condition: service_healthy   # Wait for MongoDB to be healthy
+      condition: service_healthy # Wait for MongoDB to be healthy
     redis:
-      condition: service_healthy   # Wait for Redis to be healthy
+      condition: service_healthy # Wait for Redis to be healthy
   environment:
     REDIS_URL: redis://redis:6379 # Use Docker service name for DNS
 ```
@@ -170,12 +182,14 @@ backend:
 #### Option 1: Using Docker Compose (Recommended)
 
 **On Windows:**
+
 ```bash
 cd C:\Projects\TITech\community-savings-app-main
 .\start-docker-dev.bat
 ```
 
 **On macOS/Linux:**
+
 ```bash
 cd ~/Projects/TITech/community-savings-app-main
 bash start-docker-dev.sh
@@ -224,6 +238,7 @@ docker stop community-redis
 ### Environment Configuration
 
 **File: `.env.docker`**
+
 ```bash
 # Redis runs on docker service 'redis' at port 6379
 REDIS_URL=redis://redis:6379
@@ -239,12 +254,14 @@ REDIS_MAX_RETRIES=10
 ## Performance Impact
 
 ### Before Optimization
+
 - ❌ Redis error logs: **50-100 entries per second** when Redis unavailable
 - ❌ CPU usage: **Higher** due to constant reconnection attempts
 - ❌ Reconnection delay: **Constant** (immediate retry)
 - ❌ Database: No Redis available, degraded functionality
 
 ### After Optimization
+
 - ✅ Redis error logs: **1 entry per 30 seconds** (production)
 - ✅ CPU usage: **Significantly reduced**
 - ✅ Reconnection delay: **Exponential** (intelligent backoff)
@@ -325,17 +342,20 @@ CLIENT LIST                   # Show connected clients
 ### Common Issues & Solutions
 
 #### Issue: "Redis connection refused"
+
 ```
 ✅ Solution: Start Redis with: docker-compose up -d redis
 ```
 
 #### Issue: "Too many error logs"
+
 ```
 ✅ Solution: Check that redis.js has throttled logging
 ✅ Verify: NODE_ENV is set correctly (.env file)
 ```
 
 #### Issue: "Slow container startup"
+
 ```
 ✅ Solution: Backend waits for Redis to be healthy
 ✅ Check: docker-compose ps (should see healthy status)
@@ -343,6 +363,7 @@ CLIENT LIST                   # Show connected clients
 ```
 
 #### Issue: "Port 6379 already in use"
+
 ```bash
 ✅ Solution A: Stop existing Redis
 docker stop <container_id>
@@ -403,12 +424,14 @@ REDIS_ENABLE_LOGGING=false             // Disable debug logs
 ## Files Modified/Created
 
 ### Modified Files
+
 - ✅ `community-savings-app-backend/services/redis.js` - Added exponential backoff & throttling
 - ✅ `docker-compose.yml` - Enhanced Redis configuration with health checks
 - ✅ `community-savings-app-backend/.env` - Added Redis configuration options
 - ✅ `community-savings-app-backend/.env.docker` - Docker-specific Redis settings
 
 ### New Files
+
 - ✅ `start-docker-dev.sh` - Bash script for starting Docker (macOS/Linux)
 - ✅ `start-docker-dev.bat` - Batch script for starting Docker (Windows)
 
@@ -416,13 +439,13 @@ REDIS_ENABLE_LOGGING=false             // Disable debug logs
 
 ## Summary
 
-| Feature | Before | After | Benefit |
-|---------|--------|-------|---------|
-| Error Spam | High (50-100/sec) | Low (2-4/min) | Clean logs |
-| CPU Usage | High | Low | Better performance |
-| Retry Strategy | Constant delay | Exponential backoff | Efficient |
-| Setup Complexity | Manual | Automated Docker | Easy deployment |
-| Production Ready | Partial | Full | High confidence |
+| Feature          | Before            | After               | Benefit            |
+| ---------------- | ----------------- | ------------------- | ------------------ |
+| Error Spam       | High (50-100/sec) | Low (2-4/min)       | Clean logs         |
+| CPU Usage        | High              | Low                 | Better performance |
+| Retry Strategy   | Constant delay    | Exponential backoff | Efficient          |
+| Setup Complexity | Manual            | Automated Docker    | Easy deployment    |
+| Production Ready | Partial           | Full                | High confidence    |
 
 ---
 

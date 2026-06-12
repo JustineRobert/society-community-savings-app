@@ -1,6 +1,6 @@
 /**
  * LoanAudit.js
- * 
+ *
  * Tracks all loan-related actions for compliance and troubleshooting
  * Immutable audit trail with full context
  */
@@ -112,22 +112,20 @@ loanAuditSchema.index({ actor: 1, createdAt: -1 });
 /**
  * Create an audit entry
  */
-loanAuditSchema.statics.logAction = async function (
-  {
-    action,
-    loan,
-    user,
-    group,
-    actor,
-    actorRole,
-    changes,
-    description,
-    amount,
-    metadata = {},
-    status = 'success',
-    error = null,
-  } = {}
-) {
+loanAuditSchema.statics.logAction = async function ({
+  action,
+  loan,
+  user,
+  group,
+  actor,
+  actorRole,
+  changes,
+  description,
+  amount,
+  metadata = {},
+  status = 'success',
+  error = null,
+} = {}) {
   try {
     const audit = new this({
       action,

@@ -1,6 +1,6 @@
 /**
  * securityHardening.js
- * 
+ *
  * Production-grade security middleware and utilities
  * Implements OWASP Top 10 protections, rate limiting, CSRF, device fingerprinting
  */
@@ -262,11 +262,7 @@ const inputSanitization = {
     const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
 
     return (
-      password.length >= minLength &&
-      hasUppercase &&
-      hasLowercase &&
-      hasNumbers &&
-      hasSpecialChar
+      password.length >= minLength && hasUppercase && hasLowercase && hasNumbers && hasSpecialChar
     );
   },
 };
@@ -396,8 +392,7 @@ const owaspChecklist = {
   'A03:2021-Injection': {
     description: 'Prevent injection attacks (SQL, NoSQL, command)',
     implemented: true,
-    details:
-      'Mongoose schema validation, sanitizeInput utility, parameterized queries',
+    details: 'Mongoose schema validation, sanitizeInput utility, parameterized queries',
   },
 
   'A04:2021-Insecure Design': {

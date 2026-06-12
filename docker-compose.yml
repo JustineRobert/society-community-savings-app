@@ -1,148 +1,38 @@
+version: '3.8'
+
 services:
-  # MongoDB - Primary data store
-  mongodb:
-    image: mongo:7-jammy
+  app:
+    build: .
     ports:
-      - '27017:27017'
+      - "5000:5000"
+    depends_on:
+      - mongo
+      - redis
+      - kafka
     environment:
-      MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: password123
-      MONGO_INITDB_DATABASE: community-savings
-    volumes:
-      - mongodb-data:/data/db
-      - ./scripts/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
-    networks:
-      - app-net
-    healthcheck:
-      test: echo 'db.adminCommand("ping")' | mongosh --quiet
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - MONGO_URI=mongodb://mongo:27017/fintech
+      - REDIS_URL=redis://redis:6379
 
-  # Redis - Cache & rate limiting with exponential backoff
+  mongo:
+    image: mongo
+    ports:
+      - "27017:27017"
+
   redis:
-    image: redis:7-alpine
+    image: redis
     ports:
-      - '6379:6379'
-    volumes:
-      - redis-data:/data
-    command: >
-      redis-server
-      --appendonly yes
-      --appendfsync everysec
-      --timeout 300
-      --tcp-keepalive 300
-    networks:
-      - app-net
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "100m"
-        max-file: "3"
+      - "6379:6379"
 
-  # Backend API Server
-  backend:
-    build:
-      context: ./community-savings-app-backend
-      dockerfile: Dockerfile
-    env_file:
-      - ./community-savings-app-backend/.env.docker
+  kafka:
+    image: bitnami/kafka
     environment:
-      REDIS_URL: redis://redis:6379
-      REDIS_MAX_RETRIES: "3"
-      NODE_ENV: development
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
     ports:
-      - '5000:5000'
+      - "9092:9092"
     depends_on:
-      mongodb:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - app-net
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      - zookeeper
 
-  # Frontend - React Application
-  frontend:
-    build:
-      context: ./community-savings-app-frontend
-      dockerfile: Dockerfile
+  zookeeper:
+    image: bitnami/zookeeper
     ports:
-      - '3000:80'
-    depends_on:
-      - backend
-    networks:
-      - app-net
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # Prometheus - Metrics Collection
-  prometheus:
-    image: prom/prometheus:latest
-    volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus-data:/prometheus
-    ports:
-      - '9090:9090'
-    networks:
-      - app-net
-    restart: unless-stopped
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-
-  # Grafana - Metrics Visualization
-  grafana:
-    image: grafana/grafana:latest
-    ports:
-      - '3001:3000'
-    volumes:
-      - grafana-data:/var/lib/grafana
-    environment:
-      GF_SECURITY_ADMIN_PASSWORD: admin
-      GF_INSTALL_PLUGINS: grafana-piechart-panel
-    networks:
-      - app-net
-    restart: unless-stopped
-    depends_on:
-      - prometheus
-
-  # Redis Exporter - Prometheus metrics from Redis
-  redis_exporter:
-    image: oliver006/redis_exporter:latest
-    command: ["--redis.addr=redis:6379"]
-    ports:
-      - '9121:9121'
-    networks:
-      - app-net
-    restart: unless-stopped
-    depends_on:
-      redis:
-        condition: service_healthy
-
-# Named volumes for persistence
-volumes:
-  mongodb-data:
-  redis-data:
-  prometheus-data:
-  grafana-data:
-
-# Bridge network for inter-service communication
-networks:
-  app-net:
-    driver: bridge
+      - "2181:2181"

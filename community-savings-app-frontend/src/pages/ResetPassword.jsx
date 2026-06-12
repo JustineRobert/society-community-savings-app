@@ -176,12 +176,10 @@ const ResetPassword = () => {
               <CheckCircle size={48} />
               <h2>Password Reset Successful!</h2>
               <p>
-                Your password has been successfully reset.
-                You can now log in with your new password.
+                Your password has been successfully reset. You can now log in with your new
+                password.
               </p>
-              <p className="redirect-message">
-                Redirecting to login in 3 seconds...
-              </p>
+              <p className="redirect-message">Redirecting to login in 3 seconds...</p>
               <Link to="/login" className="submit-btn">
                 Go to Login
               </Link>
@@ -265,18 +263,14 @@ const ResetPassword = () => {
                           touched.password && errors.password ? 'has-error' : ''
                         }`}
                         aria-describedby={
-                          touched.password && errors.password
-                            ? 'password-error'
-                            : undefined
+                          touched.password && errors.password ? 'password-error' : undefined
                         }
                       />
                       <button
                         type="button"
                         className="password-toggle"
                         onClick={() => setShowPassword(!showPassword)}
-                        aria-label={
-                          showPassword ? 'Hide password' : 'Show password'
-                        }
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
                         tabIndex="0"
                       >
                         {showPassword ? (
@@ -287,11 +281,7 @@ const ResetPassword = () => {
                       </button>
                     </div>
                     {touched.password && errors.password && (
-                      <div
-                        id="password-error"
-                        className="field-error"
-                        role="alert"
-                      >
+                      <div id="password-error" className="field-error" role="alert">
                         <AlertCircle size={14} aria-hidden="true" />
                         {errors.password}
                       </div>
@@ -312,9 +302,7 @@ const ResetPassword = () => {
                         placeholder="••••••••"
                         disabled={loading}
                         className={`form-input ${
-                          touched.confirmPassword && errors.confirmPassword
-                            ? 'has-error'
-                            : ''
+                          touched.confirmPassword && errors.confirmPassword ? 'has-error' : ''
                         }`}
                         aria-describedby={
                           touched.confirmPassword && errors.confirmPassword
@@ -326,9 +314,7 @@ const ResetPassword = () => {
                         type="button"
                         className="password-toggle"
                         onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                        aria-label={
-                          showConfirmPassword ? 'Hide password' : 'Show password'
-                        }
+                        aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
                         tabIndex="0"
                       >
                         {showConfirmPassword ? (
@@ -339,11 +325,7 @@ const ResetPassword = () => {
                       </button>
                     </div>
                     {touched.confirmPassword && errors.confirmPassword && (
-                      <div
-                        id="confirm-password-error"
-                        className="field-error"
-                        role="alert"
-                      >
+                      <div id="confirm-password-error" className="field-error" role="alert">
                         <AlertCircle size={14} aria-hidden="true" />
                         {errors.confirmPassword}
                       </div>
@@ -360,20 +342,12 @@ const ResetPassword = () => {
                         </span>
                       </li>
                       <li>
-                        <span
-                          className={
-                            /[A-Z]/.test(values.password) ? 'met' : ''
-                          }
-                        >
+                        <span className={/[A-Z]/.test(values.password) ? 'met' : ''}>
                           ✓ One uppercase letter (A-Z)
                         </span>
                       </li>
                       <li>
-                        <span
-                          className={
-                            /[a-z]/.test(values.password) ? 'met' : ''
-                          }
-                        >
+                        <span className={/[a-z]/.test(values.password) ? 'met' : ''}>
                           ✓ One lowercase letter (a-z)
                         </span>
                       </li>
@@ -383,11 +357,7 @@ const ResetPassword = () => {
                         </span>
                       </li>
                       <li>
-                        <span
-                          className={
-                            /[@$!%*?&]/.test(values.password) ? 'met' : ''
-                          }
-                        >
+                        <span className={/[@$!%*?&]/.test(values.password) ? 'met' : ''}>
                           ✓ One special character (@$!%*?&)
                         </span>
                       </li>
@@ -397,9 +367,7 @@ const ResetPassword = () => {
                   {/* Submit Button */}
                   <button
                     type="submit"
-                    disabled={
-                      loading || isSubmitting || !isValid
-                    }
+                    disabled={loading || isSubmitting || !isValid}
                     className="submit-btn"
                     aria-busy={loading || isSubmitting}
                   >
@@ -428,21 +396,11 @@ const ResetPassword = () => {
           {/* Footer */}
           <p className="reset-password-footer">
             By using this service, you agree to our{' '}
-            <a
-              href="/terms"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="footer-link"
-            >
+            <a href="/terms" target="_blank" rel="noopener noreferrer" className="footer-link">
               Terms of Service
-            </a>
-            {' '}&{' '}
-            <a
-              href="/privacy"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="footer-link"
-            >
+            </a>{' '}
+            &{' '}
+            <a href="/privacy" target="_blank" rel="noopener noreferrer" className="footer-link">
               Privacy Policy
             </a>
           </p>

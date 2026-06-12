@@ -16,7 +16,7 @@ describe('Email Service', () => {
     // Mock nodemailer
     const mockTransporter = {
       sendMail: jest.fn().mockResolvedValue({ messageId: 'test-message-id' }),
-      verify: jest.fn().mockResolvedValue(true)
+      verify: jest.fn().mockResolvedValue(true),
     };
 
     nodemailer.createTransporter.mockReturnValue(mockTransporter);
@@ -31,7 +31,7 @@ describe('Email Service', () => {
       name: 'John Doe',
       email: 'john@example.com',
       isEmailVerified: false,
-      save: jest.fn().mockResolvedValue()
+      save: jest.fn().mockResolvedValue(),
     };
 
     test('should send verification email successfully', async () => {
@@ -49,17 +49,15 @@ describe('Email Service', () => {
     test('should throw error if user already verified', async () => {
       mockUser.isEmailVerified = true;
 
-      await expect(
-        emailService.sendEmailVerification('user123')
-      ).rejects.toThrow('Email already verified');
+      await expect(emailService.sendEmailVerification('user123')).rejects.toThrow(
+        'Email already verified'
+      );
     });
 
     test('should throw error if user not found', async () => {
       User.findById.mockResolvedValue(null);
 
-      await expect(
-        emailService.sendEmailVerification('invalid')
-      ).rejects.toThrow('User not found');
+      await expect(emailService.sendEmailVerification('invalid')).rejects.toThrow('User not found');
     });
   });
 
@@ -70,7 +68,7 @@ describe('Email Service', () => {
       name: 'John Doe',
       isEmailVerified: false,
       emailVerificationToken: 'hashed-token',
-      save: jest.fn().mockResolvedValue()
+      save: jest.fn().mockResolvedValue(),
     };
 
     test('should verify email successfully', async () => {
@@ -80,7 +78,7 @@ describe('Email Service', () => {
       const crypto = require('crypto');
       jest.spyOn(crypto, 'createHash').mockReturnValue({
         update: jest.fn().mockReturnThis(),
-        digest: jest.fn().mockReturnValue('hashed-token')
+        digest: jest.fn().mockReturnValue('hashed-token'),
       });
 
       const result = await emailService.verifyEmail('raw-token');
@@ -95,9 +93,9 @@ describe('Email Service', () => {
     test('should throw error for invalid or expired token', async () => {
       User.findOne.mockResolvedValue(null);
 
-      await expect(
-        emailService.verifyEmail('invalid-token')
-      ).rejects.toThrow('Invalid or expired verification token');
+      await expect(emailService.verifyEmail('invalid-token')).rejects.toThrow(
+        'Invalid or expired verification token'
+      );
     });
   });
 
@@ -108,7 +106,7 @@ describe('Email Service', () => {
       email: 'john@example.com',
       passwordResetToken: undefined,
       passwordResetExpires: undefined,
-      save: jest.fn().mockResolvedValue()
+      save: jest.fn().mockResolvedValue(),
     };
 
     test('should send password reset email successfully', async () => {
@@ -139,7 +137,7 @@ describe('Email Service', () => {
       passwordResetToken: 'hashed-token',
       passwordResetExpires: new Date(Date.now() + 3600000), // 1 hour from now
       password: 'oldpassword',
-      save: jest.fn().mockResolvedValue()
+      save: jest.fn().mockResolvedValue(),
     };
 
     test('should reset password successfully', async () => {
@@ -149,7 +147,7 @@ describe('Email Service', () => {
       const crypto = require('crypto');
       jest.spyOn(crypto, 'createHash').mockReturnValue({
         update: jest.fn().mockReturnThis(),
-        digest: jest.fn().mockReturnValue('hashed-token')
+        digest: jest.fn().mockReturnValue('hashed-token'),
       });
 
       const result = await emailService.resetPassword('raw-token', 'NewPassword123!');
@@ -164,18 +162,18 @@ describe('Email Service', () => {
     test('should throw error for invalid or expired token', async () => {
       User.findOne.mockResolvedValue(null);
 
-      await expect(
-        emailService.resetPassword('invalid-token', 'NewPassword123!')
-      ).rejects.toThrow('Invalid or expired reset token');
+      await expect(emailService.resetPassword('invalid-token', 'NewPassword123!')).rejects.toThrow(
+        'Invalid or expired reset token'
+      );
     });
 
     test('should throw error for expired token', async () => {
       mockUser.passwordResetExpires = new Date(Date.now() - 3600000); // 1 hour ago
       User.findOne.mockResolvedValue(mockUser);
 
-      await expect(
-        emailService.resetPassword('raw-token', 'NewPassword123!')
-      ).rejects.toThrow('Invalid or expired reset token');
+      await expect(emailService.resetPassword('raw-token', 'NewPassword123!')).rejects.toThrow(
+        'Invalid or expired reset token'
+      );
     });
   });
 
@@ -185,7 +183,7 @@ describe('Email Service', () => {
         to: 'test@example.com',
         subject: 'Test Subject',
         template: 'test_template',
-        data: { userName: 'John Doe' }
+        data: { userName: 'John Doe' },
       };
 
       const result = await emailService.sendEmail(emailData);
@@ -196,7 +194,7 @@ describe('Email Service', () => {
           to: 'test@example.com',
           subject: 'Test Subject',
           html: expect.any(String),
-          text: expect.any(String)
+          text: expect.any(String),
         })
       );
     });
@@ -215,7 +213,7 @@ describe('Email Service', () => {
       const template = emailService.getEmailTemplate('email_verification', {
         userName: 'John Doe',
         verificationUrl: 'http://example.com/verify',
-        expiresIn: '24 hours'
+        expiresIn: '24 hours',
       });
 
       expect(template.html).toContain('Welcome to Community Savings');
@@ -228,7 +226,7 @@ describe('Email Service', () => {
       const template = emailService.getEmailTemplate('password_reset', {
         userName: 'John Doe',
         resetUrl: 'http://example.com/reset',
-        expiresIn: '1 hour'
+        expiresIn: '1 hour',
       });
 
       expect(template.html).toContain('Password Reset');
@@ -240,7 +238,7 @@ describe('Email Service', () => {
       const template = emailService.getEmailTemplate('welcome', {
         userName: 'John Doe',
         loginUrl: 'http://example.com/login',
-        supportEmail: 'support@example.com'
+        supportEmail: 'support@example.com',
       });
 
       expect(template.html).toContain('Welcome to Community Savings');
@@ -251,7 +249,7 @@ describe('Email Service', () => {
     test('should throw error for unknown template', () => {
       expect(() => {
         emailService.getEmailTemplate('unknown_template', {});
-      }).toThrow('Email template \'unknown_template\' not found');
+      }).toThrow("Email template 'unknown_template' not found");
     });
   });
 
@@ -286,7 +284,7 @@ describe('Email Service', () => {
     const mockUser = {
       _id: 'user123',
       name: 'John Doe',
-      email: 'john@example.com'
+      email: 'john@example.com',
     };
 
     test('should send welcome email successfully', async () => {
@@ -297,7 +295,7 @@ describe('Email Service', () => {
       expect(emailService.transporter.sendMail).toHaveBeenCalledWith(
         expect.objectContaining({
           to: 'john@example.com',
-          subject: 'Welcome to Community Savings!'
+          subject: 'Welcome to Community Savings!',
         })
       );
     });
@@ -305,9 +303,7 @@ describe('Email Service', () => {
     test('should not throw error if user not found', async () => {
       User.findById.mockResolvedValue(null);
 
-      await expect(
-        emailService.sendWelcomeEmail('invalid')
-      ).resolves.not.toThrow();
+      await expect(emailService.sendWelcomeEmail('invalid')).resolves.not.toThrow();
     });
   });
 
@@ -323,7 +319,7 @@ describe('Email Service', () => {
       expect(emailService.transporter.sendMail).toHaveBeenCalledWith(
         expect.objectContaining({
           to: 'invitee@example.com',
-          subject: 'You\'re invited to join Test Group'
+          subject: "You're invited to join Test Group",
         })
       );
     });
@@ -332,7 +328,7 @@ describe('Email Service', () => {
   describe('sendPaymentConfirmation', () => {
     const mockUser = {
       _id: 'user123',
-      email: 'john@example.com'
+      email: 'john@example.com',
     };
 
     test('should send payment confirmation email', async () => {
@@ -341,7 +337,7 @@ describe('Email Service', () => {
       const paymentDetails = {
         amount: 1000,
         method: 'mobile_money',
-        transactionRef: 'TXN-123'
+        transactionRef: 'TXN-123',
       };
 
       await emailService.sendPaymentConfirmation('user123', paymentDetails);
@@ -349,7 +345,7 @@ describe('Email Service', () => {
       expect(emailService.transporter.sendMail).toHaveBeenCalledWith(
         expect.objectContaining({
           to: 'john@example.com',
-          subject: 'Payment Confirmation - Community Savings'
+          subject: 'Payment Confirmation - Community Savings',
         })
       );
     });
@@ -358,7 +354,7 @@ describe('Email Service', () => {
   describe('sendLoanNotification', () => {
     const mockUser = {
       _id: 'user123',
-      email: 'john@example.com'
+      email: 'john@example.com',
     };
 
     test('should send loan approval notification', async () => {
@@ -367,7 +363,7 @@ describe('Email Service', () => {
       const loanDetails = {
         amount: 5000,
         interestRate: 5,
-        duration: 12
+        duration: 12,
       };
 
       await emailService.sendLoanNotification('user123', loanDetails, 'approved');
@@ -375,7 +371,7 @@ describe('Email Service', () => {
       expect(emailService.transporter.sendMail).toHaveBeenCalledWith(
         expect.objectContaining({
           to: 'john@example.com',
-          subject: 'Loan Approved - Community Savings'
+          subject: 'Loan Approved - Community Savings',
         })
       );
     });

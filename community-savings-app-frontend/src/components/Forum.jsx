@@ -25,7 +25,7 @@ function Forum() {
   // Form state
   const [formData, setFormData] = useState({
     title: '',
-    content: ''
+    content: '',
   });
 
   useEffect(() => {
@@ -47,7 +47,7 @@ function Forum() {
         limit: 20,
         sort: sortOrder,
         ...(selectedCategory !== 'all' && { category: selectedCategory }),
-        ...(filterType !== 'all' && { filter: filterType })
+        ...(filterType !== 'all' && { filter: filterType }),
       };
       const topicsData = await forumService.getTopics(options);
       setTopics(topicsData);
@@ -87,7 +87,7 @@ function Forum() {
       const topic = await forumService.getTopic(topicId);
       setSelectedTopic(topic);
       await forumService.incrementTopicViews(topicId);
-      
+
       // Fetch replies
       const repliesData = await forumService.getTopicReplies(topicId);
       setReplies(repliesData);
@@ -101,7 +101,7 @@ function Forum() {
     try {
       const newTopic = await forumService.createTopic({
         ...formData,
-        category: selectedCategory !== 'all' ? selectedCategory : 'general'
+        category: selectedCategory !== 'all' ? selectedCategory : 'general',
       });
 
       // Reset form and modal
@@ -117,9 +117,9 @@ function Forum() {
 
   const handleFormChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      [name]: value
+      [name]: value,
     }));
   };
 
@@ -162,14 +162,14 @@ function Forum() {
     return (
       <div className="forum-container">
         <div className="forum-wrapper">
-          <button 
+          <button
             className="help-back-btn"
             onClick={() => setSelectedTopic(null)}
             style={{ marginBottom: '20px' }}
           >
             ← Back to Topics
           </button>
-          
+
           <div className="forum-content">
             <h1>{selectedTopic.title}</h1>
             <div className="forum-topic-meta">
@@ -177,31 +177,27 @@ function Forum() {
               <span>{selectedTopic.views || 0} views</span>
               <span>{replies.length} replies</span>
             </div>
-            <div className="help-article-content">
-              {selectedTopic.content}
-            </div>
+            <div className="help-article-content">{selectedTopic.content}</div>
 
             {replies.length > 0 && (
               <div style={{ marginTop: '30px' }}>
                 <h2>Replies ({replies.length})</h2>
-                {replies.map(reply => (
-                  <div 
-                    key={reply.id} 
+                {replies.map((reply) => (
+                  <div
+                    key={reply.id}
                     style={{
                       padding: '15px',
                       marginBottom: '10px',
                       background: '#f9fafb',
                       borderRadius: '8px',
-                      borderLeft: reply.isSolution ? '4px solid #10b981' : '4px solid #e5e7eb'
+                      borderLeft: reply.isSolution ? '4px solid #10b981' : '4px solid #e5e7eb',
                     }}
                   >
                     <p style={{ margin: '0 0 10px 0', fontWeight: '600' }}>
                       {reply.author?.name || 'Anonymous'}
                       {reply.isSolution && ' ✓ Solution'}
                     </p>
-                    <p style={{ margin: '0', color: '#4b5563' }}>
-                      {reply.content}
-                    </p>
+                    <p style={{ margin: '0', color: '#4b5563' }}>{reply.content}</p>
                   </div>
                 ))}
               </div>
@@ -247,7 +243,7 @@ function Forum() {
                   All Categories
                 </button>
               </li>
-              {categories.map(category => (
+              {categories.map((category) => (
                 <li key={category.id || category.name} className="forum-category-item">
                   <button
                     className={`forum-category-btn ${selectedCategory === (category.name || category) ? 'active' : ''}`}
@@ -265,15 +261,12 @@ function Forum() {
             <div className="forum-content-header">
               <div className="forum-content-title">
                 <h2>
-                  {selectedCategory !== 'all' 
-                    ? `${selectedCategory} Discussions` 
+                  {selectedCategory !== 'all'
+                    ? `${selectedCategory} Discussions`
                     : 'All Discussions'}
                 </h2>
               </div>
-              <button 
-                className="forum-new-topic-btn"
-                onClick={() => setShowModal(true)}
-              >
+              <button className="forum-new-topic-btn" onClick={() => setShowModal(true)}>
                 + New Topic
               </button>
             </div>
@@ -281,11 +274,7 @@ function Forum() {
             <div className="forum-controls">
               <div className="forum-sort">
                 <label htmlFor="sort">Sort by:</label>
-                <select 
-                  id="sort"
-                  value={sortOrder} 
-                  onChange={handleSortChange}
-                >
+                <select id="sort" value={sortOrder} onChange={handleSortChange}>
                   <option value="newest">Newest</option>
                   <option value="active">Most Active</option>
                   <option value="viewed">Most Viewed</option>
@@ -294,11 +283,7 @@ function Forum() {
 
               <div className="forum-filter">
                 <label htmlFor="filter">Filter:</label>
-                <select 
-                  id="filter"
-                  value={filterType} 
-                  onChange={handleFilterChange}
-                >
+                <select id="filter" value={filterType} onChange={handleFilterChange}>
                   <option value="all">All Topics</option>
                   <option value="unanswered">Unanswered</option>
                   <option value="solved">Solved</option>
@@ -308,19 +293,25 @@ function Forum() {
 
             {topics.length > 0 ? (
               <ul className="forum-topics">
-                {topics.map(topic => (
-                  <li 
-                    key={topic.id} 
+                {topics.map((topic) => (
+                  <li
+                    key={topic.id}
                     className="forum-topic-item"
                     onClick={() => handleTopicClick(topic.id)}
                     style={{ cursor: 'pointer' }}
                   >
                     <div className="forum-topic-icon">
-                      {topic.isSolved ? '✓' : (topic.replies > 0 ? '💬' : '❓')}
+                      {topic.isSolved ? '✓' : topic.replies > 0 ? '💬' : '❓'}
                     </div>
                     <div>
                       <h3>
-                        <a href="#" onClick={(e) => { e.preventDefault(); handleTopicClick(topic.id); }}>
+                        <a
+                          href="#"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            handleTopicClick(topic.id);
+                          }}
+                        >
                           {topic.title}
                         </a>
                       </h3>
@@ -330,8 +321,10 @@ function Forum() {
                         </span>
                         {topic.tags && topic.tags.length > 0 && (
                           <div className="forum-tags">
-                            {topic.tags.map(tag => (
-                              <span key={tag} className="forum-tag">{tag}</span>
+                            {topic.tags.map((tag) => (
+                              <span key={tag} className="forum-tag">
+                                {tag}
+                              </span>
                             ))}
                           </div>
                         )}
@@ -352,10 +345,7 @@ function Forum() {
                 <div className="forum-empty-icon">🏜️</div>
                 <h3>No Topics Found</h3>
                 <p>Be the first to start a discussion!</p>
-                <button 
-                  className="forum-new-topic-btn"
-                  onClick={() => setShowModal(true)}
-                >
+                <button className="forum-new-topic-btn" onClick={() => setShowModal(true)}>
                   + Create Topic
                 </button>
               </div>
@@ -367,17 +357,18 @@ function Forum() {
             <h3>Recent Topics</h3>
             {recentTopics.length > 0 ? (
               <ul>
-                {recentTopics.map(topic => (
+                {recentTopics.map((topic) => (
                   <li key={topic.id}>
-                    <a 
+                    <a
                       href="#"
-                      onClick={(e) => { e.preventDefault(); handleTopicClick(topic.id); }}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        handleTopicClick(topic.id);
+                      }}
                     >
                       {topic.title}
                     </a>
-                    <div className="forum-sidebar-count">
-                      {topic.replies || 0} replies
-                    </div>
+                    <div className="forum-sidebar-count">{topic.replies || 0} replies</div>
                   </li>
                 ))}
               </ul>
@@ -388,17 +379,18 @@ function Forum() {
             <h3 style={{ marginTop: '20px' }}>Popular Topics</h3>
             {popularTopics.length > 0 ? (
               <ul>
-                {popularTopics.map(topic => (
+                {popularTopics.map((topic) => (
                   <li key={topic.id}>
-                    <a 
+                    <a
                       href="#"
-                      onClick={(e) => { e.preventDefault(); handleTopicClick(topic.id); }}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        handleTopicClick(topic.id);
+                      }}
                     >
                       {topic.title}
                     </a>
-                    <div className="forum-sidebar-count">
-                      {topic.views || 0} views
-                    </div>
+                    <div className="forum-sidebar-count">{topic.views || 0} views</div>
                   </li>
                 ))}
               </ul>
@@ -414,10 +406,7 @@ function Forum() {
         <div className="forum-modal">
           <div className="forum-modal-header">
             <h2>Create New Topic</h2>
-            <button 
-              className="forum-modal-close"
-              onClick={() => setShowModal(false)}
-            >
+            <button className="forum-modal-close" onClick={() => setShowModal(false)}>
               ✕
             </button>
           </div>
@@ -450,17 +439,14 @@ function Forum() {
             </div>
 
             <div className="forum-modal-footer">
-              <button 
+              <button
                 type="button"
                 className="forum-cancel-btn"
                 onClick={() => setShowModal(false)}
               >
                 Cancel
               </button>
-              <button 
-                type="submit"
-                className="forum-submit-btn"
-              >
+              <button type="submit" className="forum-submit-btn">
                 Create Topic
               </button>
             </div>

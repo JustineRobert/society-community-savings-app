@@ -3,6 +3,7 @@
 ## 5-Minute Setup
 
 ### Prerequisites
+
 - Node.js v18+
 - MongoDB running locally or connection string
 - Admin user created in database
@@ -29,6 +30,7 @@ npm run dev  # or: nodemon server.js
 ```
 
 **Expected Output**:
+
 ```
 ✓ Server listening on port 5000
 ✓ Connected to MongoDB
@@ -52,6 +54,7 @@ npm run dev
 ```
 
 **Expected Output**:
+
 ```
   VITE v4.x.x  ready in XXX ms
   ➜  Local:   http://localhost:5173/
@@ -96,6 +99,7 @@ community-savings-app/
 ## Key Features Quick Reference
 
 ### CreateGroupV2 Features
+
 ```javascript
 // 4-Step Wizard
 1. Group Info (name, type, description)
@@ -124,6 +128,7 @@ bob@example.com,member
 ### API Endpoints
 
 #### Create Group
+
 ```
 POST /api/groups
 Headers: Authorization: Bearer {token}
@@ -138,6 +143,7 @@ Response: 201 { groupId, invitedCount }
 ```
 
 #### Send Batch Invitations
+
 ```
 POST /api/groups/:groupId/send-invitations
 Headers: Authorization: Bearer {token}
@@ -151,6 +157,7 @@ Response: 200 { successCount, failureCount, failures }
 ## Common Tasks
 
 ### View Component in Browser
+
 ```bash
 # Frontend must be running on http://localhost:5173
 # Navigate to: http://localhost:5173/create-group
@@ -158,6 +165,7 @@ Response: 200 { successCount, failureCount, failures }
 ```
 
 ### Test API Endpoint Directly
+
 ```bash
 # Get token first
 TOKEN=$(curl -X POST http://localhost:5000/api/auth/login \
@@ -179,6 +187,7 @@ curl -X POST http://localhost:5000/api/groups \
 ```
 
 ### Check Database for Created Groups
+
 ```bash
 # Connect to MongoDB
 mongo
@@ -194,6 +203,7 @@ db.groups.countDocuments()
 ```
 
 ### View Frontend Logs
+
 ```bash
 # Browser Console (F12)
 # Look for:
@@ -204,6 +214,7 @@ db.groups.countDocuments()
 ```
 
 ### View Backend Logs
+
 ```bash
 # Terminal running backend
 # Look for:
@@ -216,24 +227,28 @@ db.groups.countDocuments()
 ## Debugging Tips
 
 ### Component Not Rendering
+
 1. Check console for errors (F12)
 2. Verify user is admin: `document.querySelector('[data-role]')`
 3. Check CSS file exists: `src/pages/CreateGroupV2.css`
 4. Clear browser cache: Ctrl+Shift+Delete
 
 ### CSV Upload Not Working
+
 1. Verify file format: email,role (one per line)
 2. Check email format: valid@example.com
 3. Verify roles: member, treasurer, secretary
 4. Check console for parse errors
 
 ### API Calls Failing
+
 1. Verify token in Authorization header
 2. Check backend is running: http://localhost:5000/api/health
 3. Verify MongoDB connection
 4. Check error message in response
 
 ### Styling Issues
+
 1. Clear browser cache
 2. Check CSS file syntax
 3. Verify Tailwind/CSS not conflicting
@@ -266,36 +281,40 @@ db.groups.countDocuments()
 
 ## Troubleshooting Common Issues
 
-| Problem | Solution |
-|---------|----------|
-| "Port 5000 already in use" | `lsof -ti:5000 \| xargs kill -9` then restart |
-| "Connect ECONNREFUSED 127.0.0.1:27017" | Start MongoDB: `mongod` |
-| "Component blank screen" | Check admin login, check console errors |
-| "CSV upload shows 0 rows" | Verify file format and line endings (Unix vs Windows) |
-| "Invitations not sending" | Check Redis running or check queue logs |
-| "RBAC error but user is admin" | Clear browser cache and re-login |
+| Problem                                | Solution                                              |
+| -------------------------------------- | ----------------------------------------------------- |
+| "Port 5000 already in use"             | `lsof -ti:5000 \| xargs kill -9` then restart         |
+| "Connect ECONNREFUSED 127.0.0.1:27017" | Start MongoDB: `mongod`                               |
+| "Component blank screen"               | Check admin login, check console errors               |
+| "CSV upload shows 0 rows"              | Verify file format and line endings (Unix vs Windows) |
+| "Invitations not sending"              | Check Redis running or check queue logs               |
+| "RBAC error but user is admin"         | Clear browser cache and re-login                      |
 
 ## Next Steps After Setup
 
 ### For Frontend Development
+
 1. Review CreateGroupV2.jsx structure (comments throughout)
 2. Modify CSS in CreateGroupV2.css
 3. Test responsive design on different screens
 4. Update/add React components as needed
 
 ### For Backend Development
+
 1. Review enhanced groupController.js functions
 2. Add validation rules if needed
 3. Customize email templates
 4. Integrate with notification system
 
 ### For Testing
+
 1. Follow GROUP_CREATION_TESTING_GUIDE.md
 2. Run unit tests: `npm test`
 3. Run integration tests: `npm run test:integration`
 4. Test on staging before production
 
 ### For Deployment
+
 1. Update environment variables
 2. Run database migrations
 3. Build frontend: `npm run build`
@@ -304,32 +323,36 @@ db.groups.countDocuments()
 
 ## Documentation Map
 
-| Document | Purpose |
-|----------|---------|
-| ENHANCED_GROUP_CREATION_DOCS.md | Complete feature documentation |
-| GROUP_CREATION_TESTING_GUIDE.md | Testing procedures and checklists |
-| GROUP_CREATION_IMPLEMENTATION_COMPLETE.md | Project summary and status |
-| CreateGroupV2.jsx | Component code with comments |
-| CreateGroupV2.css | Styling with responsive breakpoints |
+| Document                                  | Purpose                             |
+| ----------------------------------------- | ----------------------------------- |
+| ENHANCED_GROUP_CREATION_DOCS.md           | Complete feature documentation      |
+| GROUP_CREATION_TESTING_GUIDE.md           | Testing procedures and checklists   |
+| GROUP_CREATION_IMPLEMENTATION_COMPLETE.md | Project summary and status          |
+| CreateGroupV2.jsx                         | Component code with comments        |
+| CreateGroupV2.css                         | Styling with responsive breakpoints |
 
 ## Getting Help
 
 ### Code Questions
+
 1. Review comments in CreateGroupV2.jsx
 2. Check ENHANCED_GROUP_CREATION_DOCS.md
 3. Look at examples in GROUP_CREATION_TESTING_GUIDE.md
 
 ### API Questions
+
 1. Check endpoint examples in docs
 2. Review controller functions
 3. Test with curl/Postman
 
 ### Styling Questions
+
 1. Check CreateGroupV2.css
 2. Review responsive breakpoints
 3. Test in different screen sizes
 
 ### Debugging
+
 1. Check console.log statements
 2. Review network tab (DevTools)
 3. Check backend logs
@@ -345,7 +368,7 @@ npm run seed-admin       # Create admin user
 npm test                 # Run tests
 npm run lint             # Check code style
 
-# Frontend  
+# Frontend
 cd community-savings-app-frontend
 npm run dev              # Start dev server
 npm run build            # Production build
@@ -385,6 +408,7 @@ Tested On: Node v18+, React 18+, MongoDB 5+
 **Happy coding! 🚀**
 
 For detailed information, refer to:
+
 - ENHANCED_GROUP_CREATION_DOCS.md (full reference)
 - GROUP_CREATION_TESTING_GUIDE.md (testing procedures)
 - GROUP_CREATION_IMPLEMENTATION_COMPLETE.md (project status)

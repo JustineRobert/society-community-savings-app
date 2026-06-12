@@ -18,14 +18,23 @@ describe('Loan Workflow Integration Tests', () => {
   });
 
   beforeEach(async () => {
-    admin = await User.create({ name: 'Admin', email: 'admin@test.com', password: 'pw', role: 'admin' });
+    admin = await User.create({
+      name: 'Admin',
+      email: 'admin@test.com',
+      password: 'pw',
+      role: 'admin',
+    });
     user = await User.create({ name: 'User', email: 'user@test.com', password: 'pw' });
-    group = await Group.create({ name: 'Test Group', admin: admin._id, members: [user._id, admin._id] });
+    group = await Group.create({
+      name: 'Test Group',
+      admin: admin._id,
+      members: [user._id, admin._id],
+    });
     loan = await Loan.create({
       user: user._id,
       group: group._id,
       amountRequested: 5000,
-      status: 'requested'
+      status: 'requested',
     });
   });
 
@@ -35,7 +44,12 @@ describe('Loan Workflow Integration Tests', () => {
     });
 
     test('Loan approved', async () => {
-      const updated = await LoanWorkflowService.changeLoanStatus(loan._id, 'approved', admin._id, 'Approved by admin');
+      const updated = await LoanWorkflowService.changeLoanStatus(
+        loan._id,
+        'approved',
+        admin._id,
+        'Approved by admin'
+      );
       expect(updated.status).toBe('approved');
     });
 
@@ -82,7 +96,12 @@ describe('Loan Workflow Integration Tests', () => {
   describe('Overdue Detection', () => {
     test('Loan marked overdue', async () => {
       await LoanWorkflowService.changeLoanStatus(loan._id, 'active', admin._id);
-      const updated = await LoanWorkflowService.changeLoanStatus(loan._id, 'overdue', admin._id, 'More than 7 days late');
+      const updated = await LoanWorkflowService.changeLoanStatus(
+        loan._id,
+        'overdue',
+        admin._id,
+        'More than 7 days late'
+      );
       expect(updated.status).toBe('overdue');
     });
 
@@ -93,26 +112,46 @@ describe('Loan Workflow Integration Tests', () => {
 
     test('Default after extended overdue', async () => {
       await LoanWorkflowService.changeLoanStatus(loan._id, 'overdue', admin._id);
-      const updated = await LoanWorkflowService.changeLoanStatus(loan._id, 'defaulted', admin._id, 'Over 30 days late');
+      const updated = await LoanWorkflowService.changeLoanStatus(
+        loan._id,
+        'defaulted',
+        admin._id,
+        'Over 30 days late'
+      );
       expect(updated.status).toBe('defaulted');
     });
   });
 
   describe('Loan Closure', () => {
     test('Loan closed when fully repaid', async () => {
-      const updated = await LoanWorkflowService.changeLoanStatus(loan._id, 'closed', admin._id, 'Fully repaid');
+      const updated = await LoanWorkflowService.changeLoanStatus(
+        loan._id,
+        'closed',
+        admin._id,
+        'Fully repaid'
+      );
       expect(updated.status).toBe('closed');
     });
   });
 
   describe('Rejection', () => {
     test('Loan rejected before approval', async () => {
-      const updated = await LoanWorkflowService.changeLoanStatus(loan._id, 'rejected', admin._id, 'Does not meet eligibility');
+      const updated = await LoanWorkflowService.changeLoanStatus(
+        loan._id,
+        'rejected',
+        admin._id,
+        'Does not meet eligibility'
+      );
       expect(updated.status).toBe('rejected');
     });
 
     test('Rejection reason logged', async () => {
-      await LoanWorkflowService.changeLoanStatus(loan._id, 'rejected', admin._id, 'Insufficient eligibility score');
+      await LoanWorkflowService.changeLoanStatus(
+        loan._id,
+        'rejected',
+        admin._id,
+        'Insufficient eligibility score'
+      );
       const audit = await LoanAudit.findOne({ loan: loan._id, action: 'status:rejected' });
       expect(audit.reason).toBe('Insufficient eligibility score');
     });

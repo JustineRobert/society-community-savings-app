@@ -11,6 +11,7 @@ This guide shows how to integrate the Terms of Service and Privacy Policy featur
 Update your payment and loan routes to require legal acceptance:
 
 #### Payments Route (`routes/payments.js`)
+
 ```javascript
 const express = require('express');
 const router = express.Router();
@@ -19,14 +20,30 @@ const { requireAcceptanceForTransaction } = require('../middleware/legalAcceptan
 const paymentsController = require('../controllers/paymentsController');
 
 // Protect payment endpoints with legal acceptance requirement
-router.post('/initiate', authentication, requireAcceptanceForTransaction, paymentsController.initiatePayment);
-router.post('/confirm', authentication, requireAcceptanceForTransaction, paymentsController.confirmPayment);
-router.get('/history', authentication, requireAcceptanceForTransaction, paymentsController.getPaymentHistory);
+router.post(
+  '/initiate',
+  authentication,
+  requireAcceptanceForTransaction,
+  paymentsController.initiatePayment
+);
+router.post(
+  '/confirm',
+  authentication,
+  requireAcceptanceForTransaction,
+  paymentsController.confirmPayment
+);
+router.get(
+  '/history',
+  authentication,
+  requireAcceptanceForTransaction,
+  paymentsController.getPaymentHistory
+);
 
 module.exports = router;
 ```
 
 #### Loans Route (`routes/loans.js`)
+
 ```javascript
 const express = require('express');
 const router = express.Router();
@@ -35,8 +52,18 @@ const { requireAcceptanceForTransaction } = require('../middleware/legalAcceptan
 const loansController = require('../controllers/loansController');
 
 // Protect loan endpoints with legal acceptance requirement
-router.post('/request', authentication, requireAcceptanceForTransaction, loansController.requestLoan);
-router.post('/approve', authentication, requireAcceptanceForTransaction, loansController.approveLoan);
+router.post(
+  '/request',
+  authentication,
+  requireAcceptanceForTransaction,
+  loansController.requestLoan
+);
+router.post(
+  '/approve',
+  authentication,
+  requireAcceptanceForTransaction,
+  loansController.approveLoan
+);
 router.post('/repay', authentication, requireAcceptanceForTransaction, loansController.repayLoan);
 
 module.exports = router;
@@ -54,7 +81,7 @@ exports.register = async (req, res) => {
   const user = await User.create({
     name: req.body.name,
     email: req.body.email,
-    password: hashedPassword
+    password: hashedPassword,
   });
 
   // Send response with legal acceptance link
@@ -65,8 +92,8 @@ exports.register = async (req, res) => {
       user,
       requiresLegalAcceptance: true,
       legalDocumentsUrl: '/api/legal',
-      redirectTo: '/legal'
-    }
+      redirectTo: '/legal',
+    },
   });
 };
 ```
@@ -144,7 +171,7 @@ export default function TransactionGuard({ children }) {
   const checkAcceptance = async () => {
     try {
       const response = await fetch('/api/legal/acceptance-status', {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
       });
       const data = await response.json();
       setAcceptanceStatus(data.data);
@@ -198,7 +225,7 @@ export default function Navigation() {
 // In Router configuration:
 import LegalPage from './pages/LegalPage';
 
-<Route path="/legal" element={<LegalPage />} />
+<Route path="/legal" element={<LegalPage />} />;
 ```
 
 ### 4. Handle Acceptance in Transaction Forms
@@ -210,7 +237,7 @@ import { useState, useEffect } from 'react';
 export default function PaymentForm() {
   const [acceptanceStatus, setAcceptanceStatus] = useState({
     acceptedTerms: false,
-    acceptedPrivacy: false
+    acceptedPrivacy: false,
   });
 
   useEffect(() => {
@@ -219,7 +246,7 @@ export default function PaymentForm() {
 
   const fetchAcceptanceStatus = async () => {
     const response = await fetch('/api/legal/acceptance-status', {
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
     });
     const data = await response.json();
     setAcceptanceStatus(data.data);
@@ -238,12 +265,12 @@ export default function PaymentForm() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
         },
         body: JSON.stringify({
           amount: formData.amount,
-          method: formData.method
-        })
+          method: formData.method,
+        }),
       });
 
       if (!response.ok && response.status === 403) {
@@ -303,6 +330,7 @@ export default function Footer() {
 ## Key Integration Points
 
 ### 1. Authentication Flow
+
 ```
 User Signup/Login
     ↓
@@ -314,6 +342,7 @@ Accepted? → Allow access
 ```
 
 ### 2. Transaction Flow
+
 ```
 User Initiates Transaction
     ↓
@@ -325,6 +354,7 @@ Accepted? → Process Transaction
 ```
 
 ### 3. First-Time User Flow
+
 ```
 Registration Complete
     ↓
@@ -363,8 +393,8 @@ async function fetchWithAcceptanceCheck(url, options = {}) {
 // Usage:
 const response = await fetchWithAcceptanceCheck('/api/payments/initiate', {
   method: 'POST',
-  headers: { 'Authorization': `Bearer ${token}` },
-  body: JSON.stringify(paymentData)
+  headers: { Authorization: `Bearer ${token}` },
+  body: JSON.stringify(paymentData),
 });
 ```
 
@@ -417,8 +447,8 @@ async function getAcceptancesInDateRange(startDate, endDate) {
   return await LegalAcceptance.find({
     acceptedAt: {
       $gte: startDate,
-      $lte: endDate
-    }
+      $lte: endDate,
+    },
   });
 }
 
@@ -426,7 +456,7 @@ async function getAcceptancesInDateRange(startDate, endDate) {
 async function getAcceptancesByVersion(termsVersion, privacyVersion) {
   return await LegalAcceptance.find({
     termsVersion,
-    privacyVersion
+    privacyVersion,
   });
 }
 
@@ -435,8 +465,8 @@ async function getUsersNotAcceptedLatest(latestTermsVersion, latestPrivacyVersio
   return await LegalAcceptance.find({
     $or: [
       { termsVersion: { $ne: latestTermsVersion } },
-      { privacyVersion: { $ne: latestPrivacyVersion } }
-    ]
+      { privacyVersion: { $ne: latestPrivacyVersion } },
+    ],
   }).distinct('userId');
 }
 ```
@@ -455,18 +485,18 @@ async function trackAcceptanceMetrics() {
   today.setHours(0, 0, 0, 0);
 
   const todayAcceptances = await LegalAcceptance.countDocuments({
-    acceptedAt: { $gte: today }
+    acceptedAt: { $gte: today },
   });
 
   const latestTermsAcceptances = await LegalAcceptance.countDocuments({
-    termsVersion: '1.0.0'
+    termsVersion: '1.0.0',
   });
 
   return {
     totalAcceptances: total,
     todayAcceptances,
     latestTermsAcceptances,
-    acceptanceRate: (latestTermsAcceptances / total * 100).toFixed(2) + '%'
+    acceptanceRate: ((latestTermsAcceptances / total) * 100).toFixed(2) + '%',
   };
 }
 ```
@@ -474,15 +504,19 @@ async function trackAcceptanceMetrics() {
 ## Troubleshooting
 
 ### Issue: "User must accept terms" error on every request
+
 **Solution**: Check that acceptance status is being cached correctly. Ensure user ID matches between JWT and database.
 
 ### Issue: Modal not displaying
+
 **Solution**: Verify API endpoints are returning data. Check browser console for fetch errors. Ensure token is valid in Authorization header.
 
 ### Issue: Acceptance not being recorded
+
 **Solution**: Verify MongoDB connection and schema. Check POST request includes Authorization header. Ensure user is authenticated.
 
 ### Issue: Old version still being shown
+
 **Solution**: Clear browser cache. Verify CURRENT_VERSIONS in termsAndPrivacy.js is updated. Check API response includes new content.
 
 ## Compliance Verification

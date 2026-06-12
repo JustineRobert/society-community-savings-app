@@ -1,6 +1,6 @@
 /**
  * LoanEligibility.js
- * 
+ *
  * Tracks loan eligibility assessments with scoring history
  * Enables audit trails and recalculation for appeals/updates
  */

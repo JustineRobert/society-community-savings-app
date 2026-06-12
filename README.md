@@ -11,16 +11,19 @@
 ## 📋 Quick Start
 
 ### One-Command Setup
+
 ```bash
 make install
 ```
 
 ### One-Command Development
+
 ```bash
 make dev
 ```
 
 ### One-Command Docker
+
 ```bash
 make docker-build && make docker-up
 ```
@@ -37,30 +40,34 @@ Community Savings App is a full-stack MERN application that enables communities 
 ✅ **Real-Time Updates** - Socket.io for live notifications  
 ✅ **Role-Based Access** - Admin, treasurer, secretary roles  
 ✅ **Email Notifications** - Automated communication  
-✅ **Mobile Responsive** - Works on all devices  
+✅ **Mobile Responsive** - Works on all devices
 
 ---
 
 ## 🚀 Production Ready Features
 
 ### Code Quality
+
 - ✅ ESLint + Prettier configuration
 - ✅ 40+ quality rules enforced
 - ✅ Consistent code style everywhere
 
 ### Testing
+
 - ✅ 1,200+ lines of Jest tests
 - ✅ 50+ test cases
 - ✅ Auth, contributions, loans, groups tested
 - ✅ 100% pass rate
 
 ### CI/CD Pipeline
+
 - ✅ GitHub Actions automation
 - ✅ Quality gates on every push
 - ✅ Docker image building
 - ✅ Codecov integration
 
 ### Deployment Ready
+
 - ✅ Docker & Docker Compose
 - ✅ Vercel + Render compatible
 - ✅ AWS/Azure ready
@@ -73,19 +80,23 @@ Community Savings App is a full-stack MERN application that enables communities 
 All documentation is organized in the [docs/](docs/) directory:
 
 ### Getting Started
+
 - [**DOCUMENTATION_INDEX.md**](docs/DOCUMENTATION_INDEX.md) - Complete guide index
 - [**PRODUCTION_READY_README.md**](docs/PRODUCTION_READY_README.md) - Quick reference (10 min)
 
 ### For Different Audiences
+
 - [**CONTEST_SUBMISSION_SUMMARY.md**](docs/CONTEST_SUBMISSION_SUMMARY.md) - For judges/reviewers
 - [**DEPLOYMENT_GUIDE.md**](docs/DEPLOYMENT_GUIDE.md) - For DevOps/deployment
 - [**PRODUCTION_READINESS_SUMMARY.md**](docs/PRODUCTION_READINESS_SUMMARY.md) - Technical overview
 
 ### For Development
+
 - [**GIT_COMMIT_GUIDE.md**](docs/GIT_COMMIT_GUIDE.md) - Implementation details
 - [**PRODUCTION_VERIFICATION_CHECKLIST.md**](docs/PRODUCTION_VERIFICATION_CHECKLIST.md) - Pre-deployment
 
 ### Additional Resources
+
 - [**GITHUB_ACTIONS_FIX.md**](docs/GITHUB_ACTIONS_FIX.md) - CI/CD updates
 - [**LEGAL_PAGE_IMPLEMENTATION.md**](docs/LEGAL_PAGE_IMPLEMENTATION.md) - Legal page guide
 - [**RELEASE_NOTES.md**](docs/RELEASE_NOTES.md) - Version history
@@ -119,6 +130,7 @@ Community Savings App
 ## 🛠️ Available Commands
 
 ### Setup
+
 ```bash
 make install              # Install all dependencies
 make install-backend      # Backend only
@@ -126,6 +138,7 @@ make install-frontend     # Frontend only
 ```
 
 ### Development
+
 ```bash
 make dev                 # Start backend + frontend
 make dev-backend        # Backend development server
@@ -133,6 +146,7 @@ make dev-frontend       # Frontend development server
 ```
 
 ### Quality
+
 ```bash
 make lint               # Check code quality
 make lint-fix           # Auto-fix issues
@@ -141,6 +155,7 @@ make quality            # Complete check
 ```
 
 ### Testing
+
 ```bash
 make test               # All tests
 make test-backend       # Backend tests
@@ -149,6 +164,7 @@ make test-coverage      # Coverage reports
 ```
 
 ### Docker
+
 ```bash
 make docker-build       # Build images
 make docker-up          # Start containers
@@ -162,14 +178,14 @@ See [Makefile](Makefile) for all 20+ available commands.
 
 ## 📊 Project Statistics
 
-| Metric | Value |
-|--------|-------|
-| Test Coverage | 1,200+ lines |
-| Code Quality Rules | 40+ |
-| Available Commands | 20+ |
-| CI/CD Jobs | 5 parallel |
-| Documentation Files | 13 |
-| Lines of Code | 50,000+ |
+| Metric              | Value        |
+| ------------------- | ------------ |
+| Test Coverage       | 1,200+ lines |
+| Code Quality Rules  | 40+          |
+| Available Commands  | 20+          |
+| CI/CD Jobs          | 5 parallel   |
+| Documentation Files | 13           |
+| Lines of Code       | 50,000+      |
 
 ---
 
@@ -189,12 +205,14 @@ See [Makefile](Makefile) for all 20+ available commands.
 ## 📈 Deployment Options
 
 ### Local Development
+
 ```bash
 make install
 make dev
 ```
 
 ### Docker (Recommended)
+
 ```bash
 make docker-build
 make docker-up
@@ -202,6 +220,7 @@ make docker-up
 ```
 
 ### Cloud Deployment
+
 - **Vercel** (Frontend) - See [DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)
 - **Render** (Backend) - See [DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)
 - **Heroku** (Full Stack) - See [DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)
@@ -229,6 +248,7 @@ See [.github/workflows/ci-cd.yml](.github/workflows/ci-cd.yml) for details.
 ## 📝 Environment Setup
 
 ### Backend
+
 ```bash
 # .env file required for backend
 MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/dbname
@@ -239,6 +259,7 @@ PORT=5000
 ```
 
 ### Frontend
+
 ```bash
 # .env file required for frontend
 VITE_API_URL=http://localhost:5000
@@ -252,11 +273,13 @@ Copy `.env.example` files for templates.
 ## 🧪 Testing
 
 ### Run All Tests
+
 ```bash
 make test
 ```
 
 ### Run Specific Tests
+
 ```bash
 # Backend unit tests
 npm run test:unit --prefix community-savings-app-backend
@@ -266,7 +289,9 @@ npm run test:coverage --prefix community-savings-app-backend
 ```
 
 ### Test Coverage
+
 Coverage reports are generated in:
+
 - Backend: `community-savings-app-backend/coverage/`
 - Frontend: `community-savings-app-frontend/coverage/`
 
@@ -287,6 +312,7 @@ When running `make docker-up`:
 ## 📚 Technology Stack
 
 ### Backend
+
 - Node.js 24.15.0
 - Express.js 4.18.2
 - MongoDB 8.23.1 (Mongoose)
@@ -295,6 +321,7 @@ When running `make docker-up`:
 - JWT Authentication
 
 ### Frontend
+
 - React 18.3.1
 - Vite 5.0.0
 - React Router 7.6.0
@@ -302,6 +329,7 @@ When running `make docker-up`:
 - Axios
 
 ### DevOps
+
 - Docker & Docker Compose
 - GitHub Actions
 - ESLint + Prettier
@@ -332,15 +360,18 @@ MIT License - see [LICENSE](LICENSE) file for details.
 ## 📞 Support
 
 ### Documentation
+
 - [Full Documentation Index](docs/DOCUMENTATION_INDEX.md)
 - [Quick Start Guide](docs/PRODUCTION_READY_README.md)
 - [Deployment Guide](docs/DEPLOYMENT_GUIDE.md)
 
 ### Issues
+
 - Report bugs via GitHub Issues
 - Ask questions in Discussions
 
 ### Status
+
 ✅ **Production Ready**  
 ✅ **Fully Tested**  
 ✅ **Well Documented**  
@@ -351,16 +382,19 @@ MIT License - see [LICENSE](LICENSE) file for details.
 ## 🎯 Next Steps
 
 ### To Get Started
+
 1. Read [PRODUCTION_READY_README.md](docs/PRODUCTION_READY_README.md) (10 min)
 2. Run `make install && make dev`
 3. Visit http://localhost:3000
 
 ### To Deploy
+
 1. Read [DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)
 2. Choose your platform
 3. Follow the instructions
 
 ### To Submit to Contest
+
 1. Read [CONTEST_SUBMISSION_SUMMARY.md](docs/CONTEST_SUBMISSION_SUMMARY.md)
 2. Run [PRODUCTION_VERIFICATION_CHECKLIST.md](docs/PRODUCTION_VERIFICATION_CHECKLIST.md)
 3. Submit your entry
@@ -368,4 +402,3 @@ MIT License - see [LICENSE](LICENSE) file for details.
 ---
 
 **Status:** ✅ Production Ready | **Version:** 2.1 | **Updated:** June 1, 2026
-

@@ -1,6 +1,7 @@
 # Implementation Guide — 10 Core Features
 
 ## Overview
+
 This guide explains how to complete the implementation of 10 production-ready features for the Community Savings App backend. All skeleton files, models, services, and test stubs are provided; developers extend them with business logic.
 
 ---
@@ -8,14 +9,17 @@ This guide explains how to complete the implementation of 10 production-ready fe
 ## 1. Payment Processing
 
 ### Status: 70% (Models & Service Skeleton Complete)
+
 ### Remaining: Provider integrations, webhook handling, retry logic
 
 **Files Created:**
+
 - Models: `PaymentIntent.js`, `Transaction.js`
 - Services: `PaymentService.js`, `mobileMoneyProvider.js`
 - Routes: `routes/payments.js` (skeleton)
 
 **What to Implement:**
+
 1. **Provider Adapters** (in `services/payment/providers/`)
    - Implement `createIntent()`, `verifyWebhook()`, `parseEvent()` for each provider (Stripe, MPesa, etc.)
    - Each adapter returns normalized event format
@@ -31,22 +35,24 @@ This guide explains how to complete the implementation of 10 production-ready fe
    - Exponential backoff: 1s, 2s, 4s... (max 3 retries)
    - Reconciliation cron job for provider→DB sync
 
-4. **Controller** 
+4. **Controller**
    - POST /api/payments/intents: create intent with idempotency check
    - POST /api/payments/webhook/:provider: receive & process webhooks
    - GET /api/payments/:id: fetch intent status
    - POST /api/payments/:id/retry: admin manual retry
 
 **Testing:**
+
 - Unit: PaymentService.createPaymentIntent() with mocked adapter
 - Integration: webhook → PaymentIntent update → Transaction creation
 - Mock external HTTP responses using `nock`
 
 **Security Checklist:**
+
 - Verify webhook signatures before processing
 - No PII in logs (mask amounts to K.KK format)
 - Idempotency key validation
-- Rate limit webhook endpoints  
+- Rate limit webhook endpoints
 - HTTPS + TLS only
 
 ---
@@ -54,20 +60,24 @@ This guide explains how to complete the implementation of 10 production-ready fe
 ## 2. Email Verification
 
 ### Status: 90% (Service Complete, Routes Need Registration)
+
 ### Remaining: Route middleware, throttling, email templates
 
 **Files Created:**
+
 - Model: `EmailVerificationToken.js`
 - Service: `emailVerificationService.js` (complete)
 - Routes: `routes/auth.js` (includes email verification endpoints)
 
 **What to Implement:**
+
 1. **Route Registration** in `server.js`
+
    ```js
    app.use('/api/auth', require('./routes/auth'));
    ```
 
-2. **Email Template** 
+2. **Email Template**
    - Create `templates/emailVerification.html` with token link
    - Text fallback in `templates/emailVerification.txt`
    - Use `EmailService.sendVerificationEmail()` (already called from service)
@@ -85,6 +95,7 @@ This guide explains how to complete the implementation of 10 production-ready fe
    - Call `EmailVerificationService.generateTokenAndSend(user)`
 
 **Testing:**
+
 - Integration: signup → receive token → verify endpoint → user.verified = true
 - Edge: expired token rejection, double-use prevention, resend throttling
 
@@ -93,14 +104,17 @@ This guide explains how to complete the implementation of 10 production-ready fe
 ## 3. Password Reset
 
 ### Status: 90% (Service Complete, Routes Need Registration)
+
 ### Remaining: Route middleware, password strength validation, email templates
 
 **Files Created:**
+
 - Model: `PasswordResetToken.js`
 - Service: `passwordResetService.js` (complete)
 - Routes: `routes/auth.js` (includes reset endpoints)
 
 **What to Implement:**
+
 1. **Password Strength Validation**
    - Extend in PasswordResetService.resetPassword()
    - Use library: `zxcvbn` scoring or OWASP rules
@@ -124,6 +138,7 @@ This guide explains how to complete the implementation of 10 production-ready fe
    ```
 
 **Testing:**
+
 - Integration: request reset → email token → reset password → login with new password
 - Edge: invalid token, expired token, weak password, token reuse
 
@@ -132,13 +147,16 @@ This guide explains how to complete the implementation of 10 production-ready fe
 ## 4. Loan Management Workflow
 
 ### Status: 60% (Models & Service Skeleton Complete)
+
 ### Remaining: Status guards, schedule generation, notifications, reconciliation
 
 **Files Created:**
+
 - Services: `loanWorkflowService.js` (status change + audit)
 - Tests: `tests/integration/loan.workflow.test.js`
 
 **What to Implement:**
+
 1. **Status Transition Guards**
    - In `loanWorkflowService.changeLoanStatus()`, validate allowed transitions:
      - requested → [pending_approval, rejected]
@@ -150,7 +168,7 @@ This guide explains how to complete the implementation of 10 production-ready fe
 
 2. **Repayment Schedule Generation**
    - In `loanWorkflowService.generateRepaymentSchedule()`:
-   - Use amortization formula: installment = P * [r(1+r)^n] / [(1+r)^n - 1]
+   - Use amortization formula: installment = P \* [r(1+r)^n] / [(1+r)^n - 1]
    - Generate installment array with dueDate, principal, interest
    - Example: 5000 KES, 12% annual, 12 months → 12 installments ~433 KES/month
 
@@ -169,6 +187,7 @@ This guide explains how to complete the implementation of 10 production-ready fe
    - Use `notificationQueue` to email user
 
 **Testing:**
+
 - Integration: request → eligibility check → approve → disburse → active → repay → closed
 - Edge: invalid transitions, overdue handling, default scenarios
 
@@ -177,9 +196,11 @@ This guide explains how to complete the implementation of 10 production-ready fe
 ## 5. Chat Functionality
 
 ### Status: 50% (Services & Models Complete, Socket.IO Setup Pending)
+
 ### Remaining: Socket.IO server integration, moderation hooks, logging
 
 **Files Created:**
+
 - Models: `Conversation.js`, `ChatMessage.js`
 - Services: `chatService.js`
 - Routes: `routes/chat.js` (REST queries)
@@ -187,7 +208,9 @@ This guide explains how to complete the implementation of 10 production-ready fe
 - Tests: `tests/integration/chat.test.js`
 
 **What to Implement:**
+
 1. **Socket.IO Integration in server.js**
+
    ```js
    const http = require('http').createServer(app);
    const socketIO = require('./middleware/socketIO');
@@ -218,6 +241,7 @@ This guide explains how to complete the implementation of 10 production-ready fe
    - GET /api/chats/conversations/:id/messages (paginated, supports `before` cursor)
 
 **Testing:**
+
 - Integration: socket connects → join conversation → send message → broadcast
 - Edge: rate limiting, moderation, read receipts, offline handling
 
@@ -226,14 +250,17 @@ This guide explains how to complete the implementation of 10 production-ready fe
 ## 6. Referral System
 
 ### Status: 90% (Service Complete)
+
 ### Remaining: Reward payout hooks, fraud detection rules, admin endpoints
 
 **Files Created:**
+
 - Model: `Referral.js`
 - Service: `referralService.js`
 - Tests: `tests/integration/referrals.test.js`
 
 **What to Implement:**
+
 1. **Unique Code Generation**
    - Extend `referralService.generateCode()` with collision detection
    - Return 8-char alphanumeric unique to referrer
@@ -260,6 +287,7 @@ This guide explains how to complete the implementation of 10 production-ready fe
    - Aggregation via `referralService`
 
 **Testing:**
+
 - Unit: code generation uniqueness, self-referral prevention
 - Integration: redeem → user linked → reward on contribution
 - Edge: fraud patterns, double redemption attempts
@@ -269,16 +297,20 @@ This guide explains how to complete the implementation of 10 production-ready fe
 ## 7. Database Migrations
 
 ### Status: 90% (Runner & Sample Migration Complete)
+
 ### Remaining: Index creation migrationss, rollback testing
 
 **Files Created:**
+
 - Script: `scripts/migrateRunner.js`
 - Model: `Migration.js` (already exists)
 - Sample: `migrations/20260303_000000_sample_migration.js`
 - Index migration: `migrations/20260303_100000_add_payment_chat_auth_collections.js`
 
 **What to Implement:**
+
 1. **Run Migrations**
+
    ```bash
    npm run migrate
    # or
@@ -289,14 +321,15 @@ This guide explains how to complete the implementation of 10 production-ready fe
    - File: `migrations/20260304_*.js`
    - Pattern: define up() with index creation, down() with drop
    - Example:
+
    ```js
    module.exports = {
-     up: async ({mongoose}) => {
-       await Loan.collection.createIndex({user: 1, createdAt: -1});
+     up: async ({ mongoose }) => {
+       await Loan.collection.createIndex({ user: 1, createdAt: -1 });
      },
-     down: async ({mongoose}) => {
+     down: async ({ mongoose }) => {
        await Loan.collection.dropIndex('user_1_createdAt_-1');
-     }
+     },
    };
    ```
 
@@ -311,6 +344,7 @@ This guide explains how to complete the implementation of 10 production-ready fe
    - Use conditional logic to handle both old/new schema
 
 **CLI Commands:**
+
 ```bash
 npm run migrate          # Apply pending migrations
 npm run migrate:down     # Rollback last migration
@@ -324,15 +358,19 @@ npm run migrate:verify   # Verify integrity
 ## 8. Unit & Integration Tests
 
 ### Status: 70% (Stubs & Framework Complete)
+
 ### Remaining: Test implementations, mocks, CI configuration
 
 **Files Created:**
+
 - Test stubs: `tests/unit/payment.service.test.js`, `tests/unit/auth.service.test.js`
 - Integration tests: `auth.verification.test.js`, `chat.test.js`, `referrals.test.js`, `loan.workflow.test.js`
 - Configuration: `jest.config.js` (with thresholds)
 
 **What to Implement:**
+
 1. **Run Tests**
+
    ```bash
    npm test               # All tests
    npm run test:unit      # Unit only
@@ -365,6 +403,7 @@ npm run migrate:verify   # Verify integrity
    ```
 
 **Key Test Patterns:**
+
 - Setup: create fixtures (users, loans, etc.)
 - Action: call function/endpoint
 - Assert: verify state change + side effects
@@ -375,25 +414,30 @@ npm run migrate:verify   # Verify integrity
 ## 9. API Rate Limiting (Per-User)
 
 ### Status: 90% (Token Bucket Implementation Complete)
+
 ### Remaining: Middleware registration, per-endpoint limits, Redis integration
 
 **Files Created:**
+
 - Utility: `utils/rateLimiter.js` (TokenBucketLimiter class)
 - Middleware: `middleware/rateLimitMiddleware.js`
 
 **What to Implement:**
+
 1. **Register Rate Limit Middleware** in `server.js`
+
    ```js
    const redisClient = require('redis').createClient();
    const createRateLimitMW = require('./middleware/rateLimitMiddleware');
-   const rl = createRateLimitMW(redisClient, {tokens: 100, refillIntervalSec: 60});
+   const rl = createRateLimitMW(redisClient, { tokens: 100, refillIntervalSec: 60 });
    app.use(rl);
    ```
 
 2. **Per-Endpoint Limits** (stricter limits for expensive operations)
+
    ```js
    // In routes
-   const strictRL = createRateLimitMW(redis, {tokens: 10, refillIntervalSec: 60});
+   const strictRL = createRateLimitMW(redis, { tokens: 10, refillIntervalSec: 60 });
    router.post('/loans/request', strictRL, controller.requestLoan);
    router.post('/payments/intents', strictRL, controller.createPaymentIntent);
    ```
@@ -410,9 +454,9 @@ npm run migrate:verify   # Verify integrity
 5. **Testing**
    ```js
    test('Rate limit exceeded returns 429', async () => {
-     for(let i=0; i<11; i++) {
+     for (let i = 0; i < 11; i++) {
        const res = await request(app).get('/api/loans');
-       if(i < 10) expect(res.status).toBe(200);
+       if (i < 10) expect(res.status).toBe(200);
        else expect(res.status).toBe(429);
      }
    });
@@ -423,21 +467,25 @@ npm run migrate:verify   # Verify integrity
 ## 10. Analytics & Metrics
 
 ### Status: 80% (Service & Routes Complete)
+
 ### Remaining: Event hook integration, custom aggregations, dashboard UI
 
 **Files Created:**
+
 - Service: `analyticsService.js` (EventEmitter + aggregation methods)
 - Routes: `routes/analytics.js` (admin endpoints)
 - Jobs: `jobs/queueSetup.js` (background processors)
 
 **What to Implement:**
+
 1. **Event Tracking** Integration
+
    ```js
    // In controllers, after successful operation:
    const AnalyticsService = require('../services/analyticsService');
-   AnalyticsService.trackEvent('loan.requested', req.user.id, {loanId});
-   AnalyticsService.trackEvent('payment.succeeded', userId, {amount, provider});
-   AnalyticsService.trackEvent('referral.redeemed', referrerId, {referredUser});
+   AnalyticsService.trackEvent('loan.requested', req.user.id, { loanId });
+   AnalyticsService.trackEvent('payment.succeeded', userId, { amount, provider });
+   AnalyticsService.trackEvent('referral.redeemed', referrerId, { referredUser });
    ```
 
 2. **Event Types to Track**
@@ -474,6 +522,7 @@ npm run migrate:verify   # Verify integrity
 ## Integration & Deployment Checklist
 
 ### 1. Hook Everything Together in `server.js`
+
 ```js
 const express = require('express');
 const http = require('http');
@@ -490,7 +539,7 @@ const io = socketIO(http.createServer(app), logger);
 // Payment service setup
 const PaymentService = require('./services/payment/PaymentService');
 const mobileMoneyProvider = require('./services/payment/providers/mobileMoneyProvider');
-const paymentService = new PaymentService({providers: {mobileMoney: mobileMoneyProvider}});
+const paymentService = new PaymentService({ providers: { mobileMoney: mobileMoneyProvider } });
 app.locals.paymentService = paymentService;
 
 // Rate limiting
@@ -510,6 +559,7 @@ server.listen(process.env.PORT || 5000);
 ```
 
 ### 2. Environment Variables (.env.example)
+
 ```
 MONGODB_URI=mongodb://localhost/community-savings
 REDIS_URL=redis://localhost:6379
@@ -525,6 +575,7 @@ MPESA_WEBHOOK_SECRET=...
 ```
 
 ### 3. Pre-Deployment
+
 ```bash
 npm ci                           # Install dependencies
 npm run migrate                  # Run migrations
@@ -533,6 +584,7 @@ npm run lint                     # Linting
 ```
 
 ### 4. Production Deployment
+
 ```bash
 # Build/optimize
 npm run build
@@ -551,6 +603,7 @@ curl http://localhost:5000/api/admin/analytics/dashboard
 ## File Checklist
 
 ✅ Models created:
+
 - PaymentIntent.js
 - Transaction.js
 - EmailVerificationToken.js
@@ -561,6 +614,7 @@ curl http://localhost:5000/api/admin/analytics/dashboard
 - Migration.js
 
 ✅ Services created:
+
 - PaymentService.js (+ mobileMoneyProvider.js)
 - emailVerificationService.js
 - passwordResetService.js
@@ -570,10 +624,12 @@ curl http://localhost:5000/api/admin/analytics/dashboard
 - analyticsService.js
 
 ✅ Middleware created:
+
 - socketIO.js
 - rateLimitMiddleware.js
 
 ✅ Routes created:
+
 - payments.js (skeleton)
 - auth.js (with email verification + password reset)
 - chat.js (skeleton)
@@ -581,17 +637,21 @@ curl http://localhost:5000/api/admin/analytics/dashboard
 - analytics.js (complete)
 
 ✅ Utilities created:
+
 - rateLimiter.js (TokenBucketLimiter)
 - CRUDHelper.js
 
 ✅ Jobs created:
+
 - queueSetup.js (Bull queue processors)
 
 ✅ Migrations created:
+
 - 20260303_000000_sample_migration.js
 - 20260303_100000_add_payment_chat_auth_collections.js
 
 ✅ Tests created:
+
 - tests/integration/auth.verification.test.js
 - tests/integration/chat.test.js
 - tests/integration/referrals.test.js
@@ -599,6 +659,7 @@ curl http://localhost:5000/api/admin/analytics/dashboard
 - tests/unit/payment.service.test.js
 
 ✅ Config updated:
+
 - package.json (added socket.io, redis, bull, rate-limiter-flexible)
 - jest.config.js (coverage thresholds)
 

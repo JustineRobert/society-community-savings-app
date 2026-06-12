@@ -18,7 +18,7 @@ class DeploymentVerifier {
     this.client = axios.create({
       baseURL: this.baseUrl,
       timeout: this.timeout,
-      validateStatus: () => true
+      validateStatus: () => true,
     });
   }
 
@@ -68,7 +68,7 @@ class DeploymentVerifier {
 
       // Integrations
       { name: 'WebSocket Support', fn: () => this.checkWebSocket() },
-      { name: 'File Uploads', fn: () => this.checkFileUploads() }
+      { name: 'File Uploads', fn: () => this.checkFileUploads() },
     ];
 
     for (const check of checks) {
@@ -78,7 +78,7 @@ class DeploymentVerifier {
       } catch (error) {
         this.addResult(check.name, {
           status: 'failed',
-          message: error.message
+          message: error.message,
         });
       }
     }
@@ -97,7 +97,7 @@ class DeploymentVerifier {
       return {
         status: response.status === 200 ? 'passed' : 'failed',
         message: `HTTP ${response.status}`,
-        details: { version: response.data?.version }
+        details: { version: response.data?.version },
       };
     } catch (error) {
       return { status: 'failed', message: error.message };
@@ -110,7 +110,7 @@ class DeploymentVerifier {
       return {
         status: response.status === 200 ? 'passed' : 'failed',
         message: `${response.status}`,
-        details: response.data
+        details: response.data,
       };
     } catch (error) {
       return { status: 'failed', message: error.message };
@@ -123,7 +123,7 @@ class DeploymentVerifier {
       return {
         status: response.status === 200 ? 'passed' : 'failed',
         message: `Status: ${response.data?.status}`,
-        details: response.data
+        details: response.data,
       };
     } catch (error) {
       return { status: 'failed', message: error.message };
@@ -138,18 +138,18 @@ class DeploymentVerifier {
     try {
       // Try to access protected endpoint without token
       const response = await this.client.get('/api/groups');
-      
+
       if (response.status === 401) {
         return {
           status: 'passed',
           message: 'Properly enforces authentication',
-          details: { expectedError: true }
+          details: { expectedError: true },
         };
       }
 
       return {
         status: 'warning',
-        message: 'Protected endpoints may not require authentication'
+        message: 'Protected endpoints may not require authentication',
       };
     } catch (error) {
       return { status: 'failed', message: error.message };
@@ -160,20 +160,20 @@ class DeploymentVerifier {
     try {
       // Test with invalid token
       const response = await this.client.get('/api/groups', {
-        headers: { Authorization: 'Bearer invalid-token' }
+        headers: { Authorization: 'Bearer invalid-token' },
       });
 
       if (response.status === 401) {
         return {
           status: 'passed',
           message: 'JWT validation working',
-          details: { validatesTokens: true }
+          details: { validatesTokens: true },
         };
       }
 
       return {
         status: 'warning',
-        message: 'JWT validation may not be working properly'
+        message: 'JWT validation may not be working properly',
       };
     } catch (error) {
       return { status: 'failed', message: error.message };
@@ -187,7 +187,7 @@ class DeploymentVerifier {
   async checkGroupsAPI() {
     try {
       const response = await this.client.get('/api/groups', {
-        headers: { 'Authorization': 'Bearer test' }
+        headers: { Authorization: 'Bearer test' },
       });
 
       // Accept both 401 (not authenticated) and 200 (works)
@@ -195,13 +195,13 @@ class DeploymentVerifier {
         return {
           status: 'passed',
           message: `Endpoint responds with ${response.status}`,
-          details: { endpoint: '/api/groups' }
+          details: { endpoint: '/api/groups' },
         };
       }
 
       return {
         status: 'failed',
-        message: `Unexpected status: ${response.status}`
+        message: `Unexpected status: ${response.status}`,
       };
     } catch (error) {
       return { status: 'failed', message: error.message };
@@ -211,13 +211,13 @@ class DeploymentVerifier {
   async checkContributionsAPI() {
     try {
       const response = await this.client.get('/api/contributions', {
-        headers: { 'Authorization': 'Bearer test' }
+        headers: { Authorization: 'Bearer test' },
       });
 
       return {
-        status: (response.status === 401 || response.status === 200) ? 'passed' : 'failed',
+        status: response.status === 401 || response.status === 200 ? 'passed' : 'failed',
         message: `HTTP ${response.status}`,
-        details: { endpoint: '/api/contributions' }
+        details: { endpoint: '/api/contributions' },
       };
     } catch (error) {
       return { status: 'failed', message: error.message };
@@ -227,13 +227,13 @@ class DeploymentVerifier {
   async checkLoansAPI() {
     try {
       const response = await this.client.get('/api/loans', {
-        headers: { 'Authorization': 'Bearer test' }
+        headers: { Authorization: 'Bearer test' },
       });
 
       return {
-        status: (response.status === 401 || response.status === 200) ? 'passed' : 'failed',
+        status: response.status === 401 || response.status === 200 ? 'passed' : 'failed',
         message: `HTTP ${response.status}`,
-        details: { endpoint: '/api/loans' }
+        details: { endpoint: '/api/loans' },
       };
     } catch (error) {
       return { status: 'failed', message: error.message };
@@ -243,13 +243,13 @@ class DeploymentVerifier {
   async checkPaymentsAPI() {
     try {
       const response = await this.client.get('/api/payments/history', {
-        headers: { 'Authorization': 'Bearer test' }
+        headers: { Authorization: 'Bearer test' },
       });
 
       return {
-        status: (response.status === 401 || response.status === 200) ? 'passed' : 'failed',
+        status: response.status === 401 || response.status === 200 ? 'passed' : 'failed',
         message: `HTTP ${response.status}`,
-        details: { endpoint: '/api/payments' }
+        details: { endpoint: '/api/payments' },
       };
     } catch (error) {
       return { status: 'failed', message: error.message };
@@ -259,13 +259,13 @@ class DeploymentVerifier {
   async checkChatAPI() {
     try {
       const response = await this.client.get('/api/chats', {
-        headers: { 'Authorization': 'Bearer test' }
+        headers: { Authorization: 'Bearer test' },
       });
 
       return {
-        status: (response.status === 401 || response.status === 200) ? 'passed' : 'failed',
+        status: response.status === 401 || response.status === 200 ? 'passed' : 'failed',
         message: `HTTP ${response.status}`,
-        details: { endpoint: '/api/chats' }
+        details: { endpoint: '/api/chats' },
       };
     } catch (error) {
       return { status: 'failed', message: error.message };
@@ -285,13 +285,13 @@ class DeploymentVerifier {
         return {
           status: 'passed',
           message: 'Database is connected and ready',
-          details: { ready: true }
+          details: { ready: true },
         };
       }
 
       return {
         status: response.status === 503 ? 'warning' : 'failed',
-        message: response.data?.status || 'Unknown state'
+        message: response.data?.status || 'Unknown state',
       };
     } catch (error) {
       return { status: 'failed', message: error.message };
@@ -301,19 +301,19 @@ class DeploymentVerifier {
   async checkCache() {
     try {
       const response = await this.client.get('/api/cache-check', {
-        headers: { 'Authorization': 'Bearer test' }
+        headers: { Authorization: 'Bearer test' },
       });
 
       return {
         status: 'passed',
         message: 'Cache service responding',
-        details: { endpoint: '/api/cache-check' }
+        details: { endpoint: '/api/cache-check' },
       };
     } catch (error) {
       // Cache check may not exist, but try to infer from response time
       return {
         status: 'warning',
-        message: 'Could not verify cache explicitly, assuming operational'
+        message: 'Could not verify cache explicitly, assuming operational',
       };
     }
   }
@@ -321,18 +321,18 @@ class DeploymentVerifier {
   async checkEmailService() {
     try {
       const response = await this.client.post('/api/email/test', {
-        to: 'test@example.com'
+        to: 'test@example.com',
       });
 
       return {
         status: response.status === 200 ? 'passed' : 'failed',
         message: `Email service responded with ${response.status}`,
-        details: response.data
+        details: response.data,
       };
     } catch (error) {
       return {
         status: 'warning',
-        message: 'Email service check endpoint not available'
+        message: 'Email service check endpoint not available',
       };
     }
   }
@@ -340,18 +340,18 @@ class DeploymentVerifier {
   async checkPaymentProviders() {
     try {
       const response = await this.client.get('/api/payments/providers-health', {
-        headers: { 'Authorization': 'Bearer test' }
+        headers: { Authorization: 'Bearer test' },
       });
 
       return {
         status: response.status === 200 ? 'passed' : 'warning',
         message: response.data?.message || 'Providers health check',
-        details: response.data
+        details: response.data,
       };
     } catch (error) {
       return {
         status: 'warning',
-        message: 'Payment provider health check not available'
+        message: 'Payment provider health check not available',
       };
     }
   }
@@ -365,26 +365,22 @@ class DeploymentVerifier {
       const response = await this.client.get('/');
       const headers = response.headers;
 
-      const requiredHeaders = [
-        'x-content-type-options',
-        'x-frame-options',
-        'x-xss-protection'
-      ];
+      const requiredHeaders = ['x-content-type-options', 'x-frame-options', 'x-xss-protection'];
 
-      const missing = requiredHeaders.filter(h => !headers[h]);
+      const missing = requiredHeaders.filter((h) => !headers[h]);
 
       if (missing.length === 0) {
         return {
           status: 'passed',
           message: 'All required security headers present',
-          details: { headers }
+          details: { headers },
         };
       }
 
       return {
         status: 'warning',
         message: `Missing headers: ${missing.join(', ')}`,
-        details: { missingHeaders: missing }
+        details: { missingHeaders: missing },
       };
     } catch (error) {
       return { status: 'failed', message: error.message };
@@ -394,7 +390,7 @@ class DeploymentVerifier {
   async checkCORS() {
     try {
       const response = await this.client.options('/', {
-        headers: { 'Origin': 'http://localhost:3000' }
+        headers: { Origin: 'http://localhost:3000' },
       });
 
       if (response.headers['access-control-allow-origin']) {
@@ -403,14 +399,14 @@ class DeploymentVerifier {
           message: 'CORS configured',
           details: {
             allowOrigin: response.headers['access-control-allow-origin'],
-            allowMethods: response.headers['access-control-allow-methods']
-          }
+            allowMethods: response.headers['access-control-allow-methods'],
+          },
         };
       }
 
       return {
         status: 'warning',
-        message: 'CORS headers not found in OPTIONS response'
+        message: 'CORS headers not found in OPTIONS response',
       };
     } catch (error) {
       return { status: 'failed', message: error.message };
@@ -421,7 +417,7 @@ class DeploymentVerifier {
     try {
       // Make multiple requests to test rate limiting
       let limited = false;
-      
+
       for (let i = 0; i < 10; i++) {
         const response = await this.client.get('/');
         if (response.status === 429) {
@@ -433,12 +429,12 @@ class DeploymentVerifier {
       return {
         status: 'passed',
         message: limited ? 'Rate limiting is active' : 'Rate limiting configured',
-        details: { rateLimitDetected: limited }
+        details: { rateLimitDetected: limited },
       };
     } catch (error) {
       return {
         status: 'warning',
-        message: 'Could not verify rate limiting'
+        message: 'Could not verify rate limiting',
       };
     }
   }
@@ -453,13 +449,12 @@ class DeploymentVerifier {
       await this.client.get('/healthz');
       const elapsed = Date.now() - start;
 
-      const status = elapsed < 100 ? 'passed' : 
-                     elapsed < 500 ? 'warning' : 'failed';
+      const status = elapsed < 100 ? 'passed' : elapsed < 500 ? 'warning' : 'failed';
 
       return {
         status,
         message: `Response time: ${elapsed}ms`,
-        details: { elapsed, threshold: 500 }
+        details: { elapsed, threshold: 500 },
       };
     } catch (error) {
       return { status: 'failed', message: error.message };
@@ -481,7 +476,7 @@ class DeploymentVerifier {
       return {
         status: rps > 100 ? 'passed' : 'warning',
         message: `Throughput: ${rps.toFixed(2)} requests/sec`,
-        details: { rps, tested: iterations }
+        details: { rps, tested: iterations },
       };
     } catch (error) {
       return { status: 'failed', message: error.message };
@@ -497,13 +492,13 @@ class DeploymentVerifier {
         message: 'Metrics endpoint responding',
         details: {
           hasMetrics: response.data && response.data.length > 0,
-          size: response.data?.length || 0
-        }
+          size: response.data?.length || 0,
+        },
       };
     } catch (error) {
       return {
         status: 'warning',
-        message: 'Metrics endpoint not available'
+        message: 'Metrics endpoint not available',
       };
     }
   }
@@ -516,7 +511,7 @@ class DeploymentVerifier {
     return {
       status: 'passed',
       message: 'Data consistency check deferred to application tests',
-      details: { checkType: 'application-level' }
+      details: { checkType: 'application-level' },
     };
   }
 
@@ -524,7 +519,7 @@ class DeploymentVerifier {
     return {
       status: 'passed',
       message: 'Database replication status check (manual verification)',
-      details: { checkType: 'operational' }
+      details: { checkType: 'operational' },
     };
   }
 
@@ -536,7 +531,7 @@ class DeploymentVerifier {
     return {
       status: 'passed',
       message: 'WebSocket support requires client connection testing',
-      details: { checkType: 'client-side' }
+      details: { checkType: 'client-side' },
     };
   }
 
@@ -544,7 +539,7 @@ class DeploymentVerifier {
     return {
       status: 'passed',
       message: 'File upload capability verified',
-      details: { checkType: 'endpoint' }
+      details: { checkType: 'endpoint' },
     };
   }
 
@@ -556,26 +551,26 @@ class DeploymentVerifier {
     this.results.push({
       name,
       ...result,
-      timestamp: new Date()
+      timestamp: new Date(),
     });
   }
 
   displayResults() {
     const table = new Table({
-      head: ['Check', 'Status', 'Message'].map(h => chalk.cyan(h)),
+      head: ['Check', 'Status', 'Message'].map((h) => chalk.cyan(h)),
       colWidths: [25, 12, 45],
-      wordWrap: true
+      wordWrap: true,
     });
 
     for (const result of this.results) {
-      const statusColor = result.status === 'passed' ? chalk.green :
-                          result.status === 'warning' ? chalk.yellow : chalk.red;
+      const statusColor =
+        result.status === 'passed'
+          ? chalk.green
+          : result.status === 'warning'
+            ? chalk.yellow
+            : chalk.red;
 
-      table.push([
-        result.name,
-        statusColor(result.status.toUpperCase()),
-        result.message
-      ]);
+      table.push([result.name, statusColor(result.status.toUpperCase()), result.message]);
     }
 
     console.log(table.toString());
@@ -584,16 +579,16 @@ class DeploymentVerifier {
 
   getSummary() {
     const total = this.results.length;
-    const passed = this.results.filter(r => r.status === 'passed').length;
-    const failed = this.results.filter(r => r.status === 'failed').length;
-    const warning = this.results.filter(r => r.status === 'warning').length;
+    const passed = this.results.filter((r) => r.status === 'passed').length;
+    const failed = this.results.filter((r) => r.status === 'failed').length;
+    const warning = this.results.filter((r) => r.status === 'warning').length;
 
     const summary = {
       total,
       passed,
       failed,
       warning,
-      success: failed === 0
+      success: failed === 0,
     };
 
     console.log(chalk.bold('Summary'));
@@ -617,12 +612,13 @@ class DeploymentVerifier {
 if (require.main === module) {
   const baseUrl = process.argv[2] || 'http://localhost:5000';
   const verifier = new DeploymentVerifier({ baseUrl });
-  
-  verifier.verifyAll()
-    .then(summary => {
+
+  verifier
+    .verifyAll()
+    .then((summary) => {
       process.exit(summary.success ? 0 : 1);
     })
-    .catch(error => {
+    .catch((error) => {
       console.error(chalk.red('Verification failed:'), error);
       process.exit(1);
     });

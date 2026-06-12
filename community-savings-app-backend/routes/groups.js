@@ -8,12 +8,11 @@ const { validationRules, handleValidation } = require('../utils/validators');
 const groupController = require('../controllers/groupController');
 const { verifyToken } = require('../middleware/auth');
 
+
 router.post(
-  '/',
+  '/groups',
   verifyToken,
-  validationRules.createGroup,
-  handleValidation,
-  asyncHandler(groupController.createGroup)
+  asyncHandler(groupController.createGroup) // ensure this is exported
 );
 
 router.post(
@@ -35,13 +34,9 @@ router.post(
 router.get(
   '/',
   verifyToken,
-  asyncHandler(groupController.getGroups)   // ✅ direct controller
+  asyncHandler(groupController.getGroups) // ✅ direct controller
 );
 
-router.post(
-  '/seed',
-  verifyToken,
-  asyncHandler(groupController.seedGroups)
-);
+router.post('/seed', verifyToken, asyncHandler(groupController.seedGroups));
 
 module.exports = router;

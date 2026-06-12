@@ -1,5 +1,7 @@
 // Redis-backed token bucket rate limiter with per-user support
-const redis = require('redis');
+// const redis = require('redis');
+
+// Redis-backed token bucket rate limiter with per-user support
 
 class TokenBucketLimiter {
   constructor(redisClient, opts = {}) {
@@ -19,16 +21,16 @@ class TokenBucketLimiter {
       const now = Date.now();
       const windowMs = windowSeconds * 1000;
       const bucketKey = `rate-limit:${key}`;
-      
+
       // Get current bucket state
       let bucket = await this.getBucket(bucketKey);
-      
+
       if (!bucket) {
         // Initialize new bucket
         bucket = {
           tokens: windowSeconds, // Start with windowSeconds tokens (1 per second)
           lastRefill: now,
-          resetAt: now + windowMs
+          resetAt: now + windowMs,
         };
       }
 
@@ -42,26 +44,26 @@ class TokenBucketLimiter {
       if (bucket.tokens >= cost) {
         bucket.tokens -= cost;
         const remaining = Math.floor(bucket.tokens);
-        
+
         // Store updated bucket with expiration
         await this.redis.setex(bucketKey, windowSeconds + 60, JSON.stringify(bucket));
-        
+
         return {
           allowed: true,
           remaining,
           retryAfter: 0,
-          resetAt: Math.ceil(bucket.resetAt / 1000)
+          resetAt: Math.ceil(bucket.resetAt / 1000),
         };
       }
 
       // Token budget exhausted
       const retryAfter = Math.ceil((cost - bucket.tokens) / (windowSeconds / windowSeconds));
-      
+
       return {
         allowed: false,
         remaining: Math.floor(bucket.tokens),
         retryAfter,
-        resetAt: Math.ceil(bucket.resetAt / 1000)
+        resetAt: Math.ceil(bucket.resetAt / 1000),
       };
     } catch (err) {
       this.logger.error('Rate limiter error', err);
@@ -70,7 +72,7 @@ class TokenBucketLimiter {
         allowed: true,
         remaining: 1000,
         retryAfter: 0,
-        resetAt: Math.ceil((Date.now() + 60000) / 1000)
+        resetAt: Math.ceil((Date.now() + 60000) / 1000),
       };
     }
   }

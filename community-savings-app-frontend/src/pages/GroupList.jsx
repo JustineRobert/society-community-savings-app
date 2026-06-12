@@ -33,7 +33,8 @@ const GroupList = () => {
       const members = Array.isArray(g.members) ? [...g.members] : [];
       const userId = user?._id || user?.id || user?.userId;
       // avoid duplicate
-      if (!members.find((m) => (m._id || m) === userId)) members.push({ _id: userId, name: user?.name || user?.email });
+      if (!members.find((m) => (m._id || m) === userId))
+        members.push({ _id: userId, name: user?.name || user?.email });
       return { ...g, members, __joinedOptimistic: true };
     });
     setGroups(optimistic);

@@ -2,7 +2,7 @@
  * MTN Mobile Money Provider Adapter
  * Integrates with MTN MoMo API for payment collections and disbursements
  * Supports: Payment requests, account balance, transaction status
- * 
+ *
  * Documentation: https://mtnmobilemoneyapi.damafinance.com/
  */
 
@@ -24,9 +24,7 @@ class MtnMomoProvider extends BasePaymentProvider {
 
     // API base URL based on environment
     this.baseUrl =
-      this.environment === 'production'
-        ? 'https://api.mtn.mz'
-        : 'https://api.sandbox.mtn.mz';
+      this.environment === 'production' ? 'https://api.mtn.mz' : 'https://api.sandbox.mtn.mz';
 
     this.requestTimeout = 30000;
 
@@ -57,17 +55,17 @@ class MtnMomoProvider extends BasePaymentProvider {
    */
   generateHeaders() {
     return {
-      'Authorization': `Bearer ${this.apiKey}`,
+      Authorization: `Bearer ${this.apiKey}`,
       'X-Reference-Id': uuidv4(),
       'Content-Type': 'application/json',
-      'Accept': 'application/json',
+      Accept: 'application/json',
     };
   }
 
   /**
    * Create payment request (collection)
    * Requests payment from a customer
-   * 
+   *
    * @param {Object} params
    *   - amount: Payment amount
    *   - currency: Currency code (default: ZAR)
@@ -121,15 +119,11 @@ class MtnMomoProvider extends BasePaymentProvider {
       });
 
       const response = await this.retryWithBackoff(async () => {
-        return await axios.post(
-          `${this.baseUrl}/collection/v1_0/requesttopay`,
-          payload,
-          {
-            headers: this.generateHeaders(),
-            'X-Reference-Id': requestId,
-            timeout: this.requestTimeout,
-          }
-        );
+        return await axios.post(`${this.baseUrl}/collection/v1_0/requesttopay`, payload, {
+          headers: this.generateHeaders(),
+          'X-Reference-Id': requestId,
+          timeout: this.requestTimeout,
+        });
       });
 
       logger.info('[MtnMoMo] Payment request created', {
@@ -174,13 +168,10 @@ class MtnMomoProvider extends BasePaymentProvider {
   async getPaymentStatus(requestId) {
     try {
       const response = await this.retryWithBackoff(async () => {
-        return await axios.get(
-          `${this.baseUrl}/collection/v1_0/requesttopay/${requestId}`,
-          {
-            headers: this.generateHeaders(),
-            timeout: this.requestTimeout,
-          }
-        );
+        return await axios.get(`${this.baseUrl}/collection/v1_0/requesttopay/${requestId}`, {
+          headers: this.generateHeaders(),
+          timeout: this.requestTimeout,
+        });
       });
 
       const { status } = response.data;
@@ -210,13 +201,10 @@ class MtnMomoProvider extends BasePaymentProvider {
   async getAccountBalance() {
     try {
       const response = await this.retryWithBackoff(async () => {
-        return await axios.get(
-          `${this.baseUrl}/collection/v1_0/account/balance`,
-          {
-            headers: this.generateHeaders(),
-            timeout: this.requestTimeout,
-          }
-        );
+        return await axios.get(`${this.baseUrl}/collection/v1_0/account/balance`, {
+          headers: this.generateHeaders(),
+          timeout: this.requestTimeout,
+        });
       });
 
       logger.info('[MtnMoMo] Account balance retrieved', {
@@ -276,15 +264,11 @@ class MtnMomoProvider extends BasePaymentProvider {
       });
 
       const response = await this.retryWithBackoff(async () => {
-        return await axios.post(
-          `${this.baseUrl}/disbursement/v1_0/transfer`,
-          payload,
-          {
-            headers: this.generateHeaders(),
-            'X-Reference-Id': requestId,
-            timeout: this.requestTimeout,
-          }
-        );
+        return await axios.post(`${this.baseUrl}/disbursement/v1_0/transfer`, payload, {
+          headers: this.generateHeaders(),
+          'X-Reference-Id': requestId,
+          timeout: this.requestTimeout,
+        });
       });
 
       logger.info('[MtnMoMo] Disbursement initiated', {

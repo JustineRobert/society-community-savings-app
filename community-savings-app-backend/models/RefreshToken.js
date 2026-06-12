@@ -1,4 +1,3 @@
-
 // models/RefreshToken.js
 // ============================================================================
 // Refresh Token Model (Opaque tokens stored hashed)

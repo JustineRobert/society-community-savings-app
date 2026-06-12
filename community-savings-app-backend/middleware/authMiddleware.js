@@ -28,12 +28,15 @@ const verifyAccessToken = async (req, res, next) => {
   }
 };
 
-const requireRole = (...allowedRoles) => (req, res, next) => {
-  if (!req.user) return res.status(401).json({ message: 'Not authenticated' });
-  const userRole = (req.user.role || '').toString();
-  if (allowedRoles.length === 0) return next();
-  if (!allowedRoles.includes(userRole)) return res.status(403).json({ message: 'Insufficient role' });
-  return next();
-};
+const requireRole =
+  (...allowedRoles) =>
+  (req, res, next) => {
+    if (!req.user) return res.status(401).json({ message: 'Not authenticated' });
+    const userRole = (req.user.role || '').toString();
+    if (allowedRoles.length === 0) return next();
+    if (!allowedRoles.includes(userRole))
+      return res.status(403).json({ message: 'Insufficient role' });
+    return next();
+  };
 
 module.exports = { verifyAccessToken, requireRole };

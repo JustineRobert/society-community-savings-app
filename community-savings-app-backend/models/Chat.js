@@ -1,6 +1,6 @@
 /**
  * Chat Model - ENHANCED
- * 
+ *
  * Group-based messaging with read receipts, moderation, reactions, threading
  */
 

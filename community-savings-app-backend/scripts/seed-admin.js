@@ -11,7 +11,10 @@ const User = require('../models/User');
 const crypto = require('crypto');
 
 function generatePassword(len = 16) {
-  return crypto.randomBytes(Math.ceil(len * 0.75)).toString('base64').slice(0, len);
+  return crypto
+    .randomBytes(Math.ceil(len * 0.75))
+    .toString('base64')
+    .slice(0, len);
 }
 
 function validatePassword(pw) {
@@ -44,7 +47,9 @@ async function run({ skipConnect = false } = {}) {
     const msg = `Admin password does not meet policy: min 12 chars, include lower, upper and digits.`;
     if (!force) {
       console.error(msg);
-      console.error('Set ADMIN_FORCE=true to override (not recommended) or provide a stronger ADMIN_PASS.');
+      console.error(
+        'Set ADMIN_FORCE=true to override (not recommended) or provide a stronger ADMIN_PASS.'
+      );
       process.exit(2);
     }
     console.warn(msg + ' Proceeding because ADMIN_FORCE=true');
@@ -54,9 +59,18 @@ async function run({ skipConnect = false } = {}) {
     let admin = await User.findOne({ email });
     if (admin) {
       let changed = false;
-      if (admin.role !== 'admin') { admin.role = 'admin'; changed = true; }
-      if (!admin.isVerified) { admin.isVerified = true; changed = true; }
-      if (!admin.isActive) { admin.isActive = true; changed = true; }
+      if (admin.role !== 'admin') {
+        admin.role = 'admin';
+        changed = true;
+      }
+      if (!admin.isVerified) {
+        admin.isVerified = true;
+        changed = true;
+      }
+      if (!admin.isActive) {
+        admin.isActive = true;
+        changed = true;
+      }
       if (changed) await admin.save();
       console.log(`Admin user already exists: ${email}`);
       process.exit(0);

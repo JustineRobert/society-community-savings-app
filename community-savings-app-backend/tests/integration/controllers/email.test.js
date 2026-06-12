@@ -81,10 +81,7 @@ describe('Email Controller Integration Tests', () => {
       const token = user.generateVerificationToken();
       await user.save();
 
-      const res = await request(app)
-        .post('/verify')
-        .send({ token })
-        .expect(200);
+      const res = await request(app).post('/verify').send({ token }).expect(200);
 
       expect(res.body.user.isVerified).toBe(true);
 
@@ -108,10 +105,7 @@ describe('Email Controller Integration Tests', () => {
       user.verificationTokenExpires = new Date(Date.now() - 1000); // 1 second ago
       await user.save();
 
-      const res = await request(app)
-        .post('/verify')
-        .send({ token })
-        .expect(400);
+      const res = await request(app).post('/verify').send({ token }).expect(400);
 
       expect(res.body.message).toContain('Invalid or expired');
     });
@@ -121,10 +115,7 @@ describe('Email Controller Integration Tests', () => {
       const token = user.generateVerificationToken();
       await user.save();
 
-      await request(app)
-        .post('/verify')
-        .send({ token })
-        .expect(200);
+      await request(app).post('/verify').send({ token }).expect(200);
 
       const audit = await EmailAudit.findOne({ event: 'verify_email' });
       expect(audit).toBeDefined();
@@ -213,9 +204,7 @@ describe('Email Controller Integration Tests', () => {
 
       // Make multiple requests quickly
       for (let i = 0; i < 4; i++) {
-        const res = await request(app)
-          .post('/send-verification')
-          .send({ email });
+        const res = await request(app).post('/send-verification').send({ email });
 
         if (i < 3) {
           expect(res.status).toBeLessThan(429);

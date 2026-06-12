@@ -19,7 +19,7 @@ const REFERRAL_REWARDS = {
   REFERRER_BONUS: parseFloat(process.env.REFERRAL_BONUS_REFERRER || '500'), // KES
   REFEREE_BONUS: parseFloat(process.env.REFERRAL_BONUS_REFEREE || '250'), // KES
   MAX_REFERRALS: parseInt(process.env.REFERRAL_MAX_COUNT || '100'),
-  BONUS_TRIGGER: process.env.REFERRAL_BONUS_TRIGGER || 'first_contribution' // When to award bonus
+  BONUS_TRIGGER: process.env.REFERRAL_BONUS_TRIGGER || 'first_contribution', // When to award bonus
 };
 
 class ReferralService {
@@ -34,18 +34,18 @@ class ReferralService {
       const existing = await Referral.findOne({
         referrer: userId,
         status: 'active',
-        expiresAt: { $gt: new Date() }
+        expiresAt: { $gt: new Date() },
       });
 
       if (existing) {
         logger.info('[ReferralService] Returning existing referral code', {
           userId,
-          code: existing.code
+          code: existing.code,
         });
         return {
           code: existing.code,
           referralLink: this.generateReferralLink(existing.code),
-          createdAt: existing.createdAt
+          createdAt: existing.createdAt,
         };
       }
 
@@ -73,25 +73,25 @@ class ReferralService {
         expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year
         referralCount: 0,
         totalRewardsEarned: 0,
-        createdAt: new Date()
+        createdAt: new Date(),
       });
 
       logger.info('[ReferralService] Referral code generated', {
         userId,
         code,
-        referralId: referral._id
+        referralId: referral._id,
       });
 
       return {
         code: referral.code,
         referralLink: this.generateReferralLink(referral.code),
         createdAt: referral.createdAt,
-        expiresAt: referral.expiresAt
+        expiresAt: referral.expiresAt,
       };
     } catch (error) {
       logger.error('[ReferralService] Error generating code', {
         error: error.message,
-        userId
+        userId,
       });
       throw error;
     }
@@ -127,7 +127,7 @@ class ReferralService {
 
       // Check if user already has a referrer
       const existingReferral = await Referral.findOne({
-        referredUser: referredUserId
+        referredUser: referredUserId,
       });
 
       if (existingReferral) {
@@ -147,31 +147,28 @@ class ReferralService {
       await referral.save();
 
       // Update referrer's referral count
-      await User.findByIdAndUpdate(
-        referral.referrer,
-        {
-          $inc: { referralCount: 1 }
-        }
-      );
+      await User.findByIdAndUpdate(referral.referrer, {
+        $inc: { referralCount: 1 },
+      });
 
       logger.info('[ReferralService] Referral code redeemed', {
         code,
         referrer: referral.referrer,
         referredUser: referredUserId,
-        referralId: referral._id
+        referralId: referral._id,
       });
 
       return {
         referralId: referral._id,
         referrerBonusEligible: true,
         refereeBonusEligible: true,
-        bonusTrigger: REFERRAL_REWARDS.BONUS_TRIGGER
+        bonusTrigger: REFERRAL_REWARDS.BONUS_TRIGGER,
       };
     } catch (error) {
       logger.error('[ReferralService] Error redeeming code', {
         error: error.message,
         code,
-        referredUserId
+        referredUserId,
       });
       throw error;
     }
@@ -187,7 +184,7 @@ class ReferralService {
       const referral = await Referral.findOne({
         referredUser: referredUserId,
         redeemed: true,
-        bonusAwarded: false
+        bonusAwarded: false,
       });
 
       if (!referral) {
@@ -199,46 +196,57 @@ class ReferralService {
 
       try {
         // Award referrer bonus
-        const referrerPayment = await Payment.create([{
-          user: referral.referrer,
-          amount: REFERRAL_REWARDS.REFERRER_BONUS,
-          type: 'referral_bonus',
-          status: 'completed',
-          description: `Referral bonus for referring user`,
-          method: 'bonus',
-          metadata: {
-            referralId: referral._id,
-            referredUser: referredUserId,
-            awardedAt: new Date()
-          }
-        }], { session });
+        const referrerPayment = await Payment.create(
+          [
+            {
+              user: referral.referrer,
+              amount: REFERRAL_REWARDS.REFERRER_BONUS,
+              type: 'referral_bonus',
+              status: 'completed',
+              description: `Referral bonus for referring user`,
+              method: 'bonus',
+              metadata: {
+                referralId: referral._id,
+                referredUser: referredUserId,
+                awardedAt: new Date(),
+              },
+            },
+          ],
+          { session }
+        );
 
         // Award referee bonus
-        const refereePayment = await Payment.create([{
-          user: referredUserId,
-          amount: REFERRAL_REWARDS.REFEREE_BONUS,
-          type: 'referral_bonus',
-          status: 'completed',
-          description: `Referral bonus for joining with referral code`,
-          method: 'bonus',
-          metadata: {
-            referralId: referral._id,
-            referrer: referral.referrer,
-            awardedAt: new Date()
-          }
-        }], { session });
+        const refereePayment = await Payment.create(
+          [
+            {
+              user: referredUserId,
+              amount: REFERRAL_REWARDS.REFEREE_BONUS,
+              type: 'referral_bonus',
+              status: 'completed',
+              description: `Referral bonus for joining with referral code`,
+              method: 'bonus',
+              metadata: {
+                referralId: referral._id,
+                referrer: referral.referrer,
+                awardedAt: new Date(),
+              },
+            },
+          ],
+          { session }
+        );
 
         // Update referral record
         referral.bonusAwarded = true;
         referral.bonusAwardedAt = new Date();
-        referral.totalRewardsEarned = REFERRAL_REWARDS.REFERRER_BONUS + REFERRAL_REWARDS.REFEREE_BONUS;
+        referral.totalRewardsEarned =
+          REFERRAL_REWARDS.REFERRER_BONUS + REFERRAL_REWARDS.REFEREE_BONUS;
         await referral.save({ session });
 
         // Update user referral statistics
         await User.findByIdAndUpdate(
           referral.referrer,
           {
-            $inc: { totalReferralBonuses: REFERRAL_REWARDS.REFERRER_BONUS }
+            $inc: { totalReferralBonuses: REFERRAL_REWARDS.REFERRER_BONUS },
           },
           { session }
         );
@@ -246,7 +254,7 @@ class ReferralService {
         await User.findByIdAndUpdate(
           referredUserId,
           {
-            $inc: { totalReferralBonuses: REFERRAL_REWARDS.REFEREE_BONUS }
+            $inc: { totalReferralBonuses: REFERRAL_REWARDS.REFEREE_BONUS },
           },
           { session }
         );
@@ -258,14 +266,14 @@ class ReferralService {
           referrer: referral.referrer,
           referredUser: referredUserId,
           referrerBonus: REFERRAL_REWARDS.REFERRER_BONUS,
-          refereeBonus: REFERRAL_REWARDS.REFEREE_BONUS
+          refereeBonus: REFERRAL_REWARDS.REFEREE_BONUS,
         });
 
         return {
           bonusAwarded: true,
           referrerBonus: REFERRAL_REWARDS.REFERRER_BONUS,
           refereeBonus: REFERRAL_REWARDS.REFEREE_BONUS,
-          message: 'Blonuses awarded successfully'
+          message: 'Blonuses awarded successfully',
         };
       } catch (error) {
         await session.abortTransaction();
@@ -276,7 +284,7 @@ class ReferralService {
     } catch (error) {
       logger.error('[ReferralService] Error awarding bonuses', {
         error: error.message,
-        referredUserId
+        referredUserId,
       });
       throw error;
     }
@@ -298,27 +306,27 @@ class ReferralService {
           activeReferrals: 0,
           completedReferrals: 0,
           totalRewardsEarned: 0,
-          bonusesAwarded: 0
+          bonusesAwarded: 0,
         };
       }
 
       const stats = await Referral.aggregate([
         {
-          $match: { referrer: mongoose.Types.ObjectId(userId) }
+          $match: { referrer: mongoose.Types.ObjectId(userId) },
         },
         {
           $group: {
             _id: '$referrer',
             referralCount: { $sum: 1 },
             activeReferrals: {
-              $sum: { $cond: [{ $eq: ['$redeemed', false] }, 1, 0] }
+              $sum: { $cond: [{ $eq: ['$redeemed', false] }, 1, 0] },
             },
             completedReferrals: {
-              $sum: { $cond: [{ $eq: ['$bonusAwarded', true] }, 1, 0] }
+              $sum: { $cond: [{ $eq: ['$bonusAwarded', true] }, 1, 0] },
             },
-            totalRewardsEarned: { $sum: '$totalRewardsEarned' }
-          }
-        }
+            totalRewardsEarned: { $sum: '$totalRewardsEarned' },
+          },
+        },
       ]);
 
       const data = stats[0] || {};
@@ -331,12 +339,12 @@ class ReferralService {
         completedReferrals: data.completedReferrals || 0,
         totalRewardsEarned: data.totalRewardsEarned || 0,
         createdAt: referral.createdAt,
-        expiresAt: referral.expiresAt
+        expiresAt: referral.expiresAt,
       };
     } catch (error) {
       logger.error('[ReferralService] Error getting referral stats', {
         error: error.message,
-        userId
+        userId,
       });
       throw error;
     }

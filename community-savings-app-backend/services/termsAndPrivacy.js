@@ -13,7 +13,7 @@ const LegalAcceptanceSchema = new mongoose.Schema({
   privacyVersion: String,
   acceptedAt: { type: Date, default: Date.now },
   ipAddress: String,
-  userAgent: String
+  userAgent: String,
 });
 
 const LegalAcceptance = mongoose.model('LegalAcceptance', LegalAcceptanceSchema);
@@ -21,13 +21,13 @@ const LegalAcceptance = mongoose.model('LegalAcceptance', LegalAcceptanceSchema)
 // Document versions
 const CURRENT_VERSIONS = {
   terms: '1.0.0',
-  privacy: '1.0.0'
+  privacy: '1.0.0',
 };
 
 // Last updated dates
 const LAST_UPDATED = {
   terms: new Date('2026-01-15'),
-  privacy: new Date('2026-01-15')
+  privacy: new Date('2026-01-15'),
 };
 
 /**
@@ -167,7 +167,7 @@ Support: support@communitysavings.app
 
 **Last Updated: January 15, 2026**
 **Version: 1.0.0**
-    `
+    `,
   };
 }
 
@@ -512,7 +512,7 @@ This privacy policy is effective as of January 15, 2026.
 **Last Updated: January 15, 2026**
 **Version: 1.0.0**
 **Next Review: January 15, 2027**
-    `
+    `,
   };
 }
 
@@ -540,7 +540,7 @@ async function recordAcceptance(userId, termsVersion, privacyVersion, ipAddress,
       termsVersion,
       privacyVersion,
       ipAddress,
-      userAgent
+      userAgent,
     });
 
     await acceptance.save();
@@ -555,8 +555,7 @@ async function recordAcceptance(userId, termsVersion, privacyVersion, ipAddress,
  */
 async function getAcceptanceStatus(userId) {
   try {
-    const latestAcceptance = await LegalAcceptance.findOne({ userId })
-      .sort({ acceptedAt: -1 });
+    const latestAcceptance = await LegalAcceptance.findOne({ userId }).sort({ acceptedAt: -1 });
 
     const currentTermsVersion = CURRENT_VERSIONS.terms;
     const currentPrivacyVersion = CURRENT_VERSIONS.privacy;
@@ -568,7 +567,7 @@ async function getAcceptanceStatus(userId) {
         acceptedPrivacy: false,
         currentTermsVersion,
         currentPrivacyVersion,
-        acceptedAt: null
+        acceptedAt: null,
       };
     }
 
@@ -583,7 +582,7 @@ async function getAcceptanceStatus(userId) {
       currentPrivacyVersion,
       acceptedAt: latestAcceptance.acceptedAt,
       acceptedTermsVersion: latestAcceptance.termsVersion,
-      acceptedPrivacyVersion: latestAcceptance.privacyVersion
+      acceptedPrivacyVersion: latestAcceptance.privacyVersion,
     };
   } catch (error) {
     throw new Error(`Failed to get acceptance status: ${error.message}`);
@@ -605,9 +604,9 @@ function getChangelog() {
         'Complete Privacy Policy',
         'GDPR and CCPA compliance',
         'Data retention policies',
-        'User rights documentation'
-      ]
-    }
+        'User rights documentation',
+      ],
+    },
   ];
 }
 
@@ -619,5 +618,5 @@ module.exports = {
   recordAcceptance,
   getAcceptanceStatus,
   getChangelog,
-  LegalAcceptance
+  LegalAcceptance,
 };

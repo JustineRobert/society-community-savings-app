@@ -17,17 +17,17 @@
   --dark-gray: #333333;
   --text-light: #b0b0b0;
   --text-lighter: #808080;
-  
+
   --spacing-xs: 0.5rem;
   --spacing-sm: 1rem;
   --spacing-md: 1.5rem;
   --spacing-lg: 2rem;
   --spacing-xl: 3rem;
-  
+
   --radius-md: 8px;
-  
+
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.15);
-  
+
   --transition-standard: 300ms ease-in-out;
 }
 

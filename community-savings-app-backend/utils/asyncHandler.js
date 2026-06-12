@@ -1,46 +1,51 @@
-// community-savings-app-backend/utils/asyncHandler.js
+// middlewares/asyncHandler.js
 
 /**
- * Wraps an Express handler and forwards any error to `next(err)`.
- * Works for both sync and async handlers and prevents unhandled rejections.
+ * asyncHandler - Wraps Express route handlers to catch both sync and async errors
+ * and forward them to the global error handler via `next(err)`.
  *
- * @param {Function} fn - Express handler: (req, res, next) => any|Promise<any>
- * @returns {Function} Wrapped handler that forwards errors to next().
+ * ✅ Prevents unhandled promise rejections
+ * ✅ Works with both sync and async functions
+ * ✅ Adds validation for safer usage
+ * ✅ Improves debugging with named wrappers
+ *
+ * @param {Function} fn - Express handler (req, res, next) => Promise|void
+ * @returns {Function} Wrapped Express middleware
  */
 module.exports = function asyncHandler(fn) {
-  const type = typeof fn;
+  // ✅ Validate input
+  if (typeof fn !== "function") {
+    const name = fn && fn.name ? ` "${fn.name}"` : "";
+    const message = `asyncHandler expects a function, received ${typeof fn}${name}`;
 
-  if (type !== 'function') {
-    const name = fn && fn.name ? ` "${fn.name}"` : '';
-    const msg = `asyncHandler expects a function, received ${type}${name || ''}`;
-    // Instead of crashing the app, log a clear error and return a safe no-op handler
-    console.error(`[AsyncHandler] ${msg}`);
+    console.error(`[AsyncHandler Error] ${message}`);
+
     return function invalidAsyncHandler(req, res, next) {
-      next(new TypeError(msg));
+      return next(new TypeError(message));
     };
   }
 
-  // Name the wrapper for better stack traces in logs
-  const wrapped = function wrappedAsyncHandler(req, res, next) {
-    Promise.resolve()
-      .then(() => fn(req, res, next))
-      .catch((err) => {
-        if (res.headersSent) {
-          return next(err);
-        }
+  // ✅ Wrapper
+  const wrappedHandler = function asyncWrappedHandler(req, res, next) {
+    Promise.resolve(fn(req, res, next)).catch((err) => {
+      // ✅ Prevent duplicate responses
+      if (res.headersSent) {
         return next(err);
-      });
+      }
+
+      return next(err);
+    });
   };
 
-  // Preserve original name to aid diagnostics
+  // ✅ Preserve function name for better debugging
   try {
-    Object.defineProperty(wrapped, 'name', {
-      value: fn.name || 'anonymousHandler',
+    Object.defineProperty(wrappedHandler, "name", {
+      value: fn.name || "anonymousHandler",
       configurable: true,
     });
-  } catch (_) {
+  } catch (err) {
     // ignore if not configurable
   }
 
-  return wrapped;
+  return wrappedHandler;
 };

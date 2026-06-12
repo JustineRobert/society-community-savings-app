@@ -1,64 +1,89 @@
 // middleware/auth.js
 
-const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+"use strict";
 
-const ACCESS_SECRET = process.env.ACCESS_TOKEN_SECRET || process.env.JWT_SECRET;
+const jwt = require("jsonwebtoken");
 
 /**
- * Extract token from headers
+ * Extract Bearer token from Authorization header
  */
-function extractToken(req) {
-  const auth = req.headers.authorization || '';
-  if (auth.startsWith('Bearer ')) return auth.slice(7).trim();
-  const headerToken = req.header('x-auth-token');
-  if (headerToken) return headerToken.trim();
+const extractToken = (req) => {
+  const authHeader = req.headers.authorization || "";
+
+  if (authHeader.startsWith("Bearer ")) {
+    return authHeader.split(" ")[1];
+  }
+
   return null;
-}
+};
 
 /**
- * Verify JWT and attach user
+ * Authenticate user via JWT
  */
-const verifyToken = async (req, res, next) => {
+exports.authenticate = (req, res, next) => {
   const token = extractToken(req);
-  if (!token) return res.status(401).json({ message: 'No token provided' });
+
+  if (!token) {
+    return res.status(401).json({
+      success: false,
+      message: "Unauthorized: No token provided",
+    });
+  }
 
   try {
-    const decoded = jwt.verify(token, ACCESS_SECRET);
-    const userId = decoded?.user?.id || decoded?.sub || decoded?.id;
-    if (!userId) return res.status(401).json({ message: 'Invalid token structure' });
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    const user = await User.findById(userId);
-    if (!user) return res.status(401).json({ message: 'User not found' });
-    if (user.isActive === false) return res.status(403).json({ message: 'User account is inactive' });
-
-    req.user = user;
-    req.auth = decoded;
+    /**
+     * Attach user payload
+     * Expected structure:
+     * {
+     *   id,
+     *   saccoId,
+     *   role,
+     *   ...
+     * }
+     */
+    req.user = decoded;
     req.token = token;
-    next();
+
+    return next();
   } catch (error) {
-    console.error('[Auth Middleware] Token verification failed:', error?.message);
-    return res.status(401).json({ message: 'Token is not valid' });
+    console.error("[Auth] JWT verification failed:", error.message);
+
+    return res.status(401).json({
+      success: false,
+      message: "Invalid or expired token",
+    });
   }
 };
 
-const isAdmin = (req, res, next) => {
-  if (!req.user) return res.status(401).json({ message: 'Not authenticated' });
-  if (req.user.role === 'admin') return next();
-  return res.status(403).json({ message: 'Admin access required' });
-};
+/**
+ * Role-based access control (RBAC)
+ */
+exports.requireRole =
+  (...allowedRoles) =>
+  (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: "Not authenticated",
+      });
+    }
 
-const isGroupAdmin = (req, res, next) => {
-  if (!req.user) return res.status(401).json({ message: 'Not authenticated' });
-  if (req.user.role === 'admin' || req.user.role === 'group_admin') return next();
-  return res.status(403).json({ message: 'Group admin access required' });
-};
+    const userRoles = [req.user.role, ...(req.user.roles || [])].filter(Boolean);
 
-const requireRole = (...allowedRoles) => (req, res, next) => {
-  if (!req.user) return res.status(401).json({ message: 'Not authenticated' });
-  const roles = [req.user.role].concat(req.user.roles || []).map(String);
-  if (allowedRoles.length === 0 || roles.some(r => allowedRoles.includes(r))) return next();
-  return res.status(403).json({ message: 'Insufficient role' });
-};
+    if (allowedRoles.length === 0 || userRoles.some((r) => allowedRoles.includes(r))) {
+      return next();
+    }
 
-module.exports = { verifyToken, isAdmin, isGroupAdmin, requireRole };
+    return res.status(403).json({
+      success: false,
+      message: "Forbidden: Insufficient permissions",
+    });
+  };
+
+/**
+ * Optional helpers (clean aliases)
+ */
+exports.isAdmin = exports.requireRole("admin");
+exports.isGroupAdmin = exports.requireRole("admin", "group_admin");

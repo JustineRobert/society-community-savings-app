@@ -126,13 +126,9 @@ function businessMetricsMiddleware(req, res, next) {
 function trackDatabaseOperation(operationName, fn) {
   const { performance } = getMonitoring();
 
-  return performance.trackAsync(
-    `db_operation_${operationName}`,
-    fn,
-    {
-      operation: operationName,
-    }
-  );
+  return performance.trackAsync(`db_operation_${operationName}`, fn, {
+    operation: operationName,
+  });
 }
 
 /**
@@ -141,13 +137,9 @@ function trackDatabaseOperation(operationName, fn) {
 function trackExternalAPI(apiName, fn) {
   const { performance } = getMonitoring();
 
-  return performance.trackAsync(
-    `external_api_${apiName}`,
-    fn,
-    {
-      api: apiName,
-    }
-  );
+  return performance.trackAsync(`external_api_${apiName}`, fn, {
+    api: apiName,
+  });
 }
 
 /**

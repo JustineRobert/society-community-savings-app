@@ -5,6 +5,7 @@
 ### Option 1: Docker (Recommended)
 
 1. **Start Services**
+
    ```bash
    # Linux/Mac
    ./start-dev.sh
@@ -35,18 +36,19 @@
 
 ## 📊 Services
 
-| Service | URL | Credentials | Purpose |
-|---------|-----|-------------|---------|
-| **MongoDB** | `mongodb://localhost:27017` | `appuser:apppassword123` | Primary database |
-| **Redis** | `redis://localhost:6379` | None | Cache & rate limiting |
-| **Mongo Express** | `http://localhost:8081` | `admin:admin123` | Database UI |
-| **Redis Commander** | `http://localhost:8082` | None | Redis UI |
-| **Backend API** | `http://localhost:5000` | N/A | REST API |
-| **Frontend** | `http://localhost:3000` | N/A | React App |
+| Service             | URL                         | Credentials              | Purpose               |
+| ------------------- | --------------------------- | ------------------------ | --------------------- |
+| **MongoDB**         | `mongodb://localhost:27017` | `appuser:apppassword123` | Primary database      |
+| **Redis**           | `redis://localhost:6379`    | None                     | Cache & rate limiting |
+| **Mongo Express**   | `http://localhost:8081`     | `admin:admin123`         | Database UI           |
+| **Redis Commander** | `http://localhost:8082`     | None                     | Redis UI              |
+| **Backend API**     | `http://localhost:5000`     | N/A                      | REST API              |
+| **Frontend**        | `http://localhost:3000`     | N/A                      | React App             |
 
 ## 🔧 Environment Variables
 
 ### Development (.env)
+
 ```bash
 # Application
 NODE_ENV=development
@@ -68,6 +70,7 @@ JWT_SECRET=your-secret-key
 ```
 
 ### Production (.env.production)
+
 ```bash
 NODE_ENV=production
 MONGO_URI=mongodb+srv://user:pass@atlas-cluster.mongodb.net/db
@@ -101,6 +104,7 @@ docker-compose -f docker-compose.dev.yml down -v
 
 **Issue**: `ECONNREFUSED 127.0.0.1:27017`
 **Solution**:
+
 ```bash
 # Start MongoDB with Docker
 docker-compose -f docker-compose.dev.yml up -d mongodb
@@ -122,6 +126,7 @@ sudo systemctl status mongod      # Linux
 **Impact**: Some features limited until MongoDB connects
 
 **Disable graceful startup**:
+
 ```bash
 GRACEFUL_STARTUP=false npm run dev
 ```
@@ -129,12 +134,14 @@ GRACEFUL_STARTUP=false npm run dev
 ### Database Connection Issues
 
 **Check MongoDB**:
+
 ```bash
 # Test connection
 mongosh "mongodb://appuser:apppassword123@localhost:27017/community-savings"
 ```
 
 **Check Redis**:
+
 ```bash
 # Test connection
 redis-cli ping

@@ -15,11 +15,7 @@ module.exports = {
   roots: ['<rootDir>/'],
 
   // Test file patterns
-  testMatch: [
-    '**/__tests__/**/*.test.js',
-    '**/?(*.)+(spec|test).js',
-    '**/tests/**/*.test.js'
-  ],
+  testMatch: ['**/__tests__/**/*.test.js', '**/?(*.)+(spec|test).js', '**/tests/**/*.test.js'],
 
   // Coverage collection
   collectCoverageFrom: [
@@ -67,31 +63,25 @@ module.exports = {
   // Reporter configuration
   reporters: [
     'default',
-    ['jest-junit', {
-      outputDirectory: './test-reports',
-      outputName: 'junit.xml',
-      classNameTemplate: '{classname}',
-      titleTemplate: '{title}',
-    }],
+    [
+      'jest-junit',
+      {
+        outputDirectory: './test-reports',
+        outputName: 'junit.xml',
+        classNameTemplate: '{classname}',
+        titleTemplate: '{title}',
+      },
+    ],
   ],
 
   // Bail early on first failure in watch mode
   bail: false,
 
   // Ignore patterns
-  testPathIgnorePatterns: [
-    '/node_modules/',
-    '/dist/',
-  ],
+  testPathIgnorePatterns: ['/node_modules/', '/dist/'],
 
   // Coverage reporters
-  coverageReporters: [
-    'text',
-    'text-summary',
-    'html',
-    'lcov',
-    'json',
-  ],
+  coverageReporters: ['text', 'text-summary', 'html', 'lcov', 'json'],
 
   // Timers — disabled to avoid Mongoose warnings
   // (fakeTimers can interfere with MongoDB driver async operations)

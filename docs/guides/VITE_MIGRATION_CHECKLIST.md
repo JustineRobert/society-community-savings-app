@@ -5,6 +5,7 @@
 Use this checklist before deploying to ensure the migration is complete and working.
 
 ### 1. Dependencies
+
 - [ ] Run `npm install` successfully
 - [ ] All dependencies installed without errors
 - [ ] `react-scripts` is NOT in node_modules
@@ -12,9 +13,11 @@ Use this checklist before deploying to ensure the migration is complete and work
 - [ ] `vitest` is in node_modules
 
 ### 2. Development Server
+
 ```bash
 npm start
 ```
+
 - [ ] Dev server starts at http://localhost:3000
 - [ ] No console errors
 - [ ] App loads and renders
@@ -23,6 +26,7 @@ npm start
 - [ ] API calls work (check Network tab if configured)
 
 ### 3. Features Testing
+
 - [ ] Login/Register works
 - [ ] Dashboard displays correctly
 - [ ] Groups page loads
@@ -32,15 +36,18 @@ npm start
 - [ ] Styling (CSS/Tailwind) renders correctly
 
 ### 4. Environment Variables
+
 - [ ] `.env` file exists with `VITE_*` variables
 - [ ] `.env.example` shows new variable names
 - [ ] App accesses variables via `import.meta.env.VITE_*`
 - [ ] API URL configuration works
 
 ### 5. Production Build
+
 ```bash
 npm run build
 ```
+
 - [ ] Build completes without errors
 - [ ] `dist/` directory created
 - [ ] `dist/index.html` exists
@@ -48,36 +55,43 @@ npm run build
 - [ ] Build size is reasonable (< 500KB gzipped for app code)
 
 ### 6. Production Preview
+
 ```bash
 npm run preview
 ```
+
 - [ ] Preview server starts
 - [ ] App renders in production mode
 - [ ] All features work
 - [ ] Logo and favicon display correctly
 
 ### 7. Tests
+
 ```bash
 npm test
 ```
+
 - [ ] Tests run without errors
 - [ ] Test output is clear
 - [ ] No failing tests
 - [ ] Mock setup works correctly
 
 ### 8. Code Review
+
 - [ ] No `process.env.REACT_APP_*` references remain
 - [ ] All env access uses `import.meta.env.VITE_*`
 - [ ] No `react-scripts` imports
 - [ ] No CRA-specific code
 
 ### 9. Configuration Files
+
 - [ ] `vite.config.js` exists and is valid
 - [ ] `vitest.config.js` exists and is valid
 - [ ] `src/main.jsx` exists as entry point
 - [ ] `public/index.html` includes `<script type="module" src="/src/main.jsx"></script>`
 
 ### 10. Assets
+
 - [ ] `public/images/Designer.png` exists
 - [ ] Favicon displays in browser
 - [ ] Logo appears in navbar
@@ -88,6 +102,7 @@ npm test
 ## 📋 Files Modified
 
 ### Created Files ✅
+
 ```
 vite.config.js                           # Vite configuration
 vitest.config.js                         # Vitest configuration
@@ -100,6 +115,7 @@ VITE_MIGRATION_CHECKLIST.md              # This file
 ```
 
 ### Modified Files ✅
+
 ```
 package.json                             # Updated scripts & dependencies
 public/index.html                        # Added favicon & entry script
@@ -109,6 +125,7 @@ src/components/Navbar.jsx                # Added Designer logo
 ```
 
 ### Removed/Not Used ❌
+
 ```
 src/index.js                             # Replaced by src/main.jsx (keep for reference)
 NEVER: react-scripts                     # Completely removed
@@ -122,13 +139,16 @@ NEVER: jest.config.js                    # Replaced by vitest
 If you have CI/CD pipelines, update them:
 
 ### Environment Variables
+
 Replace in CI/CD configuration:
+
 ```
 REACT_APP_API_URL  →  VITE_API_URL
 REACT_APP_*        →  VITE_*
 ```
 
 ### Build Commands
+
 ```bash
 # Old (CRA)
 npm run build      # Created build/ directory
@@ -138,10 +158,13 @@ npm run build      # Creates dist/ directory
 ```
 
 ### Deployment
+
 Update your deployment configuration to serve from `dist/` instead of `build/`
 
 ### Docker
+
 If using Docker, update:
+
 ```dockerfile
 # Build step
 RUN npm run build
@@ -155,12 +178,14 @@ COPY dist /usr/share/nginx/html
 ## 🚀 Deployment Steps
 
 ### For Local Testing
+
 1. Run `npm install`
 2. Run `npm start` (verify works)
 3. Run `npm run build` (verify build succeeds)
 4. Run `npm run preview` (verify production build works)
 
 ### For Production Deployment
+
 1. Merge Vite migration changes
 2. Update CI/CD pipeline if needed
 3. Deploy `dist/` directory instead of `build/`
@@ -169,6 +194,7 @@ COPY dist /usr/share/nginx/html
 6. Verify API calls work correctly
 
 ### Docker Deployment
+
 ```bash
 # Build image
 docker build -t community-savings-app-frontend:vite .
@@ -184,17 +210,20 @@ docker run -p 80:80 community-savings-app-frontend:vite
 After deployment, validate performance improvements:
 
 ### Dev Server
+
 - [ ] Starts in < 3 seconds
 - [ ] HMR updates in < 500ms
 - [ ] No memory leaks over time
 
 ### Production Build
+
 - [ ] Bundle size < 500KB (app code, gzipped)
 - [ ] First contentful paint < 2 seconds
 - [ ] No console errors
 - [ ] All features functional
 
 ### Browser Support
+
 - [ ] Works in latest Chrome/Firefox/Safari/Edge
 - [ ] Responsive on mobile
 - [ ] Favicon displays
@@ -207,24 +236,28 @@ After deployment, validate performance improvements:
 If something doesn't work, check:
 
 ### Development Server Issues
+
 - [ ] Node.js version 16+ installed
 - [ ] Port 3000 not in use
 - [ ] `.env` file exists with correct variables
 - [ ] Run `npm install` again if needed
 
 ### Build Issues
+
 - [ ] All imports use correct paths
 - [ ] No CRA-specific imports
 - [ ] All environment variables start with `VITE_`
 - [ ] Check `vite.config.js` for errors
 
 ### Runtime Issues
+
 - [ ] Check browser console for errors
 - [ ] Verify environment variables set correctly
 - [ ] Check Network tab for failed API calls
 - [ ] Verify all assets (images, CSS) load correctly
 
 ### Test Issues
+
 - [ ] Run `npm install` to ensure vitest installed
 - [ ] Check `src/setupTests.js` is valid
 - [ ] Verify test files use correct imports
@@ -251,6 +284,7 @@ If something doesn't work, check:
 ## 📞 Support
 
 For issues:
+
 1. Check `VITE_MIGRATION_GUIDE.md` for detailed info
 2. Review `VITE_QUICK_REFERENCE.md` for common commands
 3. Check `vite.config.js` and `vitest.config.js` for configuration

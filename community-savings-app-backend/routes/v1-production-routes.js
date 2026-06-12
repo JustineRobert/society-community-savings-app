@@ -1,6 +1,6 @@
 /**
  * COMPLETE API ROUTES - Production Ready
- * 
+ *
  * 1️⃣ LOAN ELIGIBILITY & MANAGEMENT
  * 2️⃣ ADMIN DASHBOARD
  * 3️⃣ CHAT ENHANCEMENT
@@ -39,65 +39,28 @@ router.get(
 );
 
 // Apply for loan
-router.post(
-  '/loans/apply',
-  verifyToken,
-  loanLimiter,
-  loanController.applyForLoan
-);
+router.post('/loans/apply', verifyToken, loanLimiter, loanController.applyForLoan);
 
 // Approve loan (admin/group_admin)
-router.put(
-  '/loans/:loanId/approve',
-  verifyToken,
-  loanLimiter,
-  loanController.approveLoan
-);
+router.put('/loans/:loanId/approve', verifyToken, loanLimiter, loanController.approveLoan);
 
 // Reject loan (admin/group_admin)
-router.put(
-  '/loans/:loanId/reject',
-  verifyToken,
-  loanLimiter,
-  loanController.rejectLoan
-);
+router.put('/loans/:loanId/reject', verifyToken, loanLimiter, loanController.rejectLoan);
 
 // Disburse loan (admin/group_admin)
-router.put(
-  '/loans/:loanId/disburse',
-  verifyToken,
-  loanLimiter,
-  loanController.disburseLoan
-);
+router.put('/loans/:loanId/disburse', verifyToken, loanLimiter, loanController.disburseLoan);
 
 // Record payment
-router.put(
-  '/loans/:loanId/pay',
-  verifyToken,
-  loanLimiter,
-  loanController.repayLoan
-);
+router.put('/loans/:loanId/pay', verifyToken, loanLimiter, loanController.repayLoan);
 
 // Get loan status
-router.get(
-  '/loans/:loanId',
-  verifyToken,
-  loanController.getLoanStatus
-);
+router.get('/loans/:loanId', verifyToken, loanController.getLoanStatus);
 
 // Get user's loans
-router.get(
-  '/loans/user/my-loans',
-  verifyToken,
-  loanController.getUserLoans
-);
+router.get('/loans/user/my-loans', verifyToken, loanController.getUserLoans);
 
 // Get group loans (admin only)
-router.get(
-  '/loans/group/:groupId',
-  verifyToken,
-  loanController.getGroupLoans
-);
+router.get('/loans/group/:groupId', verifyToken, loanController.getGroupLoans);
 
 // ============================================================================
 // 2️⃣ ADMIN DASHBOARD ROUTES
@@ -112,12 +75,7 @@ router.get(
 );
 
 // User management
-router.get(
-  '/admin/users',
-  verifyToken,
-  adminController.requireAdmin,
-  adminController.getUsers
-);
+router.get('/admin/users', verifyToken, adminController.requireAdmin, adminController.getUsers);
 
 // Get user details
 router.get(
@@ -180,112 +138,53 @@ router.get(
 // ============================================================================
 
 // Send message
-router.post(
-  '/chat/:groupId',
-  verifyToken,
-  chatController.sendMessage
-);
+router.post('/chat/:groupId', verifyToken, chatController.sendMessage);
 
 // Get group messages
-router.get(
-  '/chat/:groupId',
-  verifyToken,
-  chatController.getGroupMessages
-);
+router.get('/chat/:groupId', verifyToken, chatController.getGroupMessages);
 
 // Mark message as read
-router.put(
-  '/chat/message/:messageId/read',
-  verifyToken,
-  chatController.markAsRead
-);
+router.put('/chat/message/:messageId/read', verifyToken, chatController.markAsRead);
 
 // Add reaction
-router.post(
-  '/chat/message/:messageId/reaction',
-  verifyToken,
-  chatController.addReaction
-);
+router.post('/chat/message/:messageId/reaction', verifyToken, chatController.addReaction);
 
 // Remove reaction
-router.delete(
-  '/chat/message/:messageId/reaction',
-  verifyToken,
-  chatController.removeReaction
-);
+router.delete('/chat/message/:messageId/reaction', verifyToken, chatController.removeReaction);
 
 // Flag message (moderation)
-router.post(
-  '/chat/message/:messageId/flag',
-  verifyToken,
-  chatController.flagMessage
-);
+router.post('/chat/message/:messageId/flag', verifyToken, chatController.flagMessage);
 
 // Hide message (admin only)
-router.put(
-  '/chat/message/:messageId/hide',
-  verifyToken,
-  chatController.hideMessage
-);
+router.put('/chat/message/:messageId/hide', verifyToken, chatController.hideMessage);
 
 // Get threaded conversation
-router.get(
-  '/chat/thread/:parentMessageId',
-  verifyToken,
-  chatController.getThreadedMessages
-);
+router.get('/chat/thread/:parentMessageId', verifyToken, chatController.getThreadedMessages);
 
 // ============================================================================
 // 4️⃣ REFERRAL SYSTEM ROUTES
 // ============================================================================
 
 // Generate referral code
-router.post(
-  '/referrals/generate',
-  verifyToken,
-  referralController.generateReferralCode
-);
+router.post('/referrals/generate', verifyToken, referralController.generateReferralCode);
 
 // Get my referral code
-router.get(
-  '/referrals/my-code',
-  verifyToken,
-  referralController.getMyReferralCode
-);
+router.get('/referrals/my-code', verifyToken, referralController.getMyReferralCode);
 
 // Use referral code (during signup)
-router.post(
-  '/referrals/use',
-  referralController.useReferralCode
-);
+router.post('/referrals/use', referralController.useReferralCode);
 
 // Get pending referrals
-router.get(
-  '/referrals/pending',
-  verifyToken,
-  referralController.getPendingReferrals
-);
+router.get('/referrals/pending', verifyToken, referralController.getPendingReferrals);
 
 // Get completed referrals
-router.get(
-  '/referrals/completed',
-  verifyToken,
-  referralController.getCompletedReferrals
-);
+router.get('/referrals/completed', verifyToken, referralController.getCompletedReferrals);
 
 // Get referral rewards
-router.get(
-  '/referrals/rewards',
-  verifyToken,
-  referralController.getReferralRewards
-);
+router.get('/referrals/rewards', verifyToken, referralController.getReferralRewards);
 
 // Get referral details
-router.get(
-  '/referrals/:referralId',
-  verifyToken,
-  referralController.getReferralDetails
-);
+router.get('/referrals/:referralId', verifyToken, referralController.getReferralDetails);
 
 // ============================================================================
 // 5️⃣ SECURITY & MONITORING ROUTES

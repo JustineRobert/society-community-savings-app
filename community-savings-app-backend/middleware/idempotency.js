@@ -47,11 +47,7 @@ function getIdempotencyKey(req) {
   if (!key) {
     // Generate from method, path, and body
     const bodyStr = JSON.stringify(req.body || {});
-    const bodyHash = crypto
-      .createHash('sha256')
-      .update(bodyStr)
-      .digest('hex')
-      .substring(0, 16);
+    const bodyHash = crypto.createHash('sha256').update(bodyStr).digest('hex').substring(0, 16);
 
     key = `${req.method}:${req.path}:${bodyHash}`;
   }

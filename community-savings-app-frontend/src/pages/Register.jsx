@@ -1,4 +1,3 @@
-
 // src/pages/Register.jsx
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
@@ -21,17 +20,11 @@ const RegisterSchema = Yup.object().shape({
   email: Yup.string()
     .email('Invalid email address')
     .required('Email is required')
-    .matches(
-      /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-      'Please enter a valid email address'
-    ),
+    .matches(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'Please enter a valid email address'),
 
   phone: Yup.string()
     .optional()
-    .matches(
-      /^\+?[1-9]\d{1,14}$/,
-      'Phone number must be in E.164 format (e.g., +256772123546)'
-    ),
+    .matches(/^\+?[1-9]\d{1,14}$/, 'Phone number must be in E.164 format (e.g., +256772123546)'),
 
   password: Yup.string()
     .min(8, 'Password must be at least 8 characters')
@@ -86,9 +79,7 @@ const Register = () => {
       navigate('/dashboard');
     } catch (err) {
       const message =
-        err?.response?.data?.message ||
-        err?.message ||
-        'Registration failed. Please try again.';
+        err?.response?.data?.message || err?.message || 'Registration failed. Please try again.';
       toast.error(message);
       console.error('Registration error:', err);
     } finally {
@@ -352,10 +343,7 @@ const Register = () => {
                   {/* Terms Agreement */}
                   <div className="form-group">
                     <label className="checkbox-label">
-                      <Field
-                        type="checkbox"
-                        name="agreeTerms"
-                      />
+                      <Field type="checkbox" name="agreeTerms" />
                       <span>
                         I agree to the{' '}
                         <button
@@ -384,11 +372,7 @@ const Register = () => {
                   </div>
 
                   {/* Submit Button */}
-                  <button
-                    type="submit"
-                    disabled={loading || isSubmitting}
-                    className="submit-btn"
-                  >
+                  <button type="submit" disabled={loading || isSubmitting} className="submit-btn">
                     {loading ? (
                       <span className="btn-loading">
                         <span className="spinner"></span>

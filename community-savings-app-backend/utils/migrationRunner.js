@@ -6,7 +6,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const mongoose = require('mongoose');
+// const mongoose = require('mongoose');
 const logger = require('./logger');
 const Migration = require('../models/Migration');
 
@@ -26,7 +26,8 @@ class MigrationRunner {
         return [];
       }
 
-      const files = fs.readdirSync(this.migrationsDir)
+      const files = fs
+        .readdirSync(this.migrationsDir)
         .filter((f) => f.endsWith('.js') && !f.startsWith('.'))
         .sort();
 
@@ -92,7 +93,9 @@ class MigrationRunner {
       }
 
       // Assign batch number
-      const nextBatch = batch || ((await Migration.findOne({}, { batch: 1 }).sort({ batch: -1 }).lean())?.batch || 0) + 1;
+      const nextBatch =
+        batch ||
+        ((await Migration.findOne({}, { batch: 1 }).sort({ batch: -1 }).lean())?.batch || 0) + 1;
 
       const results = [];
       for (const migration of pending) {
@@ -214,7 +217,9 @@ class MigrationRunner {
         return { success: true, rolledBack: 0 };
       }
 
-      logger.info(`[MigrationRunner] Found ${migrationsToRollback.length} migration(s) to rollback in batch ${targetBatch}`);
+      logger.info(
+        `[MigrationRunner] Found ${migrationsToRollback.length} migration(s) to rollback in batch ${targetBatch}`
+      );
 
       if (dryRun) {
         logger.info('[MigrationRunner] DRY RUN MODE - No changes will be made');
@@ -252,7 +257,9 @@ class MigrationRunner {
       const migrationModule = require(migration.path);
 
       if (!migrationModule.down || typeof migrationModule.down !== 'function') {
-        throw new Error(`Migration ${migration.version} must export a 'down' function for rollback`);
+        throw new Error(
+          `Migration ${migration.version} must export a 'down' function for rollback`
+        );
       }
 
       logger.info(`[MigrationRunner] Rolling back migration: ${migration.version}`);

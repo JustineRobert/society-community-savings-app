@@ -1,4 +1,3 @@
-
 // routes/referrals.js
 
 const express = require('express');
@@ -12,10 +11,7 @@ const { handleValidation } = require('../utils/validators');
 const { verifyToken } = require('../middleware/auth');
 
 // Controllers
-const {
-  createReferral,
-  getUserReferrals
-} = require('../controllers/referralController');
+const { createReferral, getUserReferrals } = require('../controllers/referralController');
 
 /**
  * @route   POST /api/referrals

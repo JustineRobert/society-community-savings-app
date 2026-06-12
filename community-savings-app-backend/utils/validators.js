@@ -1,4 +1,3 @@
-
 // utils/validators.js
 // ============================================================================
 // Centralized express-validator rules and middleware for Community Savings App.
@@ -7,7 +6,7 @@
 // - Avoids circular dependencies and keeps controllers clean.
 // ============================================================================
 
-const { body, param, query, validationResult } = require('express-validator');
+const { body, query, validationResult } = require('express-validator');
 
 const MAX_NAME_LEN = 100;
 const MAX_GROUP_NAME_LEN = 100;
@@ -43,34 +42,39 @@ const validationRules = {
     body('name')
       .trim()
       .escape()
-      .notEmpty().withMessage('Name is required')
-      .isLength({ min: 2 }).withMessage('Name must be at least 2 characters')
-      .isLength({ max: MAX_NAME_LEN }).withMessage(`Name must not exceed ${MAX_NAME_LEN} characters`)
-      .matches(/^[a-zA-Z\s'-]+$/).withMessage('Name can only contain letters, spaces, hyphens, and apostrophes'),
+      .notEmpty()
+      .withMessage('Name is required')
+      .isLength({ min: 2 })
+      .withMessage('Name must be at least 2 characters')
+      .isLength({ max: MAX_NAME_LEN })
+      .withMessage(`Name must not exceed ${MAX_NAME_LEN} characters`)
+      .matches(/^[a-zA-Z\s'-]+$/)
+      .withMessage('Name can only contain letters, spaces, hyphens, and apostrophes'),
 
     body('email')
       .trim()
       .toLowerCase()
-      .isEmail().withMessage('Please provide a valid email')
+      .isEmail()
+      .withMessage('Please provide a valid email')
       .normalizeEmail(),
 
     body('password')
-      .isLength({ min: MIN_PASSWORD_LEN }).withMessage(`Password must be at least ${MIN_PASSWORD_LEN} characters`)
-      .isLength({ max: 128 }).withMessage('Password must not exceed 128 characters')
-      .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/).withMessage(
+      .isLength({ min: MIN_PASSWORD_LEN })
+      .withMessage(`Password must be at least ${MIN_PASSWORD_LEN} characters`)
+      .isLength({ max: 128 })
+      .withMessage('Password must not exceed 128 characters')
+      .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+      .withMessage(
         'Password must contain at least one uppercase letter, one lowercase letter, and one number'
       )
-      .matches(/^(?!.*[\s])/).withMessage('Password must not contain spaces'),
+      .matches(/^(?!.*[\s])/)
+      .withMessage('Password must not contain spaces'),
   ],
 
   login: [
-    body('email')
-      .trim()
-      .toLowerCase()
-      .isEmail().withMessage('Please provide a valid email'),
+    body('email').trim().toLowerCase().isEmail().withMessage('Please provide a valid email'),
 
-    body('password')
-      .notEmpty().withMessage('Password is required'),
+    body('password').notEmpty().withMessage('Password is required'),
   ],
 
   // ------------------------
@@ -79,14 +83,18 @@ const validationRules = {
   createGroup: [
     body('name')
       .trim()
-      .notEmpty().withMessage('Group name is required')
-      .isLength({ min: 3 }).withMessage('Group name must be at least 3 characters')
-      .isLength({ max: MAX_GROUP_NAME_LEN }).withMessage(`Group name must not exceed ${MAX_GROUP_NAME_LEN} characters`),
+      .notEmpty()
+      .withMessage('Group name is required')
+      .isLength({ min: 3 })
+      .withMessage('Group name must be at least 3 characters')
+      .isLength({ max: MAX_GROUP_NAME_LEN })
+      .withMessage(`Group name must not exceed ${MAX_GROUP_NAME_LEN} characters`),
 
     body('description')
       .optional()
       .trim()
-      .isLength({ max: MAX_GROUP_DESC_LEN }).withMessage(`Description must not exceed ${MAX_GROUP_DESC_LEN} characters`),
+      .isLength({ max: MAX_GROUP_DESC_LEN })
+      .withMessage(`Description must not exceed ${MAX_GROUP_DESC_LEN} characters`),
   ],
 
   // ------------------------
@@ -94,24 +102,27 @@ const validationRules = {
   // ------------------------
   addContribution: [
     body('groupId')
-      .notEmpty().withMessage('Group ID is required')
-      .isMongoId().withMessage('Invalid group ID'),
+      .notEmpty()
+      .withMessage('Group ID is required')
+      .isMongoId()
+      .withMessage('Invalid group ID'),
 
     body('amount')
-      .notEmpty().withMessage('Amount is required')
-      .isFloat({ gt: 0 }).withMessage('Amount must be greater than 0')
+      .notEmpty()
+      .withMessage('Amount is required')
+      .isFloat({ gt: 0 })
+      .withMessage('Amount must be greater than 0')
       .toFloat(),
 
     body('note')
       .optional()
-      .isString().withMessage('Note must be a string')
+      .isString()
+      .withMessage('Note must be a string')
       .trim()
-      .isLength({ max: 1000 }).withMessage('Note must not exceed 1000 characters'),
+      .isLength({ max: 1000 })
+      .withMessage('Note must not exceed 1000 characters'),
 
-    body('date')
-      .optional()
-      .isISO8601().withMessage('Invalid date format')
-      .toDate(),
+    body('date').optional().isISO8601().withMessage('Invalid date format').toDate(),
   ],
 
   // ------------------------
@@ -119,23 +130,31 @@ const validationRules = {
   // ------------------------
   createLoan: [
     body('groupId')
-      .notEmpty().withMessage('Group ID is required')
-      .isMongoId().withMessage('Invalid group ID'),
+      .notEmpty()
+      .withMessage('Group ID is required')
+      .isMongoId()
+      .withMessage('Invalid group ID'),
 
     body('amount')
-      .notEmpty().withMessage('Amount is required')
-      .isFloat({ gt: 0 }).withMessage('Amount must be greater than 0')
+      .notEmpty()
+      .withMessage('Amount is required')
+      .isFloat({ gt: 0 })
+      .withMessage('Amount must be greater than 0')
       .toFloat(),
 
     body('dueDate')
-      .notEmpty().withMessage('Due date is required')
-      .isISO8601().withMessage('Invalid date format')
+      .notEmpty()
+      .withMessage('Due date is required')
+      .isISO8601()
+      .withMessage('Invalid date format')
       .toDate(),
 
     body('reason')
       .trim()
-      .notEmpty().withMessage('Loan reason is required')
-      .isLength({ max: MAX_REASON_LEN }).withMessage(`Reason must not exceed ${MAX_REASON_LEN} characters`),
+      .notEmpty()
+      .withMessage('Loan reason is required')
+      .isLength({ max: MAX_REASON_LEN })
+      .withMessage(`Reason must not exceed ${MAX_REASON_LEN} characters`),
   ],
 
   // ------------------------
@@ -145,23 +164,28 @@ const validationRules = {
     body('name')
       .optional()
       .trim()
-      .isLength({ min: 2 }).withMessage('Name must be at least 2 characters')
-      .isLength({ max: MAX_NAME_LEN }).withMessage(`Name must not exceed ${MAX_NAME_LEN} characters`),
+      .isLength({ min: 2 })
+      .withMessage('Name must be at least 2 characters')
+      .isLength({ max: MAX_NAME_LEN })
+      .withMessage(`Name must not exceed ${MAX_NAME_LEN} characters`),
 
     body('phone')
       .optional()
       .trim()
-      .isMobilePhone().withMessage('Please provide a valid phone number'),
+      .isMobilePhone()
+      .withMessage('Please provide a valid phone number'),
 
     body('profile.occupation')
       .optional()
       .trim()
-      .isLength({ max: 100 }).withMessage('Occupation must not exceed 100 characters'),
+      .isLength({ max: 100 })
+      .withMessage('Occupation must not exceed 100 characters'),
 
     body('profile.city')
       .optional()
       .trim()
-      .isLength({ max: 100 }).withMessage('City must not exceed 100 characters'),
+      .isLength({ max: 100 })
+      .withMessage('City must not exceed 100 characters'),
   ],
 };
 
@@ -197,7 +221,7 @@ const handleValidation = handleValidationErrors;
 const isValidMongoId = (id) => /^[0-9a-fA-F]{24}$/.test(String(id));
 
 const isValidEmail = (email) => {
-  const emailRegex = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,})+$/;
+  const emailRegex = /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,})+$/;
   return emailRegex.test(String(email));
 };
 

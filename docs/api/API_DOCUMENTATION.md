@@ -1,12 +1,15 @@
 # API Documentation
 
 ## Base URL
+
 ```
 http://localhost:5000/api
 ```
 
 ## Authentication
+
 All protected endpoints require the token in the request header:
+
 ```
 x-auth-token: <jwt-token>
 ```
@@ -16,6 +19,7 @@ x-auth-token: <jwt-token>
 ## Auth Endpoints
 
 ### Register New User
+
 ```
 POST /auth/register
 Content-Type: application/json
@@ -56,6 +60,7 @@ Validation Errors (400):
 ```
 
 ### Login
+
 ```
 POST /auth/login
 Content-Type: application/json
@@ -85,6 +90,7 @@ Error (401):
 ```
 
 ### Get Current User
+
 ```
 GET /auth/me
 x-auth-token: <token>
@@ -115,6 +121,7 @@ Error (401):
 ```
 
 ### Refresh Access Token
+
 ```
 POST /auth/refresh
 Cookie: refreshToken=<refresh_token>
@@ -137,6 +144,7 @@ Error (403):
 ```
 
 ### Logout
+
 ```
 POST /auth/logout
 
@@ -151,6 +159,7 @@ Response (200):
 ## Group Endpoints
 
 ### Create Group
+
 ```
 POST /groups
 x-auth-token: <token>
@@ -178,6 +187,7 @@ Response (201):
 ```
 
 ### List User's Groups
+
 ```
 GET /groups?page=1&limit=10
 x-auth-token: <token>
@@ -209,6 +219,7 @@ Response (200):
 ```
 
 ### Get Group Details
+
 ```
 GET /groups/:groupId
 x-auth-token: <token>
@@ -248,6 +259,7 @@ Error (404):
 ```
 
 ### Join Group
+
 ```
 POST /groups/:groupId/join
 x-auth-token: <token>
@@ -265,6 +277,7 @@ Error (400):
 ```
 
 ### Leave Group
+
 ```
 POST /groups/:groupId/leave
 x-auth-token: <token>
@@ -286,6 +299,7 @@ Error (403):
 ## Contribution Endpoints
 
 ### Add Contribution
+
 ```
 POST /contributions
 x-auth-token: <token>
@@ -316,6 +330,7 @@ Error (403):
 ```
 
 ### Get Group Contributions
+
 ```
 GET /contributions/group/:groupId?page=1&limit=20
 x-auth-token: <token>
@@ -346,6 +361,7 @@ Response (200):
 ```
 
 ### Get User Contributions
+
 ```
 GET /contributions/user?page=1&limit=20
 x-auth-token: <token>
@@ -370,6 +386,7 @@ Response (200):
 ```
 
 ### Get Group Statistics
+
 ```
 GET /contributions/group/:groupId/stats
 x-auth-token: <token>
@@ -391,7 +408,9 @@ Response (200):
 ## Error Responses
 
 ### Format
+
 All errors follow this format:
+
 ```json
 {
   "errorId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
@@ -401,23 +420,26 @@ All errors follow this format:
 ```
 
 ### Common Error Codes
-| Code | Meaning | Solution |
-|------|---------|----------|
-| 400 | Validation failed | Check request data format |
-| 401 | Unauthorized | Add x-auth-token header |
-| 403 | Forbidden | User doesn't have permission |
-| 404 | Not found | Check resource ID |
-| 500 | Server error | Check errorId for logs |
+
+| Code | Meaning           | Solution                     |
+| ---- | ----------------- | ---------------------------- |
+| 400  | Validation failed | Check request data format    |
+| 401  | Unauthorized      | Add x-auth-token header      |
+| 403  | Forbidden         | User doesn't have permission |
+| 404  | Not found         | Check resource ID            |
+| 500  | Server error      | Check errorId for logs       |
 
 ---
 
 ## Rate Limiting
+
 - **Global**: 100 requests per 15 minutes per IP
 - **Response Header**: `X-RateLimit-Remaining`
 
 ---
 
 ## Token Expiry
+
 - **Access Token**: 15 minutes
 - **Refresh Token**: 7 days
 
@@ -428,20 +450,24 @@ When access token expires, use the refresh endpoint to get a new one.
 ## Validation Rules
 
 ### Password
+
 - Minimum 8 characters
 - At least 1 uppercase letter
 - At least 1 lowercase letter
 - At least 1 number
 
 ### Email
+
 - Valid email format
 - Unique in system
 
 ### Amount
+
 - Greater than 0
 - Numeric value
 
 ### Group Name
+
 - 3-100 characters
 - Unique in system
 
@@ -450,6 +476,7 @@ When access token expires, use the refresh endpoint to get a new one.
 ## Testing with cURL
 
 ### Register
+
 ```bash
 curl -X POST http://localhost:5000/api/auth/register \
   -H "Content-Type: application/json" \
@@ -462,6 +489,7 @@ curl -X POST http://localhost:5000/api/auth/register \
 ```
 
 ### Login
+
 ```bash
 curl -X POST http://localhost:5000/api/auth/login \
   -H "Content-Type: application/json" \
@@ -473,6 +501,7 @@ curl -X POST http://localhost:5000/api/auth/login \
 ```
 
 ### Get Current User
+
 ```bash
 TOKEN="<token_from_login>"
 curl -X GET http://localhost:5000/api/auth/me \
@@ -480,6 +509,7 @@ curl -X GET http://localhost:5000/api/auth/me \
 ```
 
 ### Create Group
+
 ```bash
 TOKEN="<token>"
 curl -X POST http://localhost:5000/api/groups \

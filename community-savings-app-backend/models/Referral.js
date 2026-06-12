@@ -1,6 +1,6 @@
 /**
  * Referral Model - ENHANCED
- * 
+ *
  * Tracks referrals with rewards, anti-abuse measures, and fraud detection
  */
 

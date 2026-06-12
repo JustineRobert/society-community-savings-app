@@ -42,7 +42,9 @@ const GroupDetails = () => {
         return;
       }
       const api = (await import('../services/api')).default;
-      const response = await api.post(`/api/groups/${groupId}/contribute`, { amount: contributionAmount });
+      const response = await api.post(`/api/groups/${groupId}/contribute`, {
+        amount: contributionAmount,
+      });
       const updatedGroup = response?.data?.data || response?.data || response;
       setGroup(updatedGroup);
       setContributionAmount('');

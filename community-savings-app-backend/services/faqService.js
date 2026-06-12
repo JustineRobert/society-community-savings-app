@@ -20,7 +20,7 @@ const FAQSchema = new mongoose.Schema({
   order: { type: Number, default: 0 },
   relatedFAQs: [String], // questions of related FAQs
   createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
+  updatedAt: { type: Date, default: Date.now },
 });
 
 // FAQ Category Schema
@@ -30,7 +30,7 @@ const FAQCategorySchema = new mongoose.Schema({
   description: String,
   icon: String,
   order: { type: Number, default: 0 },
-  faqCount: { type: Number, default: 0 }
+  faqCount: { type: Number, default: 0 },
 });
 
 // FAQ Feedback Schema
@@ -39,7 +39,7 @@ const FAQFeedbackSchema = new mongoose.Schema({
   userId: mongoose.Schema.Types.ObjectId,
   helpful: Boolean,
   comment: String,
-  createdAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now },
 });
 
 const FAQ = mongoose.model('FAQ', FAQSchema);
@@ -63,8 +63,7 @@ async function getAllCategories() {
  */
 async function getFAQsByCategory(categorySlug) {
   try {
-    const faqs = await FAQ.find({ category: categorySlug })
-      .sort({ featured: -1, order: 1 });
+    const faqs = await FAQ.find({ category: categorySlug }).sort({ featured: -1, order: 1 });
     return faqs;
   } catch (error) {
     throw new Error(`Failed to retrieve FAQs: ${error.message}`);
@@ -93,9 +92,11 @@ async function searchFAQs(query) {
         { question: { $regex: query, $options: 'i' } },
         { answer: { $regex: query, $options: 'i' } },
         { keywords: { $regex: query, $options: 'i' } },
-        { tags: { $regex: query, $options: 'i' } }
-      ]
-    }).limit(20).sort({ views: -1 });
+        { tags: { $regex: query, $options: 'i' } },
+      ],
+    })
+      .limit(20)
+      .sort({ views: -1 });
     return faqs;
   } catch (error) {
     throw new Error(`FAQ search failed: ${error.message}`);
@@ -107,9 +108,7 @@ async function searchFAQs(query) {
  */
 async function getFeaturedFAQs(limit = 10) {
   try {
-    const faqs = await FAQ.find({ featured: true })
-      .limit(limit)
-      .sort({ order: 1 });
+    const faqs = await FAQ.find({ featured: true }).limit(limit).sort({ order: 1 });
     return faqs;
   } catch (error) {
     throw new Error(`Failed to retrieve featured FAQs: ${error.message}`);
@@ -121,9 +120,7 @@ async function getFeaturedFAQs(limit = 10) {
  */
 async function getMostViewedFAQs(limit = 10) {
   try {
-    const faqs = await FAQ.find()
-      .sort({ views: -1 })
-      .limit(limit);
+    const faqs = await FAQ.find().sort({ views: -1 }).limit(limit);
     return faqs;
   } catch (error) {
     throw new Error(`Failed to retrieve popular FAQs: ${error.message}`);
@@ -139,7 +136,7 @@ async function recordFeedback(faqId, userId, helpful, comment) {
       faqId,
       userId,
       helpful,
-      comment
+      comment,
     });
 
     await feedback.save();
@@ -179,7 +176,7 @@ async function getRelatedFAQs(faqId) {
     }
 
     const related = await FAQ.find({
-      _id: { $in: faq.relatedFAQs }
+      _id: { $in: faq.relatedFAQs },
     });
     return related;
   } catch (error) {
@@ -200,12 +197,36 @@ async function seedInitialData() {
 
     // Create FAQ categories
     const categories = [
-      { name: 'Account & Security', slug: 'account-security', description: 'Account and security FAQs', icon: 'shield', order: 1 },
-      { name: 'Groups', slug: 'groups', description: 'Savings groups FAQs', icon: 'users', order: 2 },
-      { name: 'Contributions', slug: 'contributions', description: 'Contribution FAQs', icon: 'wallet', order: 3 },
+      {
+        name: 'Account & Security',
+        slug: 'account-security',
+        description: 'Account and security FAQs',
+        icon: 'shield',
+        order: 1,
+      },
+      {
+        name: 'Groups',
+        slug: 'groups',
+        description: 'Savings groups FAQs',
+        icon: 'users',
+        order: 2,
+      },
+      {
+        name: 'Contributions',
+        slug: 'contributions',
+        description: 'Contribution FAQs',
+        icon: 'wallet',
+        order: 3,
+      },
       { name: 'Loans', slug: 'loans', description: 'Loan FAQs', icon: 'money-bill', order: 4 },
-      { name: 'Payments', slug: 'payments', description: 'Payment FAQs', icon: 'credit-card', order: 5 },
-      { name: 'General', slug: 'general', description: 'General FAQs', icon: 'question', order: 6 }
+      {
+        name: 'Payments',
+        slug: 'payments',
+        description: 'Payment FAQs',
+        icon: 'credit-card',
+        order: 5,
+      },
+      { name: 'General', slug: 'general', description: 'General FAQs', icon: 'question', order: 6 },
     ];
 
     await FAQCategory.insertMany(categories);
@@ -214,76 +235,84 @@ async function seedInitialData() {
     const faqs = [
       {
         question: 'What is Community Savings App?',
-        answer: 'Community Savings App is a mobile platform that enables communities to save money together, manage group finances, and access microloans. It facilitates peer-to-peer lending and group savings management.',
+        answer:
+          'Community Savings App is a mobile platform that enables communities to save money together, manage group finances, and access microloans. It facilitates peer-to-peer lending and group savings management.',
         category: 'general',
         tags: ['about', 'app'],
         keywords: ['what', 'community', 'savings'],
         featured: true,
-        order: 1
+        order: 1,
       },
       {
         question: 'How do I create an account?',
-        answer: 'Download the app, click "Sign Up", enter your email, create a password, and verify your phone number. Fill in your profile information and you\'re ready to start.',
+        answer:
+          'Download the app, click "Sign Up", enter your email, create a password, and verify your phone number. Fill in your profile information and you\'re ready to start.',
         category: 'account-security',
         tags: ['signup', 'account'],
         keywords: ['create', 'account', 'register'],
         featured: true,
-        order: 1
+        order: 1,
       },
       {
         question: 'Is my information secure?',
-        answer: 'Yes, we use industry-standard encryption (TLS 1.2+), secure servers, and comply with GDPR and Kenya Data Protection Act. Your data is protected with multiple security layers.',
+        answer:
+          'Yes, we use industry-standard encryption (TLS 1.2+), secure servers, and comply with GDPR and Kenya Data Protection Act. Your data is protected with multiple security layers.',
         category: 'account-security',
         tags: ['security', 'privacy'],
         keywords: ['secure', 'safe', 'encryption'],
         featured: true,
-        order: 2
+        order: 2,
       },
       {
         question: 'How do savings groups work?',
-        answer: 'Groups are communities of 3-50 members who save together. Members contribute regularly, funds are pooled, and members can borrow from the group pool. Each group sets its own rules and contribution amounts.',
+        answer:
+          'Groups are communities of 3-50 members who save together. Members contribute regularly, funds are pooled, and members can borrow from the group pool. Each group sets its own rules and contribution amounts.',
         category: 'groups',
         tags: ['groups', 'how-it-works'],
         keywords: ['group', 'savings', 'community'],
         featured: true,
-        order: 1
+        order: 1,
       },
       {
         question: 'What payment methods do you accept?',
-        answer: 'We accept M-Pesa, Stripe (card payments), MTN MoMo, and Airtel Money. Choose your preferred method during checkout.',
+        answer:
+          'We accept M-Pesa, Stripe (card payments), MTN MoMo, and Airtel Money. Choose your preferred method during checkout.',
         category: 'payments',
         tags: ['payments', 'methods'],
         keywords: ['payment', 'mpesa', 'card'],
         featured: true,
-        order: 1
+        order: 1,
       },
       {
         question: 'Can I get a loan?',
-        answer: 'Yes! Once you\'re part of an active savings group, you can request loans. Loan approval depends on your contribution history and group consensus. Loans range from KES 1,000 to KES 1,000,000.',
+        answer:
+          "Yes! Once you're part of an active savings group, you can request loans. Loan approval depends on your contribution history and group consensus. Loans range from KES 1,000 to KES 1,000,000.",
         category: 'loans',
         tags: ['loans', 'borrowing'],
         keywords: ['loan', 'borrow', 'request'],
         featured: true,
-        order: 1
+        order: 1,
       },
       {
         question: 'What are transaction fees?',
-        answer: 'Contribution and withdrawal fees vary by group: standard is 1% per transaction. Premium groups may have lower fees. Loan processing fee is 5% of loan amount.',
+        answer:
+          'Contribution and withdrawal fees vary by group: standard is 1% per transaction. Premium groups may have lower fees. Loan processing fee is 5% of loan amount.',
         category: 'payments',
         tags: ['fees', 'costs'],
         keywords: ['fee', 'charge', 'cost'],
         featured: false,
-        order: 2
+        order: 2,
       },
       {
         question: 'How are loan repayments scheduled?',
-        answer: 'Repayment schedules are customized per loan. Typically 3-24 monthly payments. Late payments accrue penalties of 2% per month. Groups can grant extensions by consensus.',
+        answer:
+          'Repayment schedules are customized per loan. Typically 3-24 monthly payments. Late payments accrue penalties of 2% per month. Groups can grant extensions by consensus.',
         category: 'loans',
         tags: ['repayment', 'schedule'],
         keywords: ['repay', 'schedule', 'payment'],
         featured: false,
-        order: 2
-      }
+        order: 2,
+      },
     ];
 
     await FAQ.insertMany(faqs);
@@ -291,7 +320,7 @@ async function seedInitialData() {
     return {
       message: 'FAQ system initialized successfully',
       categoriesCreated: categories.length,
-      faqsCreated: faqs.length
+      faqsCreated: faqs.length,
     };
   } catch (error) {
     throw new Error(`Failed to seed FAQ data: ${error.message}`);
@@ -311,5 +340,5 @@ module.exports = {
   seedInitialData,
   FAQ,
   FAQCategory,
-  FAQFeedback
+  FAQFeedback,
 };

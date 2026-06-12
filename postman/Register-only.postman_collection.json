@@ -27,7 +27,7 @@
           "protocol": "http",
           "host": ["localhost"],
           "port": "5000",
-          "path": ["api","auth","register"]
+          "path": ["api", "auth", "register"]
         }
       },
       "response": []

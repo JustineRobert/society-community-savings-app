@@ -13,7 +13,7 @@ describe('TokenBucketLimiter', () => {
     mockRedisClient = {
       get: jest.fn(),
       setex: jest.fn().mockResolvedValue('OK'),
-      del: jest.fn()
+      del: jest.fn(),
     };
 
     limiter = new TokenBucketLimiter(mockRedisClient);
@@ -21,11 +21,13 @@ describe('TokenBucketLimiter', () => {
 
   describe('allow', () => {
     it('should allow request when tokens available', async () => {
-      mockRedisClient.get.mockResolvedValue(JSON.stringify({
-        tokens: 100,
-        lastRefill: Date.now() - 1000,
-        resetAt: Date.now() + 59000
-      }));
+      mockRedisClient.get.mockResolvedValue(
+        JSON.stringify({
+          tokens: 100,
+          lastRefill: Date.now() - 1000,
+          resetAt: Date.now() + 59000,
+        })
+      );
 
       const result = await limiter.allow('user:123', 1, 60);
 
@@ -35,11 +37,13 @@ describe('TokenBucketLimiter', () => {
     });
 
     it('should deny request when tokens exhausted', async () => {
-      mockRedisClient.get.mockResolvedValue(JSON.stringify({
-        tokens: 0,
-        lastRefill: Date.now(),
-        resetAt: Date.now() + 60000
-      }));
+      mockRedisClient.get.mockResolvedValue(
+        JSON.stringify({
+          tokens: 0,
+          lastRefill: Date.now(),
+          resetAt: Date.now() + 60000,
+        })
+      );
 
       const result = await limiter.allow('user:456', 1, 60);
 
@@ -49,11 +53,13 @@ describe('TokenBucketLimiter', () => {
 
     it('should refill tokens over time', async () => {
       const now = Date.now();
-      mockRedisClient.get.mockResolvedValue(JSON.stringify({
-        tokens: 30,
-        lastRefill: now - 30000, // 30 seconds ago
-        resetAt: now + 30000
-      }));
+      mockRedisClient.get.mockResolvedValue(
+        JSON.stringify({
+          tokens: 30,
+          lastRefill: now - 30000, // 30 seconds ago
+          resetAt: now + 30000,
+        })
+      );
 
       const result = await limiter.allow('user:789', 1, 60);
 
@@ -82,7 +88,7 @@ describe('TokenBucketLimiter', () => {
       const userBucket = {
         tokens: 5,
         lastRefill: Date.now(),
-        resetAt: Date.now() + 60000
+        resetAt: Date.now() + 60000,
       };
 
       mockRedisClient.get.mockResolvedValue(JSON.stringify(userBucket));
@@ -90,30 +96,34 @@ describe('TokenBucketLimiter', () => {
       const result1 = await limiter.allow('user:strict', 1, 60);
       expect(result1.allowed).toBe(true);
 
-      mockRedisClient.get.mockResolvedValue(JSON.stringify({
-        tokens: 0,
-        lastRefill: Date.now(),
-        resetAt: Date.now() + 60000
-      }));
+      mockRedisClient.get.mockResolvedValue(
+        JSON.stringify({
+          tokens: 0,
+          lastRefill: Date.now(),
+          resetAt: Date.now() + 60000,
+        })
+      );
 
       const result2 = await limiter.allow('user:strict', 1, 60);
       expect(result2.allowed).toBe(false);
     });
 
     it('should handle multiple concurrent requests', async () => {
-      mockRedisClient.get.mockResolvedValue(JSON.stringify({
-        tokens: 100,
-        lastRefill: Date.now(),
-        resetAt: Date.now() + 60000
-      }));
-
-      const requests = Array(5).fill(null).map((_, i) => 
-        limiter.allow(`user:concurrent:${i}`, 1, 60)
+      mockRedisClient.get.mockResolvedValue(
+        JSON.stringify({
+          tokens: 100,
+          lastRefill: Date.now(),
+          resetAt: Date.now() + 60000,
+        })
       );
+
+      const requests = Array(5)
+        .fill(null)
+        .map((_, i) => limiter.allow(`user:concurrent:${i}`, 1, 60));
 
       const results = await Promise.all(requests);
 
-      results.forEach(result => {
+      results.forEach((result) => {
         expect(result.allowed).toBe(true);
       });
     });
@@ -124,7 +134,7 @@ describe('TokenBucketLimiter', () => {
       const bucket = {
         tokens: 50,
         lastRefill: Date.now(),
-        resetAt: Date.now() + 60000
+        resetAt: Date.now() + 60000,
       };
 
       mockRedisClient.get.mockResolvedValue(JSON.stringify(bucket));

@@ -10,20 +10,24 @@
 ### Installing Redis on Windows
 
 #### Option 1: Using Chocolatey (Recommended)
+
 ```bash
 choco install redis-64
 ```
 
 #### Option 2: Download from Microsoft
+
 1. Download Redis for Windows from: https://github.com/microsoftarchive/redis/releases
 2. Extract and run `redis-server.exe`
 
 #### Option 3: Using Docker
+
 ```bash
 docker run -d -p 6379:6379 --name redis redis:7-alpine
 ```
 
 ### Installing Redis on macOS/Linux
+
 ```bash
 # macOS with Homebrew
 brew install redis
@@ -40,12 +44,14 @@ sudo systemctl start redis-server
 #### Option 1: Local MongoDB Installation (Recommended for Development)
 
 **Windows:**
+
 1. Download MongoDB Community Edition from https://www.mongodb.com/try/download/community
 2. Run the installer and follow the setup wizard
 3. MongoDB will start automatically as a Windows Service
 4. Verify with: `mongosh` or `mongo`
 
 **macOS (Homebrew):**
+
 ```bash
 brew tap mongodb/brew
 brew install mongodb-community
@@ -53,6 +59,7 @@ brew services start mongodb-community
 ```
 
 **Ubuntu/Debian:**
+
 ```bash
 sudo apt update
 sudo apt install -y mongodb
@@ -70,11 +77,13 @@ sudo systemctl enable mongodb
 4. Create a database user with username and password
 5. Get your connection string (SRV URI format)
 6. Update `.env` with your `MONGO_URI`:
+
 ```bash
 MONGO_URI=mongodb+srv://username:password@cluster.mongodb.net/community-savings?retryWrites=true&w=majority
 ```
 
 **Note:** Make sure to:
+
 - Add your IP to the IP whitelist (or use 0.0.0.0/0 for development)
 - Replace `username:password` with your actual credentials
 
@@ -97,6 +106,7 @@ cp .env.example .env
 Create a `.env` file in the backend directory with the following configuration:
 
 **For Local MongoDB:**
+
 ```env
 NODE_ENV=development
 PORT=5000
@@ -109,6 +119,7 @@ LOG_LEVEL=debug
 ```
 
 **For MongoDB Atlas (Cloud):**
+
 ```env
 NODE_ENV=development
 PORT=5000
@@ -121,6 +132,7 @@ LOG_LEVEL=debug
 ```
 
 **Important Notes:**
+
 - Replace `username:password` and `cluster` in the MONGO_URI_ATLAS with your actual MongoDB Atlas credentials
 - Keep `JWT_SECRET` and `JWT_REFRESH_SECRET` long and random (minimum 32 characters)
 - Redis is optional for local development (app will fall back to in-memory store if unavailable)
@@ -130,6 +142,7 @@ LOG_LEVEL=debug
 **If using Local MongoDB:**
 
 Windows (MongoDB runs as a service automatically):
+
 ```bash
 # Verify MongoDB is running
 mongosh
@@ -137,21 +150,25 @@ exit
 ```
 
 macOS:
+
 ```bash
 brew services start mongodb-community
 ```
 
 Ubuntu/Debian:
+
 ```bash
 sudo systemctl start mongodb
 ```
 
 **If using MongoDB Atlas:**
+
 - No action needed, MongoDB Atlas is always available at the cloud
 
 **For Redis (Optional but Recommended):**
 
 Windows (if you installed via Chocolatey):
+
 ```bash
 redis-server
 # In another terminal:
@@ -159,12 +176,14 @@ redis-cli ping  # Should respond with PONG
 ```
 
 macOS:
+
 ```bash
 brew services start redis
 redis-cli ping
 ```
 
 Ubuntu/Debian:
+
 ```bash
 sudo systemctl start redis-server
 redis-cli ping
@@ -226,6 +245,7 @@ npm run test:watch
 ### Access Swagger UI
 
 Once server is running:
+
 ```
 http://localhost:5000/api-docs
 ```
@@ -233,6 +253,7 @@ http://localhost:5000/api-docs
 ### Key Endpoints
 
 #### Authentication
+
 ```bash
 # Register
 POST /api/auth/register
@@ -244,6 +265,7 @@ Body: { email, password }
 ```
 
 #### Loans
+
 ```bash
 # Check eligibility
 GET /api/loans/eligibility/:groupId
@@ -269,6 +291,7 @@ Body: { amount, paymentMethod }
 ```
 
 #### Admin
+
 ```bash
 # Dashboard metrics
 GET /api/admin/dashboard
@@ -327,6 +350,7 @@ community-savings-app-backend/
 ## Key Features
 
 ### Loan Management
+
 - ✅ Eligibility scoring (4-component algorithm)
 - ✅ Complete loan lifecycle (apply → approve → disburse → repay)
 - ✅ Automatic repayment schedule generation
@@ -334,6 +358,7 @@ community-savings-app-backend/
 - ✅ Default detection and alerting
 
 ### Security
+
 - ✅ JWT authentication
 - ✅ Role-based access control
 - ✅ Rate limiting (multiple layers)
@@ -342,6 +367,7 @@ community-savings-app-backend/
 - ✅ Secure password hashing
 
 ### Admin Features
+
 - ✅ Comprehensive dashboard
 - ✅ User analytics
 - ✅ Loan analytics with trends
@@ -351,6 +377,7 @@ community-savings-app-backend/
 - ✅ Audit trail
 
 ### Performance
+
 - ✅ 50+ optimized database indexes
 - ✅ Query optimization with lean()
 - ✅ Aggregation pipelines for analytics
@@ -408,11 +435,13 @@ DEBUG=* npm test
 ### Adding a New Endpoint
 
 1. **Create route** in `/routes/loans.js`
+
    ```javascript
    router.post('/new', verifyToken, validateInputs, controller);
    ```
 
 2. **Implement controller** in `/controllers/loanController.js`
+
    ```javascript
    exports.newEndpoint = asyncHandler(async (req, res) => {
      // Implementation
@@ -420,6 +449,7 @@ DEBUG=* npm test
    ```
 
 3. **Add tests** in `/tests/integration/controllers/loans.test.js`
+
    ```javascript
    it('should do something', async () => {
      // Test
@@ -501,6 +531,7 @@ See [PRODUCTION_DEPLOYMENT_COMPLETE.md](./PRODUCTION_DEPLOYMENT_COMPLETE.md) for
 ## Support
 
 ### Documentation
+
 - **API Docs**: http://localhost:5000/api-docs (Swagger UI)
 - **Implementation Guide**: [IMPLEMENTATION_COMPLETE_SUMMARY.md](./IMPLEMENTATION_COMPLETE_SUMMARY.md)
 - **Deployment Guide**: [PRODUCTION_DEPLOYMENT_COMPLETE.md](./PRODUCTION_DEPLOYMENT_COMPLETE.md)
@@ -508,23 +539,27 @@ See [PRODUCTION_DEPLOYMENT_COMPLETE.md](./PRODUCTION_DEPLOYMENT_COMPLETE.md) for
 ### Common Tasks
 
 **Check loan status**
+
 ```javascript
 const loan = await Loan.findById(loanId).populate('user').populate('group');
 console.log(loan);
 ```
 
 **Get user's loans**
+
 ```javascript
 const loans = await Loan.find({ user: userId }).populate('group');
 ```
 
 **Check eligibility**
+
 ```javascript
 const { assessEligibility } = require('./services/loanScoringService');
 const eligibility = await assessEligibility(userId, groupId, adminId);
 ```
 
 **View audit trail**
+
 ```javascript
 const audit = await LoanAudit.find({ user: userId }).sort({ createdAt: -1 });
 ```

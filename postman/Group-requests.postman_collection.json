@@ -30,7 +30,7 @@
         "url": {
           "raw": "{{baseUrl}}/api/groups/seed",
           "host": ["{{baseUrl}}"],
-          "path": ["api","groups","seed"]
+          "path": ["api", "groups", "seed"]
         }
       },
       "response": []
@@ -59,7 +59,7 @@
         "url": {
           "raw": "{{baseUrl}}/api/groups",
           "host": ["{{baseUrl}}"],
-          "path": ["api","groups"]
+          "path": ["api", "groups"]
         }
       },
       "response": []
@@ -84,7 +84,7 @@
         "url": {
           "raw": "{{baseUrl}}/api/groups/join/{{groupId}}",
           "host": ["{{baseUrl}}"],
-          "path": ["api","groups","join","{{groupId}}"]
+          "path": ["api", "groups", "join", "{{groupId}}"]
         }
       },
       "response": []

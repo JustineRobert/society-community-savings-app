@@ -1,4 +1,5 @@
 // PRODUCTION_IMPLEMENTATION_GUIDE.md
+
 # Production Implementation Guide
 
 ## Overview
@@ -135,7 +136,7 @@ cat > migrations/20240201_143022_add_loan_penalties.js << 'EOF'
 const migration = {
   async up() {
     const db = mongoose.connection;
-    
+
     // Add penalties field to loans
     await db.collection('loans').updateMany(
       {},
@@ -145,7 +146,7 @@ const migration = {
 
   async down() {
     const db = mongoose.connection;
-    
+
     // Remove penalties field
     await db.collection('loans').updateMany(
       {},
@@ -366,7 +367,7 @@ alerts.addRule({
   condition: (metrics) => {
     const defaultRate = metrics.getStats('loan_defaults_total')?.value || 0;
     const totalLoans = metrics.getStats('loan_created_total')?.value || 0;
-    return (defaultRate / totalLoans) > 0.05; // >5% default rate
+    return defaultRate / totalLoans > 0.05; // >5% default rate
   },
 });
 ```
@@ -402,6 +403,7 @@ trackLoan('approved', {
 ### Loan Management System
 
 **Features to Implement**:
+
 - Eligibility scoring based on contribution history
 - Repayment schedules with installments
 - Interest calculation with compounding
@@ -433,7 +435,7 @@ function calculateEligibilityScore(user, group) {
 // Calculate repayment schedule
 function generateRepaymentSchedule(principal, rate, months) {
   const monthlyRate = rate / 12 / 100;
-  const monthlyPayment = 
+  const monthlyPayment =
     (principal * monthlyRate * Math.pow(1 + monthlyRate, months)) /
     (Math.pow(1 + monthlyRate, months) - 1);
 
@@ -460,6 +462,7 @@ function generateRepaymentSchedule(principal, rate, months) {
 ### Chat Functionality
 
 **Features to Implement**:
+
 - Real-time messaging with WebSockets
 - Message moderation and filtering
 - Persistence with pagination
@@ -469,6 +472,7 @@ function generateRepaymentSchedule(principal, rate, months) {
 ### Referral System
 
 **Features to Implement**:
+
 - Unique referral codes per user
 - Tracking referrer and referee
 - Rewards calculation
@@ -587,19 +591,22 @@ tail -100 logs/application.log
 
 ### Emergency Procedures
 
-**Database corruption**: 
+**Database corruption**:
+
 1. Stop application
 2. Restore from backup
 3. Apply migrations from backup point forward
 4. Restart application
 
 **Email provider outage**:
+
 1. Switch to alternative provider
 2. Update `EMAIL_PROVIDER` environment variable
 3. Restart application
 4. Queue failed emails for retry
 
 **High traffic/load**:
+
 1. Monitor circuit breaker status
 2. Check bulkhead concurrency limits
 3. Enable caching

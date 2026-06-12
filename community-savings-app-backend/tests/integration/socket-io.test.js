@@ -38,7 +38,7 @@ describe('Socket.IO Events', () => {
     it('should connect with valid token', (done) => {
       socket = io(SERVER_URL, {
         auth: { token: testToken },
-        reconnection: false
+        reconnection: false,
       });
 
       socket.on('connect', () => {
@@ -62,7 +62,7 @@ describe('Socket.IO Events', () => {
 
     it('should reject connection without token', (done) => {
       const unauthSocket = io(SERVER_URL, {
-        reconnection: false
+        reconnection: false,
       });
 
       unauthSocket.on('connect_error', (error) => {
@@ -78,7 +78,7 @@ describe('Socket.IO Events', () => {
     beforeAll((done) => {
       socket = io(SERVER_URL, {
         auth: { token: testToken },
-        reconnection: false
+        reconnection: false,
       });
 
       socket.on('connect', done);
@@ -105,7 +105,7 @@ describe('Socket.IO Events', () => {
 
       socket.emit('chat:message', {
         groupId: 'test-group-1',
-        message: 'Hello, this is a test message!'
+        message: 'Hello, this is a test message!',
       });
     });
 
@@ -146,7 +146,7 @@ describe('Socket.IO Events', () => {
 
       socket.emit('chat:message', {
         groupId: 'test-group-1',
-        message: '   ' // only whitespace
+        message: '   ', // only whitespace
       });
     });
   });
@@ -155,7 +155,7 @@ describe('Socket.IO Events', () => {
     beforeAll((done) => {
       socket = io(SERVER_URL, {
         auth: { token: testToken },
-        reconnection: false
+        reconnection: false,
       });
 
       socket.on('connect', done);
@@ -199,7 +199,7 @@ describe('Socket.IO Events', () => {
     beforeAll((done) => {
       socket = io(SERVER_URL, {
         auth: { token: testToken },
-        reconnection: false
+        reconnection: false,
       });
 
       socket.on('connect', done);
@@ -240,7 +240,7 @@ describe('Socket.IO Events', () => {
     beforeAll((done) => {
       socket = io(SERVER_URL, {
         auth: { token: testToken },
-        reconnection: false
+        reconnection: false,
       });
 
       socket.on('connect', done);
@@ -281,7 +281,7 @@ describe('Socket.IO Events', () => {
     beforeAll((done) => {
       socket = io(SERVER_URL, {
         auth: { token: testToken },
-        reconnection: false
+        reconnection: false,
       });
 
       socket.on('connect', done);
@@ -310,7 +310,7 @@ describe('Socket.IO Events', () => {
         }
       });
 
-      statuses.forEach(status => {
+      statuses.forEach((status) => {
         socket.emit('presence:status', status);
       });
     });
@@ -332,7 +332,7 @@ describe('Socket.IO Events', () => {
     beforeAll((done) => {
       socket = io(SERVER_URL, {
         auth: { token: testToken },
-        reconnection: false
+        reconnection: false,
       });
 
       socket.on('connect', done);

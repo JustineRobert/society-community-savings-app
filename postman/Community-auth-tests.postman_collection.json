@@ -15,14 +15,16 @@
       "name": "01 - Register",
       "request": {
         "method": "POST",
-        "header": [
-          { "key": "Content-Type", "value": "application/json" }
-        ],
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
         "body": {
           "mode": "raw",
           "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPass}}\",\n  \"name\": \"Test User\"\n}"
         },
-        "url": { "raw": "{{baseUrl}}/api/auth/register", "host": ["{{baseUrl}}"], "path": ["api","auth","register"] }
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/register",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "auth", "register"]
+        }
       }
     },
     {
@@ -42,8 +44,15 @@
       "request": {
         "method": "POST",
         "header": [{ "key": "Content-Type", "value": "application/json" }],
-        "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPass}}\"\n}" },
-        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api","auth","login"] }
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPass}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/login",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "auth", "login"]
+        }
       }
     },
     {
@@ -51,7 +60,11 @@
       "request": {
         "method": "GET",
         "header": [{ "key": "x-auth-token", "value": "{{token}}" }],
-        "url": { "raw": "{{baseUrl}}/api/auth/me", "host": ["{{baseUrl}}"], "path": ["api","auth","me"] }
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/me",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "auth", "me"]
+        }
       }
     },
     {
@@ -59,7 +72,11 @@
       "request": {
         "method": "GET",
         "header": [{ "key": "x-auth-token", "value": "{{token}}" }],
-        "url": { "raw": "{{baseUrl}}/api/auth/sessions", "host": ["{{baseUrl}}"], "path": ["api","auth","sessions"] }
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/sessions",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "auth", "sessions"]
+        }
       }
     },
     {
@@ -67,7 +84,11 @@
       "request": {
         "method": "GET",
         "header": [{ "key": "x-auth-token", "value": "{{adminToken}}" }],
-        "url": { "raw": "{{baseUrl}}/api/auth/admin/sessions", "host": ["{{baseUrl}}"], "path": ["api","auth","admin","sessions"] }
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/admin/sessions",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "auth", "admin", "sessions"]
+        }
       }
     },
     {
@@ -75,7 +96,11 @@
       "request": {
         "method": "DELETE",
         "header": [{ "key": "x-auth-token", "value": "{{adminToken}}" }],
-        "url": { "raw": "{{baseUrl}}/api/auth/admin/sessions/:id", "host": ["{{baseUrl}}"], "path": ["api","auth","admin","sessions",":id"] }
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/admin/sessions/:id",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "auth", "admin", "sessions", ":id"]
+        }
       }
     },
     {
@@ -83,7 +108,11 @@
       "request": {
         "method": "DELETE",
         "header": [{ "key": "x-auth-token", "value": "{{token}}" }],
-        "url": { "raw": "{{baseUrl}}/api/auth/sessions/:id", "host": ["{{baseUrl}}"], "path": ["api","auth","sessions",":id"] }
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/sessions/:id",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "auth", "sessions", ":id"]
+        }
       }
     },
     {
@@ -92,7 +121,11 @@
         "method": "POST",
         "header": [{ "key": "Content-Type", "value": "application/json" }],
         "body": { "mode": "raw", "raw": "{ \"refreshToken\": \"<paste-refresh-token-here>\" }" },
-        "url": { "raw": "{{baseUrl}}/api/auth/refresh", "host": ["{{baseUrl}}"], "path": ["api","auth","refresh"] }
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/refresh",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "auth", "refresh"]
+        }
       }
     },
     {
@@ -101,7 +134,11 @@
         "method": "POST",
         "header": [{ "key": "Content-Type", "value": "application/json" }],
         "body": { "mode": "raw", "raw": "{}" },
-        "url": { "raw": "{{baseUrl}}/api/auth/logout", "host": ["{{baseUrl}}"], "path": ["api","auth","logout"] }
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/logout",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "auth", "logout"]
+        }
       }
     }
   ]

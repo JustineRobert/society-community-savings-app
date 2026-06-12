@@ -19,7 +19,12 @@ describe('Auth Integration Tests - Email Verification & Password Reset', () => {
 
   describe('Email Verification Flow', () => {
     beforeEach(async () => {
-      user = await User.create({ name: 'Test User', email: 'test@example.com', password: 'hashedpw', verified: false });
+      user = await User.create({
+        name: 'Test User',
+        email: 'test@example.com',
+        password: 'hashedpw',
+        verified: false,
+      });
       userId = user._id;
     });
 
@@ -45,8 +50,13 @@ describe('Auth Integration Tests - Email Verification & Password Reset', () => {
     test('Expired token rejected', async () => {
       const token = await EmailVerificationService.generateTokenAndSend(user);
       // Simulate expiry by manually updating
-      await EmailVerificationToken.updateOne({ user: userId }, { expiresAt: new Date(Date.now() - 1000) });
-      await expect(EmailVerificationService.verifyToken(userId, token)).rejects.toThrow('Token expired');
+      await EmailVerificationToken.updateOne(
+        { user: userId },
+        { expiresAt: new Date(Date.now() - 1000) }
+      );
+      await expect(EmailVerificationService.verifyToken(userId, token)).rejects.toThrow(
+        'Token expired'
+      );
     });
 
     test('Resend verification throttled', async () => {
@@ -57,7 +67,11 @@ describe('Auth Integration Tests - Email Verification & Password Reset', () => {
 
   describe('Password Reset Flow', () => {
     beforeEach(async () => {
-      user = await User.create({ name: 'Test User', email: 'test@example.com', password: 'hashedpw' });
+      user = await User.create({
+        name: 'Test User',
+        email: 'test@example.com',
+        password: 'hashedpw',
+      });
       userId = user._id;
     });
 
@@ -74,18 +88,24 @@ describe('Auth Integration Tests - Email Verification & Password Reset', () => {
     });
 
     test('Invalid token rejected', async () => {
-      await expect(PasswordResetService.resetPassword(userId, 'invalid', 'newPassword')).rejects.toThrow();
+      await expect(
+        PasswordResetService.resetPassword(userId, 'invalid', 'newPassword')
+      ).rejects.toThrow();
     });
 
     test('Weak password rejected', async () => {
       const token = await PasswordResetService.createReset(user);
-      await expect(PasswordResetService.resetPassword(userId, token, 'weak')).rejects.toThrow('Password too weak');
+      await expect(PasswordResetService.resetPassword(userId, token, 'weak')).rejects.toThrow(
+        'Password too weak'
+      );
     });
 
     test('Token single-use enforcement', async () => {
       const token = await PasswordResetService.createReset(user);
       await PasswordResetService.resetPassword(userId, token, 'newPassword123');
-      await expect(PasswordResetService.resetPassword(userId, token, 'anotherPassword123')).rejects.toThrow();
+      await expect(
+        PasswordResetService.resetPassword(userId, token, 'anotherPassword123')
+      ).rejects.toThrow();
     });
   });
 });

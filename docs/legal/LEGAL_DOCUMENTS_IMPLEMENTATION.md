@@ -9,6 +9,7 @@ This guide documents the complete implementation of Terms of Service and Privacy
 ### ✅ Fully Worded Legal Documents
 
 #### Terms of Service (v1.0.0)
+
 - **20 Comprehensive Sections**:
   1. Acceptance of Terms
   2. Use License
@@ -38,6 +39,7 @@ This guide documents the complete implementation of Terms of Service and Privacy
   - Kenya law governing clause
 
 #### Privacy Policy (v1.0.0)
+
 - **20 Comprehensive Sections**:
   1. Introduction
   2. Definitions
@@ -77,6 +79,7 @@ This guide documents the complete implementation of Terms of Service and Privacy
 ### ✅ Acceptance Tracking System
 
 #### Database Schema (MongoDB)
+
 ```javascript
 LegalAcceptanceSchema = {
   userId: ObjectId (foreign key to User),
@@ -89,7 +92,9 @@ LegalAcceptanceSchema = {
 ```
 
 #### Audit Trail
+
 Every acceptance record includes:
+
 - User ID for identification
 - Document versions accepted
 - Timestamp of acceptance
@@ -102,10 +107,13 @@ Every acceptance record includes:
 #### Public Endpoints (No Authentication)
 
 ##### 1. Get Terms of Service
+
 ```http
 GET /api/legal/terms-of-service
 ```
+
 **Response:**
+
 ```json
 {
   "success": true,
@@ -121,10 +129,13 @@ GET /api/legal/terms-of-service
 ```
 
 ##### 2. Get Privacy Policy
+
 ```http
 GET /api/legal/privacy-policy
 ```
+
 **Response:**
+
 ```json
 {
   "success": true,
@@ -140,10 +151,13 @@ GET /api/legal/privacy-policy
 ```
 
 ##### 3. Get Document Changelog
+
 ```http
 GET /api/legal/changelog
 ```
+
 **Response:**
+
 ```json
 {
   "success": true,
@@ -169,13 +183,16 @@ GET /api/legal/changelog
 #### Protected Endpoints (Requires Authentication)
 
 ##### 4. Accept Terms and Privacy Policy
+
 ```http
 POST /api/legal/accept-terms
 Authorization: Bearer {JWT_TOKEN}
 Content-Type: application/json
 Body: {}
 ```
+
 **Response:**
+
 ```json
 {
   "success": true,
@@ -190,11 +207,14 @@ Body: {}
 ```
 
 ##### 5. Get Acceptance Status
+
 ```http
 GET /api/legal/acceptance-status
 Authorization: Bearer {JWT_TOKEN}
 ```
+
 **Response:**
+
 ```json
 {
   "success": true,
@@ -218,6 +238,7 @@ Authorization: Bearer {JWT_TOKEN}
 #### 1. Service Layer (`termsAndPrivacy.js`)
 
 **Functions:**
+
 - `getTermsOfService()` - Returns full Terms of Service document
 - `getPrivacyPolicy()` - Returns full Privacy Policy document
 - `getVersion(docType)` - Returns current version number
@@ -227,21 +248,23 @@ Authorization: Bearer {JWT_TOKEN}
 - `getChangelog()` - Returns document version history
 
 **Version Management:**
+
 ```javascript
 CURRENT_VERSIONS = {
   terms: '1.0.0',
-  privacy: '1.0.0'
-}
+  privacy: '1.0.0',
+};
 
 LAST_UPDATED = {
   terms: new Date('2026-01-15'),
-  privacy: new Date('2026-01-15')
-}
+  privacy: new Date('2026-01-15'),
+};
 ```
 
 #### 2. Controller Layer (`legalController.js`)
 
 **Endpoints Implemented:**
+
 - `getTermsOfService()` - GET /api/legal/terms-of-service
 - `getPrivacyPolicy()` - GET /api/legal/privacy-policy
 - `acceptTermsAndPrivacy()` - POST /api/legal/accept-terms
@@ -249,6 +272,7 @@ LAST_UPDATED = {
 - `getChangelog()` - GET /api/legal/changelog
 
 **Security Features:**
+
 - Authentication validation for protected endpoints
 - User ID extraction from JWT token
 - IP address and user agent capture for audit trail
@@ -257,24 +281,27 @@ LAST_UPDATED = {
 #### 3. Routes (`legal.routes.js`)
 
 **Route Configuration:**
+
 ```javascript
 // Public routes
-GET    /api/legal/terms-of-service
-GET    /api/legal/privacy-policy
-GET    /api/legal/changelog
+GET / api / legal / terms - of - service;
+GET / api / legal / privacy - policy;
+GET / api / legal / changelog;
 
 // Protected routes (require authentication)
-POST   /api/legal/accept-terms
-GET    /api/legal/acceptance-status
+POST / api / legal / accept - terms;
+GET / api / legal / acceptance - status;
 ```
 
 **Middleware:**
+
 - `authentication` middleware required for POST and restricted GET endpoints
 - No authentication required for document retrieval (allows anonymous access)
 
 #### 4. Server Integration (`server.js`)
 
 **Route Mounting:**
+
 ```javascript
 app.use('/api/legal', require('./routes/legal.routes'));
 ```
@@ -286,10 +313,11 @@ Added alongside other API routes for consistent endpoint structure.
 #### LegalDocuments Component (`LegalDocuments.jsx`)
 
 **Features:**
+
 - **Modal Display**: Separate modals for Terms of Service and Privacy Policy
 - **Acceptance Tracking**: Check and display user acceptance status
 - **Dynamic Fetching**: Load documents from API endpoints
-- **User-Friendly Interface**: 
+- **User-Friendly Interface**:
   - Large readable text in modals
   - Scrollable content area
   - Clear header with document version
@@ -299,6 +327,7 @@ Added alongside other API routes for consistent endpoint structure.
 - **Error Handling**: Displays error messages if fetching fails
 
 **Component States:**
+
 ```javascript
 {
   showTermsModal: boolean,        // Terms modal visibility
@@ -313,6 +342,7 @@ Added alongside other API routes for consistent endpoint structure.
 ```
 
 **Key Functions:**
+
 - `fetchLegalDocuments()` - Loads all documents and acceptance status
 - `handleAcceptTerms()` - Records user acceptance via API
 - `useEffect()` - Initializes component on mount
@@ -320,6 +350,7 @@ Added alongside other API routes for consistent endpoint structure.
 #### Styling (`LegalDocuments.css`)
 
 **Design Features:**
+
 - Modern gradient backgrounds
 - Smooth animations (fade-in, slide-up)
 - Professional color scheme (#667eea primary)
@@ -332,6 +363,7 @@ Added alongside other API routes for consistent endpoint structure.
 - Dark text on light backgrounds for readability
 
 **Component Structure:**
+
 ```
 .legal-documents
 ├── .legal-acceptance-prompt (conditionally shown)
@@ -367,18 +399,21 @@ community-savings-app-frontend/
 ### For End Users
 
 #### Viewing Documents
+
 1. Click "Terms of Service" or "Privacy Policy" button
 2. Modal opens with full document
 3. Scroll to read complete content
 4. Version and effective date shown at top
 
 #### Accepting Documents
+
 1. After reviewing, click "Accept Terms" or "Accept Privacy Policy"
 2. System records acceptance with timestamp
 3. Acceptance status updates immediately
 4. Green checkmarks show accepted documents
 
 #### Checking Acceptance Status
+
 1. View acceptance status on Terms page
 2. Shows which documents have been accepted
 3. Shows acceptance date
@@ -387,12 +422,15 @@ community-savings-app-frontend/
 ### For Developers
 
 #### Adding to Your App
+
 1. **Import Component:**
+
 ```jsx
 import LegalDocuments from './components/LegalDocuments';
 ```
 
 2. **Use in Your App:**
+
 ```jsx
 function App() {
   return (
@@ -405,28 +443,31 @@ function App() {
 ```
 
 3. **Require on Signup:**
-Use acceptance status check before allowing account creation
+   Use acceptance status check before allowing account creation
 
 4. **Refresh on Login:**
-Check acceptance status on user authentication
+   Check acceptance status on user authentication
 
 #### Updating Documents
 
 ##### Adding New Version
+
 1. Update version in `termsAndPrivacy.js`:
+
 ```javascript
 CURRENT_VERSIONS = {
-  terms: '1.1.0',    // Increment version
-  privacy: '1.0.0'
-}
+  terms: '1.1.0', // Increment version
+  privacy: '1.0.0',
+};
 ```
 
 2. Update `LAST_UPDATED`:
+
 ```javascript
 LAST_UPDATED = {
   terms: new Date('2026-02-01'),
-  privacy: new Date('2026-01-15')
-}
+  privacy: new Date('2026-01-15'),
+};
 ```
 
 3. Update changelog in `getChangelog()` function
@@ -436,27 +477,28 @@ LAST_UPDATED = {
 5. Existing acceptances remain; only new users or those re-accepting get new version
 
 #### Querying Acceptance Data
+
 ```javascript
 // Get all acceptances for a user
 const { LegalAcceptance } = require('./services/termsAndPrivacy');
 const userAcceptances = await LegalAcceptance.find({ userId });
 
 // Get latest acceptance
-const latestAcceptance = await LegalAcceptance.findOne({ userId })
-  .sort({ acceptedAt: -1 });
+const latestAcceptance = await LegalAcceptance.findOne({ userId }).sort({ acceptedAt: -1 });
 
 // Get acceptances from a date range
 const dateRangeAcceptances = await LegalAcceptance.find({
   acceptedAt: {
     $gte: startDate,
-    $lte: endDate
-  }
+    $lte: endDate,
+  },
 });
 ```
 
 ## Compliance Notes
 
 ### GDPR Compliance
+
 - Data collection basis documented in Privacy Policy
 - User rights (access, deletion, portability) documented
 - Data retention policies specified
@@ -464,18 +506,21 @@ const dateRangeAcceptances = await LegalAcceptance.find({
 - Audit trails support investigation of data usage
 
 ### CCPA Compliance
+
 - California residents notified of data collection
 - Right to know, delete, opt-out documented
 - Marketing preferences tool available
 - No sale of personal data statement included
 
 ### Kenya Data Protection Act
+
 - Data Protection Officer contact information provided
 - User rights under KDPA documented
 - Data breach notification procedures specified
 - Governing law clause specifies Kenya
 
 ### Security & Audit
+
 - Acceptance records include IP and user agent for verification
 - Timestamps enable audit trail
 - Version tracking prevents disputes over document content
@@ -539,6 +584,7 @@ test('records acceptance when user clicks Accept button', async () => {
 ## Performance Considerations
 
 ### Optimization
+
 - Documents cached on first load
 - No database queries for public endpoints
 - JWT validation only for protected endpoints
@@ -546,6 +592,7 @@ test('records acceptance when user clicks Accept button', async () => {
 - CSS grid for responsive layout
 
 ### Scaling
+
 - Acceptance records indexed by userId for fast lookups
 - Version tracking enables easy document updates
 - Lightweight acceptance schema (4 fields per record)
@@ -581,10 +628,12 @@ test('records acceptance when user clicks Accept button', async () => {
 ## Support & Contact
 
 For questions about implementation:
+
 - Email: legal@communitysavings.app
 - Support: support@communitysavings.app
 
 For data protection inquiries:
+
 - Data Protection Officer: privacy@communitysavings.app
 
 ---

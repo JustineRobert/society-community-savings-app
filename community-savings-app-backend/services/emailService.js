@@ -26,7 +26,7 @@ const EMAIL_TEMPLATES = {
   PAYMENT_CONFIRMATION: 'payment_confirmation',
   LOAN_APPROVED: 'loan_approved',
   LOAN_REJECTED: 'loan_rejected',
-  CONTRIBUTION_REMINDER: 'contribution_reminder'
+  CONTRIBUTION_REMINDER: 'contribution_reminder',
 };
 
 // Email configuration
@@ -37,11 +37,53 @@ const EMAIL_CONFIG = {
   secure: process.env.EMAIL_SECURE === 'true',
   auth: {
     user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
+    pass: process.env.EMAIL_PASS,
   },
   from: process.env.EMAIL_FROM || 'noreply@communitysavings.com',
-  fromName: process.env.EMAIL_FROM_NAME || 'Community Savings'
+  fromName: process.env.EMAIL_FROM_NAME || 'Community Savings',
 };
+
+// ✅ EMAIL UTILITIES FIXES
+
+function escapeHtml(str = '') {
+  return str
+    .replace(/&/g, '&amp;')      // ✅ FIRST
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+const FROM_EMAIL = EMAIL_CONFIG.from;
+const FROM_NAME = EMAIL_CONFIG.fromName;
+
+// ✅ SIMPLE PROVIDER WRAPPER (uses nodemailer)
+const emailProvider = {
+  send: async ({ to, subject, html, text }) => {
+    return transporter.sendMail({
+      from: `"${FROM_NAME}" <${FROM_EMAIL}>`,
+      to,
+      subject,
+      html,
+      text,
+    });
+  },
+};
+
+// ✅ RETRY WRAPPER
+async function sendWithRetry(fn, retries = 3) {
+  let lastError;
+
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      logger.warn(`Email retry ${i + 1} failed`);
+    }
+  }
+
+  throw lastError;
+}
 
 // Create email transporter
 let transporter;
@@ -49,14 +91,14 @@ try {
   if (EMAIL_CONFIG.provider === 'gmail') {
     transporter = nodemailer.createTransporter({
       service: 'gmail',
-      auth: EMAIL_CONFIG.auth
+      auth: EMAIL_CONFIG.auth,
     });
   } else {
     transporter = nodemailer.createTransporter({
       host: EMAIL_CONFIG.host,
       port: EMAIL_CONFIG.port,
       secure: EMAIL_CONFIG.secure,
-      auth: EMAIL_CONFIG.auth
+      auth: EMAIL_CONFIG.auth,
     });
   }
   logger.info('Email service initialized successfully');
@@ -98,15 +140,14 @@ async function sendEmailVerification(userId) {
       data: {
         userName: user.name,
         verificationUrl,
-        expiresIn: '24 hours'
-      }
+        expiresIn: '24 hours',
+      },
     };
 
     await sendEmail(emailData);
 
     logger.info(`Email verification sent to ${user.email}`);
     return { success: true, message: 'Verification email sent' };
-
   } catch (error) {
     logger.error('Email verification sending failed:', error);
     throw error;
@@ -120,7 +161,7 @@ async function verifyEmail(token) {
   try {
     const user = await User.findOne({
       emailVerificationToken: token,
-      emailVerificationExpires: { $gt: new Date() }
+      emailVerificationExpires: { $gt: new Date() },
     });
 
     if (!user) {
@@ -139,7 +180,6 @@ async function verifyEmail(token) {
 
     logger.info(`Email verified for user ${user.email}`);
     return { success: true, user: { id: user._id, email: user.email, name: user.name } };
-
   } catch (error) {
     logger.error('Email verification failed:', error);
     throw error;
@@ -154,7 +194,10 @@ async function sendPasswordReset(email) {
     const user = await User.findOne({ email: email.toLowerCase() });
     if (!user) {
       // Don't reveal if email exists for security
-      return { success: true, message: 'If an account with that email exists, a reset link has been sent' };
+      return {
+        success: true,
+        message: 'If an account with that email exists, a reset link has been sent',
+      };
     }
 
     // Generate reset token
@@ -179,15 +222,14 @@ async function sendPasswordReset(email) {
       data: {
         userName: user.name,
         resetUrl,
-        expiresIn: '1 hour'
-      }
+        expiresIn: '1 hour',
+      },
     };
 
     await sendEmail(emailData);
 
     logger.info(`Password reset email sent to ${user.email}`);
     return { success: true, message: 'Password reset email sent' };
-
   } catch (error) {
     logger.error('Password reset email sending failed:', error);
     throw error;
@@ -204,7 +246,7 @@ async function resetPassword(token, newPassword) {
 
     const user = await User.findOne({
       passwordResetToken: hashedToken,
-      passwordResetExpires: { $gt: new Date() }
+      passwordResetExpires: { $gt: new Date() },
     });
 
     if (!user) {
@@ -223,7 +265,6 @@ async function resetPassword(token, newPassword) {
 
     logger.info(`Password reset successful for user ${user.email}`);
     return { success: true, message: 'Password reset successful' };
-
   } catch (error) {
     logger.error('Password reset failed:', error);
     throw error;
@@ -245,13 +286,12 @@ async function sendWelcomeEmail(userId) {
       data: {
         userName: user.name,
         loginUrl: `${process.env.FRONTEND_URL}/login`,
-        supportEmail: 'support@communitysavings.com'
-      }
+        supportEmail: 'support@communitysavings.com',
+      },
     };
 
     await sendEmail(emailData);
     logger.info(`Welcome email sent to ${user.email}`);
-
   } catch (error) {
     logger.error('Welcome email sending failed:', error);
   }
@@ -272,13 +312,12 @@ async function sendPasswordResetConfirmation(userId) {
       data: {
         userName: user.name,
         loginUrl: `${process.env.FRONTEND_URL}/login`,
-        supportEmail: 'support@communitysavings.com'
-      }
+        supportEmail: 'support@communitysavings.com',
+      },
     };
 
     await sendEmail(emailData);
     logger.info(`Password change confirmation sent to ${user.email}`);
-
   } catch (error) {
     logger.error('Password change confirmation failed:', error);
   }
@@ -299,13 +338,12 @@ async function sendGroupInvitation(email, inviterName, groupName, inviteToken) {
         inviterName,
         groupName,
         inviteUrl,
-        expiresIn: '7 days'
-      }
+        expiresIn: '7 days',
+      },
     };
 
     await sendEmail(emailData);
     logger.info(`Group invitation sent to ${email} for ${groupName}`);
-
   } catch (error) {
     logger.error('Group invitation email failed:', error);
   }
@@ -326,13 +364,12 @@ async function sendPaymentConfirmation(userId, paymentDetails) {
       data: {
         userName: user.name,
         ...paymentDetails,
-        supportEmail: 'support@communitysavings.com'
-      }
+        supportEmail: 'support@communitysavings.com',
+      },
     };
 
     await sendEmail(emailData);
     logger.info(`Payment confirmation sent to ${user.email}`);
-
   } catch (error) {
     logger.error('Payment confirmation email failed:', error);
   }
@@ -348,12 +385,12 @@ async function sendLoanNotification(userId, loanDetails, type = 'approved') {
 
     const templates = {
       approved: EMAIL_TEMPLATES.LOAN_APPROVED,
-      rejected: EMAIL_TEMPLATES.LOAN_REJECTED
+      rejected: EMAIL_TEMPLATES.LOAN_REJECTED,
     };
 
     const subjects = {
       approved: 'Loan Approved - Community Savings',
-      rejected: 'Loan Application Update - Community Savings'
+      rejected: 'Loan Application Update - Community Savings',
     };
 
     const emailData = {
@@ -363,13 +400,12 @@ async function sendLoanNotification(userId, loanDetails, type = 'approved') {
       data: {
         userName: user.name,
         ...loanDetails,
-        supportEmail: 'support@communitysavings.com'
-      }
+        supportEmail: 'support@communitysavings.com',
+      },
     };
 
     await sendEmail(emailData);
     logger.info(`Loan ${type} notification sent to ${user.email}`);
-
   } catch (error) {
     logger.error(`Loan ${type} notification failed:`, error);
   }
@@ -392,13 +428,12 @@ async function sendContributionReminder(userId, groupName, amount, dueDate) {
         groupName,
         amount,
         dueDate: dueDate.toDateString(),
-        paymentUrl: `${process.env.FRONTEND_URL}/contribute`
-      }
+        paymentUrl: `${process.env.FRONTEND_URL}/contribute`,
+      },
     };
 
     await sendEmail(emailData);
     logger.info(`Contribution reminder sent to ${user.email}`);
-
   } catch (error) {
     logger.error('Contribution reminder failed:', error);
   }
@@ -422,14 +457,13 @@ async function sendEmail({ to, subject, template, data, attachments = [] }) {
       subject,
       html,
       text,
-      attachments
+      attachments,
     };
 
     const result = await transporter.sendMail(mailOptions);
     logger.info(`Email sent successfully to ${to}: ${result.messageId}`);
 
     return result;
-
   } catch (error) {
     logger.error(`Email sending failed to ${to}:`, error);
     throw error;
@@ -454,7 +488,7 @@ function getEmailTemplate(template, data) {
           <p>If you didn't create an account, please ignore this email.</p>
         </div>
       `,
-      text: `Hi ${data.userName},\n\nPlease verify your email: ${data.verificationUrl}\n\nThis link expires in ${data.expiresIn}.`
+      text: `Hi ${data.userName},\n\nPlease verify your email: ${data.verificationUrl}\n\nThis link expires in ${data.expiresIn}.`,
     },
 
     [EMAIL_TEMPLATES.PASSWORD_RESET]: {
@@ -470,7 +504,7 @@ function getEmailTemplate(template, data) {
           <p>If you didn't request this, please ignore this email.</p>
         </div>
       `,
-      text: `Hi ${data.userName},\n\nReset your password: ${data.resetUrl}\n\nThis link expires in ${data.expiresIn}.`
+      text: `Hi ${data.userName},\n\nReset your password: ${data.resetUrl}\n\nThis link expires in ${data.expiresIn}.`,
     },
 
     [EMAIL_TEMPLATES.WELCOME]: {
@@ -485,8 +519,8 @@ function getEmailTemplate(template, data) {
           <p>Need help? Contact us at ${data.supportEmail}</p>
         </div>
       `,
-      text: `Welcome ${data.userName}! Your account is active. Login: ${data.loginUrl}`
-    }
+      text: `Welcome ${data.userName}! Your account is active. Login: ${data.loginUrl}`,
+    },
   };
 
   const templateContent = templates[template];
@@ -508,32 +542,33 @@ async function testEmailConfiguration() {
 
     await transporter.verify();
     return { success: true, message: 'Email configuration is working' };
-
   } catch (error) {
     logger.error('Email configuration test failed:', error);
     return { success: false, error: error.message };
   }
 }
 
-module.exports = {
-  sendEmailVerification,
-  verifyEmail,
-  sendPasswordReset,
-  resetPassword,
-  sendWelcomeEmail,
-  sendGroupInvitation,
-  sendPaymentConfirmation,
-  sendLoanNotification,
-  sendContributionReminder,
-  testEmailConfiguration,
-  EMAIL_TEMPLATES
-};
+// ✅ MAIN TEMPLATE FUNCTION (FIXED HTML)
+function getEmailVerificationTemplate(name, verificationUrl) {
+  return {
+    subject: 'Email Verification - Community Savings App',
+    html: `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
             body { font-family: Arial, sans-serif; color: #333; }
             .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: #1976d2; color: white; padding: 20px; text-align: center; border-radius: 4px 4px 0 0; }
+            .header { background: #1976d2; color: white; padding: 20px; text-align: center; }
             .content { background: #f5f5f5; padding: 20px; }
-            .button { display: inline-block; padding: 10px 20px; background: #1976d2; color: white; text-decoration: none; border-radius: 4px; margin: 20px 0; }
-            .footer { font-size: 12px; color: #666; text-align: center; padding: 10px; }
+            .button {
+              display: inline-block;
+              padding: 10px 20px;
+              background: #1976d2;
+              color: white;
+              text-decoration: none;
+            }
           </style>
         </head>
         <body>
@@ -543,183 +578,51 @@ module.exports = {
             </div>
             <div class="content">
               <p>Hello ${escapeHtml(name)},</p>
-              <p>Thank you for registering with Community Savings App. To complete your registration and start saving with your community, please verify your email address.</p>
-              <p>
-                <a href="${escapeHtml(verificationUrl)}" class="button">Verify Email</a>
-              </p>
-              <p>Or copy and paste this link in your browser:</p>
-              <p><code>${escapeHtml(verificationUrl)}</code></p>
-              <p style="font-size: 12px; color: #666;">This link will expire in 24 hours.</p>
-              <p>If you didn't create this account, you can safely ignore this email.</p>
-            </div>
-            <div class="footer">
-              <p>© ${new Date().getFullYear()} Community Savings App. All rights reserved.</p>
+              <p>Please verify your email:</p>
+              <a href="${escapeHtml(verificationUrl)}">Verify Email</a>
             </div>
           </div>
         </body>
       </html>
     `,
     text: `
-      Hello ${name},
-      
-      Thank you for registering with Community Savings App. To complete your registration, please verify your email by visiting this link:
-      
-      ${verificationUrl}
-      
-      This link will expire in 24 hours.
-      
-      If you didn't create this account, you can safely ignore this email.
-      
-      Best regards,
-      Community Savings Team
+Hello ${name},
+
+Verify your email:
+${verificationUrl}
     `,
   };
 }
 
-function getPasswordResetEmailTemplate(name, resetUrl) {
-  return {
-    subject: 'Reset Your Password - Community Savings App',
-    html: `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="utf-8">
-          <style>
-            body { font-family: Arial, sans-serif; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: #d32f2f; color: white; padding: 20px; text-align: center; border-radius: 4px 4px 0 0; }
-            .content { background: #f5f5f5; padding: 20px; }
-            .button { display: inline-block; padding: 10px 20px; background: #d32f2f; color: white; text-decoration: none; border-radius: 4px; margin: 20px 0; }
-            .footer { font-size: 12px; color: #666; text-align: center; padding: 10px; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1>Password Reset</h1>
-            </div>
-            <div class="content">
-              <p>Hello ${escapeHtml(name)},</p>
-              <p>We received a request to reset the password for your Community Savings App account. Click the button below to set a new password:</p>
-              <p>
-                <a href="${escapeHtml(resetUrl)}" class="button">Reset Password</a>
-              </p>
-              <p>Or copy and paste this link in your browser:</p>
-              <p><code>${escapeHtml(resetUrl)}</code></p>
-              <p style="font-size: 12px; color: #666;">This link will expire in 15 minutes for security reasons.</p>
-              <p><strong>Important:</strong> If you didn't request a password reset, please ignore this email or contact us immediately if you believe your account is at risk.</p>
-            </div>
-            <div class="footer">
-              <p>© ${new Date().getFullYear()} Community Savings App. All rights reserved.</p>
-            </div>
-          </div>
-        </body>
-      </html>
-    `,
-    text: `
-      Hello ${name},
-      
-      We received a request to reset the password for your account. To set a new password, visit this link:
-      
-      ${resetUrl}
-      
-      This link will expire in 15 minutes.
-      
-      If you didn't request this, please ignore this email or contact us immediately.
-      
-      Best regards,
-      Community Savings Team
-    `,
-  };
-}
-
-function getPasswordChangedEmailTemplate(name) {
-  return {
-    subject: 'Password Changed - Community Savings App',
-    html: `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="utf-8">
-          <style>
-            body { font-family: Arial, sans-serif; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: #388e3c; color: white; padding: 20px; text-align: center; border-radius: 4px 4px 0 0; }
-            .content { background: #f5f5f5; padding: 20px; }
-            .footer { font-size: 12px; color: #666; text-align: center; padding: 10px; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1>Password Updated</h1>
-            </div>
-            <div class="content">
-              <p>Hello ${escapeHtml(name)},</p>
-              <p>Your password has been successfully changed. If you did not make this change, please contact us immediately.</p>
-              <p>For security reasons, all active sessions have been logged out. You will need to log in again with your new password.</p>
-            </div>
-            <div class="footer">
-              <p>© ${new Date().getFullYear()} Community Savings App. All rights reserved.</p>
-            </div>
-          </div>
-        </body>
-      </html>
-    `,
-    text: `
-      Hello ${name},
-      
-      Your password has been successfully changed. If you did not make this change, please contact us immediately.
-      
-      For security, all active sessions have been logged out. Log in again with your new password.
-      
-      Best regards,
-      Community Savings Team
-    `,
-  };
-}
-
-// ============================================================================
-// Utility Functions
-// ============================================================================
-
-function escapeHtml(text) {
-  if (!text) return '';
-  const map = {
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#039;',
-  };
-  return String(text).replace(/[&<>"']/g, (char) => map[char]);
-}
-
-/**
- * Retry logic for email sending
- */
-async function sendWithRetry(sendFn, maxRetries = 3) {
-  let lastError;
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      return await sendFn();
-    } catch (error) {
-      lastError = error;
-      logger.warn(`[EmailService] Send attempt ${attempt} failed:`, error.message);
-
-      if (attempt < maxRetries) {
-        // Exponential backoff: 1s, 2s, 4s
-        const delay = Math.pow(2, attempt - 1) * 1000;
-        await new Promise((resolve) => setTimeout(resolve, delay));
-      }
-    }
-  }
-  throw lastError;
+// ✅ ALIAS FUNCTION (FIXES UNDEFINED ERROR)
+function getVerificationEmailTemplate(name, verificationUrl) {
+  return getEmailVerificationTemplate(name, verificationUrl);
 }
 
 // ============================================================================
 // Public Email Functions
 // ============================================================================
+// ✅ Password Reset Template
+function getPasswordResetEmailTemplate(name, resetUrl) {
+  return {
+    subject: 'Password Reset - Community Savings',
+    html: `
+      <p>Hello ${escapeHtml(name)}</p>
+      <p>Reset your password:</p>
+      <a href="${escapeHtml(resetUrl)}">Reset Password</a>
+    `,
+    text: `Reset your password: ${resetUrl}`,
+  };
+}
+
+// ✅ Password Changed Template
+function getPasswordChangedEmailTemplate(name) {
+  return {
+    subject: 'Password Changed',
+    html: `<p>Hello ${escapeHtml(name)}, your password has been updated.</p>`,
+    text: `Your password was successfully changed.`,
+  };
+}
 
 /**
  * Send verification email

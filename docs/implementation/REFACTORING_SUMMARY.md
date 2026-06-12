@@ -7,8 +7,10 @@ Successfully refactored the Community Savings App backend server for robust conn
 ## 📋 Files Modified
 
 ### 1. `server.js` (MAIN FILE)
+
 **Status**: ✅ Refactored
 **Key Changes**:
+
 - Added exponential backoff calculator function
 - Environment variables: `MONGO_URI`, `REDIS_URI` with defaults
 - New `performStartupHealthCheck()` function
@@ -17,6 +19,7 @@ Successfully refactored the Community Savings App backend server for robust conn
 - Better error messages with actionable guidance
 
 **New Features**:
+
 ```javascript
 // Connection URIs with defaults
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/community_savings';
@@ -33,8 +36,10 @@ logger.info('📍 Redis URI: ' + REDIS_URI);
 ---
 
 ### 2. `config/db.js` (MONGODB CONFIG)
+
 **Status**: ✅ Refactored
 **Key Changes**:
+
 - Exponential backoff: 2s → 4s → 8s → 16s (max)
 - Jitter randomization (±10%)
 - Smart error classification
@@ -42,13 +47,11 @@ logger.info('📍 Redis URI: ' + REDIS_URI);
 - Automatic index creation disabled in production
 
 **Improvements**:
+
 ```javascript
 // Exponential backoff with jitter
 function getRetryDelay(attempt) {
-  const baseDelay = Math.min(
-    INITIAL_RETRY_DELAY * Math.pow(2, attempt - 1),
-    MAX_RETRY_DELAY
-  );
+  const baseDelay = Math.min(INITIAL_RETRY_DELAY * Math.pow(2, attempt - 1), MAX_RETRY_DELAY);
   const jitter = baseDelay * 0.1 * (Math.random() - 0.5);
   return Math.floor(baseDelay + jitter);
 }
@@ -56,11 +59,12 @@ function getRetryDelay(attempt) {
 // Error classification
 if (message.includes('mongodb+srv URI cannot have port number')) {
   logger.error('🛑 Invalid MongoDB configuration...');
-  process.exit(1);  // Fail fast on config errors
+  process.exit(1); // Fail fast on config errors
 }
 ```
 
 **Behavior**:
+
 - MongoDB unavailable → **Exit with error** (critical service)
 - Network timeout → **Retry with exponential backoff**
 - Config error → **Exit immediately** with clear message
@@ -68,8 +72,10 @@ if (message.includes('mongodb+srv URI cannot have port number')) {
 ---
 
 ### 3. `services/redis.js` (REDIS CONNECTION)
+
 **Status**: ✅ Refactored
 **Key Changes**:
+
 - Use `REDIS_URI` instead of `REDIS_URL`
 - Exponential backoff: 1s → 1.5s → 2.25s ... (max 30s)
 - Max 10 retry attempts
@@ -79,6 +85,7 @@ if (message.includes('mongodb+srv URI cannot have port number')) {
 - Proper shutdown handlers
 
 **Improvements**:
+
 ```javascript
 // Environment variable with default
 const REDIS_URI = process.env.REDIS_URI || 'redis://127.0.0.1:6379';
@@ -86,15 +93,16 @@ const REDIS_URI = process.env.REDIS_URI || 'redis://127.0.0.1:6379';
 // Graceful degradation after max retries
 if (times > MAX_RETRY_ATTEMPTS) {
   gracefullyDegraded = true;
-  return null;  // Stop retrying, fall back to memory
+  return null; // Stop retrying, fall back to memory
 }
 
 // Helper methods
-redis.isAvailable()  // Check status
-redis.getStatus()    // Get connection state
+redis.isAvailable(); // Check status
+redis.getStatus(); // Get connection state
 ```
 
 **Behavior**:
+
 - Redis unavailable → **Fall back to memory store** (graceful)
 - Network timeout → **Retry with exponential backoff**
 - After 10 retries → **Use memory-based rate limiting**
@@ -102,40 +110,44 @@ redis.getStatus()    // Get connection state
 ---
 
 ### 4. `models/Payment.js` (MONGOOSE INDEXES)
+
 **Status**: ✅ Fixed
 **Key Changes**:
+
 - Removed duplicate index definition
 - Kept single, clean definition
 
 **Removed**:
+
 ```javascript
 // REMOVED - This was a duplicate
-paymentSchema.index({ groupId: 1, status: 1 });  // Line 264 DELETED
+paymentSchema.index({ groupId: 1, status: 1 }); // Line 264 DELETED
 
 // KEPT - Single definition
-paymentSchema.index({ groupId: 1, status: 1 });  // Line 182
+paymentSchema.index({ groupId: 1, status: 1 }); // Line 182
 ```
 
 ---
 
 ## 🎯 Objectives Completed
 
-| Objective | Status | Details |
-|-----------|--------|---------|
-| Remove duplicate indexes | ✅ | Payment.js - 1 duplicate removed |
-| Robust error handling | ✅ | MongoDB + Redis with retry logic |
-| Exponential backoff | ✅ | Both services, with jitter |
-| Environment variables | ✅ | MONGO_URI, REDIS_URI with defaults |
-| Connection URIs with defaults | ✅ | Sensible defaults for dev/local |
-| Startup checks | ✅ | Health validation before server listen |
-| Graceful fallbacks | ✅ | Redis degrades, MongoDB exits |
-| Clear error messages | ✅ | Descriptive guidance on failures |
+| Objective                     | Status | Details                                |
+| ----------------------------- | ------ | -------------------------------------- |
+| Remove duplicate indexes      | ✅     | Payment.js - 1 duplicate removed       |
+| Robust error handling         | ✅     | MongoDB + Redis with retry logic       |
+| Exponential backoff           | ✅     | Both services, with jitter             |
+| Environment variables         | ✅     | MONGO_URI, REDIS_URI with defaults     |
+| Connection URIs with defaults | ✅     | Sensible defaults for dev/local        |
+| Startup checks                | ✅     | Health validation before server listen |
+| Graceful fallbacks            | ✅     | Redis degrades, MongoDB exits          |
+| Clear error messages          | ✅     | Descriptive guidance on failures       |
 
 ---
 
 ## 🔄 Connection Retry Behavior
 
 ### MongoDB
+
 ```
 Attempt 1: Immediate       (fail? retry)
 Attempt 2: Wait 2s         (fail? retry)
@@ -145,6 +157,7 @@ Attempt 5: Wait 16s        (fail? EXIT)
 ```
 
 ### Redis
+
 ```
 Attempt 1: Immediate       (fail? retry)
 Attempt 2-10: Exponential  (fail? fall back to memory)
@@ -156,6 +169,7 @@ After 10: Use memory store (no exit)
 ## 📝 Example Outputs
 
 ### Successful Startup
+
 ```
 🔍 Performing startup health checks...
 📍 MongoDB URI: mongodb://127.0.0.1:27017/community_savings
@@ -170,6 +184,7 @@ After 10: Use memory store (no exit)
 ```
 
 ### MongoDB Connection Failure
+
 ```
 🔌 Connecting to MongoDB (Attempt 1/5) [Local / Docker]
 ❌ MongoDB connection error (Attempt 1/5): connect ECONNREFUSED 127.0.0.1:27017
@@ -185,6 +200,7 @@ After 10: Use memory store (no exit)
 ```
 
 ### Redis Connection Failure (Graceful)
+
 ```
 🔄 Redis reconnection attempt 1/10, backing off for 1234ms...
 ❌ Redis error: connect ECONNREFUSED 127.0.0.1:6379
@@ -201,12 +217,14 @@ After 10: Use memory store (no exit)
 ## 🚀 Usage
 
 ### Default (Local Development)
+
 ```bash
 npm start
 # Uses: MongoDB at localhost:27017, Redis at localhost:6379
 ```
 
 ### Custom Services
+
 ```bash
 MONGO_URI="mongodb://mongo:27017/mydb" \
 REDIS_URI="redis://redis:6379" \
@@ -214,12 +232,14 @@ npm start
 ```
 
 ### Docker Compose
+
 ```bash
 docker-compose up
 # Services configured in docker-compose.yml
 ```
 
 ### Production
+
 ```bash
 MONGO_URI="mongodb+srv://user:pass@cluster.mongodb.net/dbname" \
 REDIS_URI="redis://redis-prod:6379" \
@@ -232,6 +252,7 @@ npm start
 ## 🧪 Testing Scenarios
 
 ### Test 1: No MongoDB (Should Exit)
+
 ```bash
 # Kill MongoDB, start server
 npm start
@@ -239,6 +260,7 @@ npm start
 ```
 
 ### Test 2: No Redis (Should Continue)
+
 ```bash
 # Kill Redis, start server
 npm start
@@ -246,6 +268,7 @@ npm start
 ```
 
 ### Test 3: Both Down (Should Exit on MongoDB)
+
 ```bash
 # Kill both services, start server
 npm start
@@ -253,6 +276,7 @@ npm start
 ```
 
 ### Test 4: Connection Recovery
+
 ```bash
 # Start server with services down
 npm start
@@ -273,15 +297,15 @@ npm start
 
 ## ✨ Benefits
 
-| Benefit | Impact |
-|---------|--------|
-| **Exponential backoff** | Prevents connection storms and thundering herd |
-| **Jitter randomization** | Distributed retry timing across multiple servers |
-| **Graceful Redis degradation** | App continues even if cache is down |
-| **Clear error messages** | Faster debugging and resolution |
-| **Environment variables** | Easy deployment configuration |
-| **Health endpoints** | Infrastructure monitoring and orchestration |
-| **Removed duplicates** | Cleaner code, no redundant operations |
+| Benefit                        | Impact                                           |
+| ------------------------------ | ------------------------------------------------ |
+| **Exponential backoff**        | Prevents connection storms and thundering herd   |
+| **Jitter randomization**       | Distributed retry timing across multiple servers |
+| **Graceful Redis degradation** | App continues even if cache is down              |
+| **Clear error messages**       | Faster debugging and resolution                  |
+| **Environment variables**      | Easy deployment configuration                    |
+| **Health endpoints**           | Infrastructure monitoring and orchestration      |
+| **Removed duplicates**         | Cleaner code, no redundant operations            |
 
 ---
 
@@ -298,6 +322,7 @@ npm start
 ## 📞 Support
 
 **For issues with**:
+
 - **MongoDB**: Check MONGO_URI format and credentials
 - **Redis**: Acceptable to run without; app uses memory store
 - **Connection retries**: Expected behavior during deployment

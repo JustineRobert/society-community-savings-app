@@ -5,8 +5,10 @@
 const referralService = require('../../../services/referralService');
 const Referral = require('../../../models/Referral');
 const User = require('../../../models/User');
-const Payment = require('../../../models/Payment');
-const logger = require('../../../utils/logger');
+
+
+jest.mock('../../../models/Payment');
+jest.mock('../../../utils/logger');
 
 jest.mock('../../../models/Referral');
 jest.mock('../../../models/User');
@@ -18,17 +20,17 @@ jest.mock('mongoose', () => ({
     startTransaction: jest.fn(),
     commitTransaction: jest.fn(),
     abortTransaction: jest.fn(),
-    endSession: jest.fn()
+    endSession: jest.fn(),
   }),
   Types: {
-    ObjectId: jest.fn()
-  }
+    ObjectId: jest.fn(),
+  },
 }));
 
 describe('Referral Service', () => {
   const mockUser = {
     _id: 'user_123',
-    email: 'user@example.com'
+    email: 'user@example.com',
   };
 
   beforeEach(() => {
@@ -42,7 +44,7 @@ describe('Referral Service', () => {
         code: 'ABC123DEF',
         referrer: mockUser._id,
         status: 'active',
-        createdAt: new Date()
+        createdAt: new Date(),
       });
 
       const result = await referralService.generateCode(mockUser._id);
@@ -57,7 +59,7 @@ describe('Referral Service', () => {
       Referral.findOne.mockResolvedValue({
         code: existingCode,
         referrer: mockUser._id,
-        createdAt: new Date()
+        createdAt: new Date(),
       });
 
       const result = await referralService.generateCode(mockUser._id);
@@ -75,7 +77,7 @@ describe('Referral Service', () => {
         redeemed: false,
         used: false,
         expiresAt: new Date(Date.now() + 1000),
-        save: jest.fn().mockResolvedValue(true)
+        save: jest.fn().mockResolvedValue(true),
       };
 
       Referral.findOne.mockResolvedValue(referral);
@@ -92,24 +94,24 @@ describe('Referral Service', () => {
         code: 'ABC123',
         referrer: 'user_123', // Same as referredUserId
         redeemed: false,
-        expiresAt: new Date(Date.now() + 1000)
+        expiresAt: new Date(Date.now() + 1000),
       };
 
       referral.referrer.equals = jest.fn().mockReturnValue(true);
 
       Referral.findOne.mockResolvedValue(referral);
 
-      await expect(
-        referralService.redeemCode('ABC123', 'user_123')
-      ).rejects.toThrow('Self-referral');
+      await expect(referralService.redeemCode('ABC123', 'user_123')).rejects.toThrow(
+        'Self-referral'
+      );
     });
 
     it('should reject invalid code', async () => {
       Referral.findOne.mockResolvedValue(null);
 
-      await expect(
-        referralService.redeemCode('INVALID', mockUser._id)
-      ).rejects.toThrow('Invalid or expired');
+      await expect(referralService.redeemCode('INVALID', mockUser._id)).rejects.toThrow(
+        'Invalid or expired'
+      );
     });
 
     it('should reject expired code', async () => {
@@ -117,14 +119,12 @@ describe('Referral Service', () => {
         code: 'EXPIRED',
         referrer: 'other_user',
         redeemed: false,
-        expiresAt: new Date(Date.now() - 1000) // Expired
+        expiresAt: new Date(Date.now() - 1000), // Expired
       };
 
       Referral.findOne.mockResolvedValue(referral);
 
-      await expect(
-        referralService.redeemCode('EXPIRED', mockUser._id)
-      ).rejects.toThrow('expired');
+      await expect(referralService.redeemCode('EXPIRED', mockUser._id)).rejects.toThrow('expired');
     });
   });
 
@@ -135,13 +135,13 @@ describe('Referral Service', () => {
         referralCount: 5,
         activeReferrals: 2,
         completedReferrals: 3,
-        totalRewardsEarned: 1500
+        totalRewardsEarned: 1500,
       };
 
       Referral.findOne.mockResolvedValue({
         code: 'CODE123',
         referrer: 'referrer_123',
-        createdAt: new Date()
+        createdAt: new Date(),
       });
 
       Referral.aggregate.mockResolvedValue([stats]);

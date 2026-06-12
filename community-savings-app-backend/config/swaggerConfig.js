@@ -1,6 +1,6 @@
 /**
  * swaggerConfig.js
- * 
+ *
  * OpenAPI 3.0 / Swagger documentation configuration
  * Production-ready API documentation with examples
  */
@@ -11,7 +11,8 @@ module.exports = {
     info: {
       title: 'Community Savings App API',
       version: '1.0.0',
-      description: 'Production-ready REST API for community savings management system with loan management, contributions, and group management',
+      description:
+        'Production-ready REST API for community savings management system with loan management, contributions, and group management',
       contact: {
         name: 'TITech Africa',
         email: 'support@titech.africa',

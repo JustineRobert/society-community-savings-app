@@ -48,7 +48,10 @@ class SocketEmitter {
     };
     if (excludeUserId) {
       // Emit to group but exclude specific user
-      this.io.to(`notifications:${groupId}`).except(`user:${excludeUserId}`).emit('notification:received', payload);
+      this.io
+        .to(`notifications:${groupId}`)
+        .except(`user:${excludeUserId}`)
+        .emit('notification:received', payload);
     } else {
       this.io.to(`notifications:${groupId}`).emit('notification:received', payload);
     }

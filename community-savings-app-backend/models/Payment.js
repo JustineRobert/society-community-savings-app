@@ -17,7 +17,7 @@ const paymentSchema = new mongoose.Schema(
       unique: true,
       trim: true,
       index: true,
-      describe: 'Unique transaction identifier'
+      describe: 'Unique transaction identifier',
     },
 
     // User & Context
@@ -250,7 +250,9 @@ paymentSchema.pre('save', function (next) {
     if (previousStatus) {
       const allowed = validTransitions[previousStatus.status] || [];
       if (!allowed.includes(this.status)) {
-        next(new Error(`Invalid status transition from ${previousStatus.status} to ${this.status}`));
+        next(
+          new Error(`Invalid status transition from ${previousStatus.status} to ${this.status}`)
+        );
         return;
       }
     }

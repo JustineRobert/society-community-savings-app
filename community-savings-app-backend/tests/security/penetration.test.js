@@ -22,7 +22,7 @@ const app = require('../../server');
 
 describe('Security Penetration Tests (OWASP Top 10)', () => {
   let validToken;
-  let testUserId;
+
 
   beforeAll(async () => {
     if (mongoose.connection.readyState === 0) {
@@ -36,18 +36,18 @@ describe('Security Penetration Tests (OWASP Top 10)', () => {
         email: `pentest-${Date.now()}@example.com`,
         password: 'SecurePassword123!',
         fullName: 'Pentester',
-        phoneNumber: '+254712345678'
+        phoneNumber: '+254712345678',
       });
 
     validToken = registerRes.body.token;
-    testUserId = registerRes.body.user._id;
+
   });
 
   describe('A1: Injection Attacks', () => {
     describe('NoSQL Injection', () => {
       it('should not allow NoSQL injection in query parameters', (done) => {
         request(app)
-          .get('/api/users?email=[\$ne]=')
+          .get('/api/users?email=[$ne]=')
           .set('Authorization', `Bearer ${validToken}`)
           .end((err, res) => {
             if (err) return done(err);
@@ -63,7 +63,7 @@ describe('Security Penetration Tests (OWASP Top 10)', () => {
           .set('Authorization', `Bearer ${validToken}`)
           .send({
             amount: { $gt: 0 },
-            groupId: 'test'
+            groupId: 'test',
           })
           .end((err, res) => {
             // Should validate and reject malicious operators
@@ -81,7 +81,7 @@ describe('Security Penetration Tests (OWASP Top 10)', () => {
           .send({
             phone: '+254712345678; rm -rf /',
             amount: 100,
-            provider: 'mpesa'
+            provider: 'mpesa',
           })
           .end((err, res) => {
             // Should treat as invalid input
@@ -98,10 +98,10 @@ describe('Security Penetration Tests (OWASP Top 10)', () => {
         .post('/api/auth/login')
         .send({
           email: 'admin@example.com',
-          password: ''
+          password: '',
         })
         .expect(401)
-        .end((err, res) => {
+        .end((err, _res) => {
           if (err) return done(err);
           done();
         });
@@ -112,7 +112,7 @@ describe('Security Penetration Tests (OWASP Top 10)', () => {
         .post('/api/auth/login')
         .send({
           email: 'nonexistent@example.com',
-          password: 'wrongpassword'
+          password: 'wrongpassword',
         })
         .end((err, res) => {
           if (err) return done(err);
@@ -126,12 +126,10 @@ describe('Security Penetration Tests (OWASP Top 10)', () => {
       const loginAttempts = 10;
 
       for (let i = 0; i < loginAttempts; i++) {
-        const res = await request(app)
-          .post('/api/auth/login')
-          .send({
-            email: 'test@example.com',
-            password: 'wrongpassword'
-          });
+        const res = await request(app).post('/api/auth/login').send({
+          email: 'test@example.com',
+          password: 'wrongpassword',
+        });
 
         if (res.status === 429) {
           // Rate limiter activated - test passed
@@ -147,7 +145,7 @@ describe('Security Penetration Tests (OWASP Top 10)', () => {
       request(app)
         .post('/api/auth/logout')
         .set('Authorization', `Bearer ${validToken}`)
-        .end((err, res) => {
+        .end((err, _res) => {
           if (err) return done(err);
 
           // Token should be invalid after logout
@@ -212,10 +210,9 @@ describe('Security Penetration Tests (OWASP Top 10)', () => {
 
   describe('A5: Broken Access Control', () => {
     it('should not allow access to other users data', (done) => {
-      const otherUserId = new mongoose.Types.ObjectId();
 
-      request(app)
-        .get(`/api/contributions/user/${otherUserId}/statistics`)
+        request(app)
+        .get(`/api/contributions/user/${new mongoose.Types.ObjectId()}/statistics`)
         .set('Authorization', `Bearer ${validToken}`)
         .end((err, res) => {
           if (err) return done(err);
@@ -238,7 +235,6 @@ describe('Security Penetration Tests (OWASP Top 10)', () => {
     });
 
     it('should verify user owns the resource being modified', (done) => {
-      const otherUserId = new mongoose.Types.ObjectId();
       const otherGroupId = new mongoose.Types.ObjectId();
 
       request(app)
@@ -262,7 +258,7 @@ describe('Security Penetration Tests (OWASP Top 10)', () => {
         .set('Authorization', `Bearer ${validToken}`)
         .send({
           name: '<script>alert("XSS")</script>',
-          description: '<img src=x onerror="alert(\'XSS\')">'
+          description: '<img src=x onerror="alert(\'XSS\')">',
         })
         .end((err, res) => {
           if (err) return done(err);
@@ -282,7 +278,7 @@ describe('Security Penetration Tests (OWASP Top 10)', () => {
         .set('Authorization', `Bearer ${validToken}`)
         .send({
           groupId: 'test',
-          message: '<img src=x onerror="alert(\'XSS\')">'
+          message: '<img src=x onerror="alert(\'XSS\')">',
         })
         .end((err, res) => {
           if (err) return done(err);
@@ -336,11 +332,11 @@ describe('Security Penetration Tests (OWASP Top 10)', () => {
         .post('/api/auth/login')
         .send({
           email: `secure-${Date.now()}@example.com`,
-          password: 'TestPassword123!'
+          password: 'TestPassword123!',
         })
         .end((err, res) => {
           if (res.headers['set-cookie']) {
-            res.headers['set-cookie'].forEach(cookie => {
+            res.headers['set-cookie'].forEach((cookie) => {
               // Should have Secure flag in production
               // Should have HttpOnly flag
               expect(cookie).toMatch(/HttpOnly/);
@@ -358,10 +354,10 @@ describe('Security Penetration Tests (OWASP Top 10)', () => {
         .send({
           email: 'not-a-valid-email',
           password: 'SecurePassword123!',
-          fullName: 'Test'
+          fullName: 'Test',
         })
         .expect(400)
-        .end((err, res) => {
+        .end((err, _res) => {
           if (err) return done(err);
           done();
         });
@@ -374,10 +370,10 @@ describe('Security Penetration Tests (OWASP Top 10)', () => {
         .send({
           phone: 'invalid-phone',
           amount: 100,
-          provider: 'mpesa'
+          provider: 'mpesa',
         })
         .expect(400)
-        .end((err, res) => {
+        .end((err, _res) => {
           if (err) return done(err);
           done();
         });
@@ -390,10 +386,10 @@ describe('Security Penetration Tests (OWASP Top 10)', () => {
         .send({
           groupId: 'test',
           amount: 'not-a-number',
-          paymentMethod: 'mobile_money'
+          paymentMethod: 'mobile_money',
         })
         .expect(400)
-        .end((err, res) => {
+        .end((err, _res) => {
           if (err) return done(err);
           done();
         });
@@ -404,12 +400,10 @@ describe('Security Penetration Tests (OWASP Top 10)', () => {
     it('should log failed authentication attempts', async () => {
       // Attempt login with invalid credentials multiple times
       for (let i = 0; i < 3; i++) {
-        await request(app)
-          .post('/api/auth/login')
-          .send({
-            email: 'test@example.com',
-            password: 'wrong-password'
-          });
+        await request(app).post('/api/auth/login').send({
+          email: 'test@example.com',
+          password: 'wrong-password',
+        });
       }
 
       // Verify logs can be accessed (if logging endpoint exists)

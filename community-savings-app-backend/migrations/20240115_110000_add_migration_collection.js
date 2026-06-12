@@ -46,13 +46,15 @@ const migration = {
       logger.info('[Migration] 20240115_110000 - Collection created, adding indices');
 
       // Create indices
-      await db.collection('migrations').createIndexes([
-        { key: { version: 1 }, unique: true },
-        { key: { status: 1, environment: 1 } },
-        { key: { batch: 1 } },
-        { key: { createdAt: -1 } },
-        { key: { path: 1 } },
-      ]);
+      await db
+        .collection('migrations')
+        .createIndexes([
+          { key: { version: 1 }, unique: true },
+          { key: { status: 1, environment: 1 } },
+          { key: { batch: 1 } },
+          { key: { createdAt: -1 } },
+          { key: { path: 1 } },
+        ]);
 
       logger.info('[Migration] ✓ 20240115_110000 - migrations collection and indices created');
     } catch (error) {

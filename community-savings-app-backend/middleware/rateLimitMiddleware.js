@@ -36,12 +36,12 @@ function createRateLimitMiddleware(redisClient, defaultConfig = {}) {
 
   // Default limits: more forgiving than strict
   const config = {
-    defaultUserLimit: 100,           // requests per user
-    defaultUserWindow: 600,          // per 10 minutes
-    defaultIpLimit: 500,             // requests per IP
-    defaultIpWindow: 600,            // per 10 minutes
-    adminMultiplier: 2,              // admins get 2x limits
-    logging: true,                   // log rate limit events
+    defaultUserLimit: 100, // requests per user
+    defaultUserWindow: 600, // per 10 minutes
+    defaultIpLimit: 500, // requests per IP
+    defaultIpWindow: 600, // per 10 minutes
+    adminMultiplier: 2, // admins get 2x limits
+    logging: true, // log rate limit events
     ...defaultConfig,
   };
 
@@ -54,7 +54,11 @@ function createRateLimitMiddleware(redisClient, defaultConfig = {}) {
    * @param {Object} opts - Additional options
    * @returns {Function} Express middleware
    */
-  const middleware = (userLimit = config.defaultUserLimit, window = config.defaultUserWindow, opts = {}) => {
+  const middleware = (
+    userLimit = config.defaultUserLimit,
+    window = config.defaultUserWindow,
+    opts = {}
+  ) => {
     const {
       ipLimit = config.defaultIpLimit,
       ipWindow = config.defaultIpWindow,
@@ -167,17 +171,14 @@ function createRateLimitMiddleware(redisClient, defaultConfig = {}) {
   middleware.strict = (opts) =>
     middleware(10, 60, { ...opts, message: 'Too many requests to this endpoint' });
 
-  middleware.normal = (opts) =>
-    middleware(30, 60, { ...opts, message: 'Rate limit exceeded' });
+  middleware.normal = (opts) => middleware(30, 60, { ...opts, message: 'Rate limit exceeded' });
 
-  middleware.lenient = (opts) =>
-    middleware(100, 600, { ...opts, message: 'Too many requests' });
+  middleware.lenient = (opts) => middleware(100, 600, { ...opts, message: 'Too many requests' });
 
   middleware.auth = (opts) =>
     middleware(5, 300, { ...opts, message: 'Too many authentication attempts' });
 
-  middleware.message = (opts) =>
-    middleware(10, 60, { ...opts, message: 'Too many messages sent' });
+  middleware.message = (opts) => middleware(10, 60, { ...opts, message: 'Too many messages sent' });
 
   middleware.payment = (opts) =>
     middleware(5, 60, { ...opts, message: 'Too many payment requests' });

@@ -1,4 +1,3 @@
-
 // models/User.js
 // ============================================================================
 // User Model (Mongoose)
@@ -122,7 +121,10 @@ const userSchema = new mongoose.Schema(
       trim: true,
       minlength: 6,
       maxlength: 32,
-      match: [/^[A-Za-z0-9_-]+$/, 'Referral code may only contain letters, numbers, underscores, and hyphens'],
+      match: [
+        /^[A-Za-z0-9_-]+$/,
+        'Referral code may only contain letters, numbers, underscores, and hyphens',
+      ],
     },
 
     lastLogin: {

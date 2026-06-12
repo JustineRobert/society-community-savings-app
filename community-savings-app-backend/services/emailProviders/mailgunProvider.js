@@ -12,7 +12,9 @@ try {
   FormData = require('form-data');
   mailgunClient = require('mailgun.js');
 } catch (err) {
-  logger.warn('[EmailProvider:Mailgun] Mailgun SDK not installed. Install with: npm install mailgun.js form-data');
+  logger.warn(
+    '[EmailProvider:Mailgun] Mailgun SDK not installed. Install with: npm install mailgun.js form-data'
+  );
 }
 
 let mailgun;
@@ -35,7 +37,9 @@ async function send({ to, from, fromName, subject, html, text }) {
   const mg = getMailgunClient();
 
   if (!mg) {
-    throw new Error('Mailgun not configured. Install mailgun.js, form-data, and set MAILGUN_API_KEY');
+    throw new Error(
+      'Mailgun not configured. Install mailgun.js, form-data, and set MAILGUN_API_KEY'
+    );
   }
 
   const domain = process.env.MAILGUN_DOMAIN;

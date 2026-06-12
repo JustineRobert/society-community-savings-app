@@ -19,33 +19,37 @@ npm test
 ## 📝 Important Changes
 
 ### Environment Variables
+
 **OLD (React Scripts):**
+
 ```javascript
-process.env.REACT_APP_API_URL
+process.env.REACT_APP_API_URL;
 ```
 
 **NEW (Vite):**
+
 ```javascript
-import.meta.env.VITE_API_URL
+import.meta.env.VITE_API_URL;
 ```
 
 ### Variable Names
-| Old | New |
-|-----|-----|
-| REACT_APP_API_URL | VITE_API_URL |
+
+| Old                | New           |
+| ------------------ | ------------- |
+| REACT_APP_API_URL  | VITE_API_URL  |
 | REACT_APP_APP_NAME | VITE_APP_NAME |
 
 See `.env.example` for complete list.
 
 ## 📦 What Changed
 
-| Item | Before | After |
-|------|--------|-------|
-| Build Tool | Create React App | Vite |
-| Test Runner | Jest | Vitest |
-| Entry Point | src/index.js | src/main.jsx |
-| Dev Server Speed | 10-15s | 2-3s |
-| HMR Speed | 5-8s | 100-500ms |
+| Item             | Before           | After        |
+| ---------------- | ---------------- | ------------ |
+| Build Tool       | Create React App | Vite         |
+| Test Runner      | Jest             | Vitest       |
+| Entry Point      | src/index.js     | src/main.jsx |
+| Dev Server Speed | 10-15s           | 2-3s         |
+| HMR Speed        | 5-8s             | 100-500ms    |
 
 ## ✅ What Stayed the Same
 
@@ -97,18 +101,22 @@ npm audit fix              # Fix vulnerabilities
 ## 🐛 Troubleshooting
 
 **Module not found?**
+
 - Restart dev server: `npm start`
 
 **Env variables not working?**
+
 - Must start with `VITE_` prefix
 - Restart dev server
 - Use `import.meta.env.VITE_*` to access
 
 **HMR not updating?**
+
 - Check dev server is running
 - Try browser refresh
 
 **Build too large?**
+
 - Check `vite.config.js` build settings
 - Run with `npm run build` (includes minification)
 

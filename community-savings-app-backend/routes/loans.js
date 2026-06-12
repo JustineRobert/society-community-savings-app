@@ -44,7 +44,10 @@ router.use(auth.verifyToken);
 router.post(
   '/',
   [
-    body('amount').isNumeric().custom((val) => val > 0).withMessage('amount must be positive'),
+    body('amount')
+      .isNumeric()
+      .custom((val) => val > 0)
+      .withMessage('amount must be positive'),
     body('duration')
       .isInt({ min: 1, max: 360 })
       .withMessage('duration must be between 1 and 360 months'),
@@ -172,7 +175,10 @@ router.post(
   '/:loanId/repayment',
   [
     param('loanId').isMongoId().withMessage('Invalid loan ID'),
-    body('amount').isNumeric().custom((val) => val > 0).withMessage('amount must be positive'),
+    body('amount')
+      .isNumeric()
+      .custom((val) => val > 0)
+      .withMessage('amount must be positive'),
     body('method').optional().isString().trim(),
     body('reference').optional().isString().trim(),
   ],

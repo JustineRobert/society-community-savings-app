@@ -24,7 +24,7 @@ const HelpArticleSchema = new mongoose.Schema({
   notHelpful: { type: Number, default: 0 },
   featured: { type: Boolean, default: false },
   order: { type: Number, default: 0 },
-  relatedArticles: [String] // slugs of related articles
+  relatedArticles: [String], // slugs of related articles
 });
 
 // Help Category Schema
@@ -34,7 +34,7 @@ const HelpCategorySchema = new mongoose.Schema({
   description: String,
   icon: String,
   order: { type: Number, default: 0 },
-  articleCount: { type: Number, default: 0 }
+  articleCount: { type: Number, default: 0 },
 });
 
 // Help Feedback Schema (for tracking article helpfulness)
@@ -43,7 +43,7 @@ const HelpFeedbackSchema = new mongoose.Schema({
   userId: mongoose.Schema.Types.ObjectId,
   helpful: Boolean,
   feedback: String,
-  createdAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now },
 });
 
 const HelpArticle = mongoose.model('HelpArticle', HelpArticleSchema);
@@ -67,8 +67,10 @@ async function getAllCategories() {
  */
 async function getArticlesByCategory(categorySlug) {
   try {
-    const articles = await HelpArticle.find({ category: categorySlug })
-      .sort({ featured: -1, order: 1 });
+    const articles = await HelpArticle.find({ category: categorySlug }).sort({
+      featured: -1,
+      order: 1,
+    });
     return articles;
   } catch (error) {
     throw new Error(`Failed to retrieve articles: ${error.message}`);
@@ -102,8 +104,8 @@ async function searchArticles(query) {
         { title: { $regex: query, $options: 'i' } },
         { content: { $regex: query, $options: 'i' } },
         { keywords: { $regex: query, $options: 'i' } },
-        { tags: { $regex: query, $options: 'i' } }
-      ]
+        { tags: { $regex: query, $options: 'i' } },
+      ],
     }).limit(20);
     return articles;
   } catch (error) {
@@ -116,9 +118,7 @@ async function searchArticles(query) {
  */
 async function getFeaturedArticles(limit = 5) {
   try {
-    const articles = await HelpArticle.find({ featured: true })
-      .limit(limit)
-      .sort({ order: 1 });
+    const articles = await HelpArticle.find({ featured: true }).limit(limit).sort({ order: 1 });
     return articles;
   } catch (error) {
     throw new Error(`Failed to retrieve featured articles: ${error.message}`);
@@ -130,9 +130,7 @@ async function getFeaturedArticles(limit = 5) {
  */
 async function getMostViewedArticles(limit = 10) {
   try {
-    const articles = await HelpArticle.find()
-      .sort({ views: -1 })
-      .limit(limit);
+    const articles = await HelpArticle.find().sort({ views: -1 }).limit(limit);
     return articles;
   } catch (error) {
     throw new Error(`Failed to retrieve popular articles: ${error.message}`);
@@ -148,7 +146,7 @@ async function recordFeedback(articleSlug, userId, helpful, feedback) {
       articleSlug,
       userId,
       helpful,
-      feedback
+      feedback,
     });
 
     await feedbackRecord.save();
@@ -177,7 +175,7 @@ async function getRelatedArticles(slug) {
     }
 
     const related = await HelpArticle.find({
-      slug: { $in: article.relatedArticles }
+      slug: { $in: article.relatedArticles },
     });
     return related;
   } catch (error) {
@@ -198,13 +196,55 @@ async function seedInitialData() {
 
     // Create categories
     const categories = [
-      { name: 'Getting Started', slug: 'getting-started', description: 'Learn the basics', icon: 'rocket', order: 1 },
-      { name: 'Account Management', slug: 'account-management', description: 'Manage your account', icon: 'user', order: 2 },
-      { name: 'Groups & Contributions', slug: 'groups-contributions', description: 'Savings groups and contributions', icon: 'users', order: 3 },
-      { name: 'Loans', slug: 'loans', description: 'Loan management and repayment', icon: 'money', order: 4 },
-      { name: 'Payments', slug: 'payments', description: 'Payment methods and transactions', icon: 'credit-card', order: 5 },
-      { name: 'Security', slug: 'security', description: 'Protect your account', icon: 'lock', order: 6 },
-      { name: 'Troubleshooting', slug: 'troubleshooting', description: 'Common issues and solutions', icon: 'tools', order: 7 }
+      {
+        name: 'Getting Started',
+        slug: 'getting-started',
+        description: 'Learn the basics',
+        icon: 'rocket',
+        order: 1,
+      },
+      {
+        name: 'Account Management',
+        slug: 'account-management',
+        description: 'Manage your account',
+        icon: 'user',
+        order: 2,
+      },
+      {
+        name: 'Groups & Contributions',
+        slug: 'groups-contributions',
+        description: 'Savings groups and contributions',
+        icon: 'users',
+        order: 3,
+      },
+      {
+        name: 'Loans',
+        slug: 'loans',
+        description: 'Loan management and repayment',
+        icon: 'money',
+        order: 4,
+      },
+      {
+        name: 'Payments',
+        slug: 'payments',
+        description: 'Payment methods and transactions',
+        icon: 'credit-card',
+        order: 5,
+      },
+      {
+        name: 'Security',
+        slug: 'security',
+        description: 'Protect your account',
+        icon: 'lock',
+        order: 6,
+      },
+      {
+        name: 'Troubleshooting',
+        slug: 'troubleshooting',
+        description: 'Common issues and solutions',
+        icon: 'tools',
+        order: 7,
+      },
     ];
 
     await HelpCategory.insertMany(categories);
@@ -221,7 +261,7 @@ async function seedInitialData() {
         tags: ['beginner', 'tutorial'],
         featured: true,
         order: 1,
-        author: 'Support Team'
+        author: 'Support Team',
       },
       {
         title: 'How to Create Your Profile',
@@ -233,7 +273,7 @@ async function seedInitialData() {
         tags: ['account', 'setup'],
         featured: true,
         order: 1,
-        author: 'Support Team'
+        author: 'Support Team',
       },
       {
         title: 'Understanding Savings Groups',
@@ -245,7 +285,7 @@ async function seedInitialData() {
         tags: ['groups', 'savings'],
         featured: true,
         order: 1,
-        author: 'Support Team'
+        author: 'Support Team',
       },
       {
         title: 'How to Request a Loan',
@@ -257,19 +297,20 @@ async function seedInitialData() {
         tags: ['loans', 'borrowing'],
         featured: true,
         order: 1,
-        author: 'Support Team'
+        author: 'Support Team',
       },
       {
         title: 'Payment Methods Available',
         slug: 'payment-methods',
         category: 'payments',
-        content: 'We support multiple payment methods including M-Pesa, Stripe, MTN MoMo, and Airtel Money...',
+        content:
+          'We support multiple payment methods including M-Pesa, Stripe, MTN MoMo, and Airtel Money...',
         summary: 'Learn about available payment options',
         keywords: ['payment', 'methods', 'mpesa', 'stripe'],
         tags: ['payments', 'methods'],
         featured: true,
         order: 1,
-        author: 'Support Team'
+        author: 'Support Team',
       },
       {
         title: 'Keeping Your Account Secure',
@@ -281,8 +322,8 @@ async function seedInitialData() {
         tags: ['security', 'safety'],
         featured: true,
         order: 1,
-        author: 'Support Team'
-      }
+        author: 'Support Team',
+      },
     ];
 
     await HelpArticle.insertMany(articles);
@@ -290,7 +331,7 @@ async function seedInitialData() {
     return {
       message: 'Help center initialized successfully',
       categoriesCreated: categories.length,
-      articlesCreated: articles.length
+      articlesCreated: articles.length,
     };
   } catch (error) {
     throw new Error(`Failed to seed initial data: ${error.message}`);
@@ -309,5 +350,5 @@ module.exports = {
   seedInitialData,
   HelpArticle,
   HelpCategory,
-  HelpFeedback
+  HelpFeedback,
 };

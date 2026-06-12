@@ -2,7 +2,7 @@
  * Airtel Money Provider Adapter
  * Integrates with Airtel Money API for payment collections and disbursements
  * Supports: Money transfer, account inquiry, transaction status
- * 
+ *
  * Documentation: https://developer.airtel.africa/
  */
 
@@ -97,7 +97,7 @@ class AirtelProvider extends BasePaymentProvider {
   /**
    * Create payment intent
    * Initiates a money transfer request
-   * 
+   *
    * @param {Object} params
    *   - amount: Payment amount
    *   - currency: Currency code (default: ZAR)
@@ -154,19 +154,15 @@ class AirtelProvider extends BasePaymentProvider {
       });
 
       const response = await this.retryWithBackoff(async () => {
-        return await axios.post(
-          `${this.baseUrl}/merchant/v2/payments/`,
-          payload,
-          {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              'X-API-Key': this.apiKey,
-              'Content-Type': 'application/json',
-              'X-Request-ID': transactionId,
-            },
-            timeout: this.requestTimeout,
-          }
-        );
+        return await axios.post(`${this.baseUrl}/merchant/v2/payments/`, payload, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'X-API-Key': this.apiKey,
+            'Content-Type': 'application/json',
+            'X-Request-ID': transactionId,
+          },
+          timeout: this.requestTimeout,
+        });
       });
 
       const { id, status } = response.data;
@@ -217,16 +213,13 @@ class AirtelProvider extends BasePaymentProvider {
       const accessToken = await this.getAccessToken();
 
       const response = await this.retryWithBackoff(async () => {
-        return await axios.get(
-          `${this.baseUrl}/merchant/v2/payments/${transactionId}`,
-          {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              'X-API-Key': this.apiKey,
-            },
-            timeout: this.requestTimeout,
-          }
-        );
+        return await axios.get(`${this.baseUrl}/merchant/v2/payments/${transactionId}`, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'X-API-Key': this.apiKey,
+          },
+          timeout: this.requestTimeout,
+        });
       });
 
       const { status } = response.data;
@@ -258,16 +251,13 @@ class AirtelProvider extends BasePaymentProvider {
       const accessToken = await this.getAccessToken();
 
       const response = await this.retryWithBackoff(async () => {
-        return await axios.get(
-          `${this.baseUrl}/merchant/v1/query/balance`,
-          {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              'X-API-Key': this.apiKey,
-            },
-            timeout: this.requestTimeout,
-          }
-        );
+        return await axios.get(`${this.baseUrl}/merchant/v1/query/balance`, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'X-API-Key': this.apiKey,
+          },
+          timeout: this.requestTimeout,
+        });
       });
 
       const balance = response.data.balance || 0;
@@ -292,7 +282,7 @@ class AirtelProvider extends BasePaymentProvider {
   /**
    * Verify webhook signature
    * Airtel includes a signature header that must be verified
-   * 
+   *
    * @param {Object} payload - Webhook payload
    * @param {Object} headers - Webhook headers
    * @returns {Boolean}
@@ -386,19 +376,15 @@ class AirtelProvider extends BasePaymentProvider {
       });
 
       const response = await this.retryWithBackoff(async () => {
-        return await axios.post(
-          `${this.baseUrl}/merchant/v2/refunds/`,
-          payload,
-          {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              'X-API-Key': this.apiKey,
-              'Content-Type': 'application/json',
-              'X-Request-ID': refundId,
-            },
-            timeout: this.requestTimeout,
-          }
-        );
+        return await axios.post(`${this.baseUrl}/merchant/v2/refunds/`, payload, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'X-API-Key': this.apiKey,
+            'Content-Type': 'application/json',
+            'X-Request-ID': refundId,
+          },
+          timeout: this.requestTimeout,
+        });
       });
 
       logger.info('[Airtel] Refund initiated', {

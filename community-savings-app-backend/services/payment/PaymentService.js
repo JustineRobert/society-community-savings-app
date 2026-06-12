@@ -81,7 +81,7 @@ class PaymentService {
         currency,
         metadata: {
           paymentIntentId: pi._id.toString(),
-          userId, 
+          userId,
           ...metadata,
         },
         idempotencyKey: pi.idempotencyKey,
@@ -363,10 +363,7 @@ class PaymentService {
       }
 
       const [transactions, total] = await Promise.all([
-        Transaction.find(query)
-          .sort({ createdAt: -1 })
-          .limit(limit)
-          .skip(skip),
+        Transaction.find(query).sort({ createdAt: -1 }).limit(limit).skip(skip),
         Transaction.countDocuments(query),
       ]);
 

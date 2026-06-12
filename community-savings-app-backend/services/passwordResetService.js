@@ -10,6 +10,78 @@ const PasswordResetToken = require('../models/PasswordResetToken');
 const User = require('../models/User');
 const logger = require('../utils/logger');
 
+
+const zxcvbn = require('zxcvbn');
+
+// ✅ Common weak passwords (expandable)
+const COMMON_PASSWORDS = [
+  'password',
+  '123456',
+  '123456789',
+  'qwerty',
+  'welcome',
+  '12345678',
+  'abc123',
+  '111111',
+];
+
+// ✅ Enterprise-grade validator
+function validatePasswordEnterprise(password, context = {}) {
+  const result = zxcvbn(password);
+
+  const rules = {
+    minLength: password.length >= 12,
+    hasUpperCase: /[A-Z]/.test(password),
+    hasLowerCase: /[a-z]/.test(password),
+    hasNumber: /[0-9]/.test(password),
+    hasSpecialChar: /[!@#$%^&*()_+\-={}[\]:";'<>?,./|\\]/.test(password),
+
+    // ✅ New enterprise rules
+    notCommonPassword: !COMMON_PASSWORDS.includes(password.toLowerCase()),
+    noUserInfo: !password.toLowerCase().includes((context.email || '').split('@')[0] || ''),
+  };
+
+  const allRulesPassed = Object.values(rules).every(Boolean);
+
+  // ✅ Adaptive scoring (zxcvbn: 0–4)
+  const adaptiveValid = result.score >= 3; // require strong password
+
+  const valid = allRulesPassed && adaptiveValid;
+
+  return {
+    valid,
+    score: result.score, // 0–4
+    entropy: result.guesses,
+
+    feedback: result.feedback,
+
+    rules,
+
+    message: valid
+      ? 'Strong password'
+      : buildPasswordErrorMessage(rules, result),
+  };
+}
+
+// ✅ Human-readable error
+function buildPasswordErrorMessage(rules, result) {
+  if (!rules.minLength) return 'Password must be at least 12 characters';
+  if (!rules.hasUpperCase) return 'Add at least one uppercase letter';
+  if (!rules.hasLowerCase) return 'Add at least one lowercase letter';
+  if (!rules.hasNumber) return 'Add at least one number';
+  if (!rules.hasSpecialChar) return 'Add at least one special character';
+  if (!rules.notCommonPassword) return 'Password is too common';
+  if (!rules.noUserInfo) return 'Password must not contain personal information';
+
+  if (result.score < 3) {
+    return 'Password is too weak. Use a longer, more complex password.';
+  }
+
+  return 'Password does not meet requirements';
+}
+
+module.exports = { validatePasswordEnterprise };
+
 // Password strength validation using zxcvbn (if available) or custom rules
 const validatePasswordStrength = (password) => {
   // Minimum 12 characters, must include uppercase, lowercase, number, special char
@@ -18,7 +90,7 @@ const validatePasswordStrength = (password) => {
     hasUpperCase: /[A-Z]/.test(password),
     hasLowerCase: /[a-z]/.test(password),
     hasNumber: /[0-9]/.test(password),
-    hasSpecialChar: /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password),
+    hasSpecialChar: /[!@#$%^&*()_+\-={}[\]:";'<>?,./|\\]/.test(password),
   };
 
   const passedRules = Object.values(rules).filter(Boolean).length;
@@ -304,7 +376,7 @@ class PasswordResetService {
         hasPendingReset: !!pendingToken,
         expiresAt: pendingToken && pendingToken.expiresAt,
         attemptsMade: pendingToken && (pendingToken.attempts || 0),
-        attemptsRemaining: pendingToken && (this.maxAttempts - (pendingToken.attempts || 0)),
+        attemptsRemaining: pendingToken && this.maxAttempts - (pendingToken.attempts || 0),
       };
     } catch (error) {
       logger.error('[PasswordResetService] Error getting reset status', {

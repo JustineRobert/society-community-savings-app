@@ -344,7 +344,10 @@ class AlertSystem {
           rule.triggerCount++;
         }
       } catch (error) {
-        logger.error('[AlertSystem] Error checking rule', { rule: rule.name, error: error.message });
+        logger.error('[AlertSystem] Error checking rule', {
+          rule: rule.name,
+          error: error.message,
+        });
       }
     }
   }
@@ -435,7 +438,9 @@ function setupDefaultAlerts() {
     message: 'High application error rate detected',
     condition: (metrics) => {
       const errorMetrics = metrics.getMetrics().filter((m) => m.name && m.name.includes('error'));
-      const successMetrics = metrics.getMetrics().filter((m) => m.name && m.name.includes('success'));
+      const successMetrics = metrics
+        .getMetrics()
+        .filter((m) => m.name && m.name.includes('success'));
 
       if (successMetrics.length === 0) return false;
 

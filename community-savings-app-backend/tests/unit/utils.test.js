@@ -4,6 +4,13 @@
  * Unit tests for validation, formatting, and helper functions
  */
 
+/**
+ * Utility Functions Unit Tests
+ */
+
+/* global Intl */
+
+
 describe('Utility Functions', () => {
   describe('Phone Number Validation', () => {
     const validatePhoneNumber = (phone) => {
@@ -46,14 +53,14 @@ describe('Utility Functions', () => {
     const formatCurrency = (amount, currency = 'USD') => {
       const formatter = new Intl.NumberFormat('en-US', {
         style: 'currency',
-        currency
+        currency,
       });
       return formatter.format(amount);
     };
 
     it('should format amounts as currency', () => {
       expect(formatCurrency(1000)).toBe('$1,000.00');
-      expect(formatCurrency(1000.50)).toBe('$1,000.50');
+      expect(formatCurrency(1000.5)).toBe('$1,000.50');
     });
 
     it('should support different currencies', () => {
@@ -201,7 +208,7 @@ describe('Utility Functions', () => {
       set(key, value) {
         this.data.set(key, {
           value,
-          expiresAt: Date.now() + this.ttl
+          expiresAt: Date.now() + this.ttl,
         });
       }
 
@@ -246,8 +253,8 @@ describe('Utility Functions', () => {
           page,
           limit,
           total: items.length,
-          pages: Math.ceil(items.length / limit)
-        }
+          pages: Math.ceil(items.length / limit),
+        },
       };
     };
 

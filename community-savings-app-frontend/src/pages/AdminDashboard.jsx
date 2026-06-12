@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useContext } from "react";
-import { AuthContext } from "../context/AuthContext";
-import { useNavigate } from "react-router-dom";
-import axios from "axios";
+import React, { useEffect, useState, useContext } from 'react';
+import { AuthContext } from '../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 
 const AdminDashboard = () => {
   const { user, token } = useContext(AuthContext);
@@ -12,8 +12,8 @@ const AdminDashboard = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (user?.role !== "admin") {
-      navigate("/dashboard");
+    if (user?.role !== 'admin') {
+      navigate('/dashboard');
     } else {
       fetchAdminData();
     }
@@ -22,10 +22,10 @@ const AdminDashboard = () => {
   const fetchAdminData = async () => {
     try {
       const [userRes, requestRes] = await Promise.all([
-        axios.get("/api/admin/users", {
+        axios.get('/api/admin/users', {
           headers: { Authorization: `Bearer ${token}` },
         }),
-        axios.get("/api/admin/group-requests", {
+        axios.get('/api/admin/group-requests', {
           headers: { Authorization: `Bearer ${token}` },
         }),
       ]);
@@ -33,7 +33,7 @@ const AdminDashboard = () => {
       setRequests(requestRes.data);
       setLoading(false);
     } catch (err) {
-      console.error("Admin fetch error", err);
+      console.error('Admin fetch error', err);
     }
   };
 
@@ -63,9 +63,7 @@ const AdminDashboard = () => {
           <div className="bg-white rounded-xl shadow p-4">
             <h2 className="text-xl font-semibold mb-2">Group Approval Requests</h2>
             <ul className="space-y-2">
-              {requests.length === 0 && (
-                <p className="text-gray-500">No pending requests</p>
-              )}
+              {requests.length === 0 && <p className="text-gray-500">No pending requests</p>}
               {requests.map((req) => (
                 <li
                   key={req._id}
@@ -73,9 +71,7 @@ const AdminDashboard = () => {
                 >
                   <div>
                     <p className="font-semibold">{req.name}</p>
-                    <p className="text-sm text-gray-500">
-                      Requested by: {req.owner?.name}
-                    </p>
+                    <p className="text-sm text-gray-500">Requested by: {req.owner?.name}</p>
                   </div>
                   <button className="bg-green-600 text-white px-4 py-1 rounded hover:bg-green-700">
                     Approve

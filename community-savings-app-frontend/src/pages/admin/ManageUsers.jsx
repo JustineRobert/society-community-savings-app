@@ -21,7 +21,7 @@ const ManageUsers = () => {
           </tr>
         </thead>
         <tbody>
-          {users.map(user => (
+          {users.map((user) => (
             <tr key={user.id} className="hover:bg-gray-50">
               <td className="border px-4 py-2">{user.id}</td>
               <td className="border px-4 py-2">{user.name}</td>

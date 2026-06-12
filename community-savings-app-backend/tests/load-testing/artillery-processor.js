@@ -41,16 +41,18 @@ function extractAuthToken(requestParams, context, ee, next) {
 function beforeRequest(requestParams, context, ee, next) {
   const method = requestParams.method || 'GET';
   const url = requestParams.url;
-  
+
   console.log(`[${new Date().toISOString()}] ${method} ${url}`);
-  
+
   return next();
 }
 
 // Error handler
 function afterResponse(requestParams, response, context, ee, next) {
   if (response.statusCode >= 400) {
-    console.error(`[${new Date().toISOString()}] Error: ${response.statusCode} on ${requestParams.url}`);
+    console.error(
+      `[${new Date().toISOString()}] Error: ${response.statusCode} on ${requestParams.url}`
+    );
   }
   return next();
 }
@@ -61,5 +63,5 @@ module.exports = {
   phoneNumber,
   extractAuthToken,
   beforeRequest,
-  afterResponse
+  afterResponse,
 };

@@ -13,7 +13,9 @@ try {
   SESClient = SES;
   SendEmailCommand = SEC;
 } catch (err) {
-  logger.warn('[EmailProvider:SES] AWS SDK not installed. Install with: npm install @aws-sdk/client-ses');
+  logger.warn(
+    '[EmailProvider:SES] AWS SDK not installed. Install with: npm install @aws-sdk/client-ses'
+  );
 }
 
 let sesClient;

@@ -1,6 +1,7 @@
 # Staging Deployment Guide
 
 ## Overview
+
 This guide provides step-by-step instructions for deploying the Community Savings App to the staging environment.
 
 ## Prerequisites
@@ -79,6 +80,7 @@ certbot certonly --standalone -d staging.example.com
 ### 3. Configure DNS
 
 Point your domain to the staging server:
+
 ```
 staging.example.com A <your-server-ip>
 ```
@@ -95,26 +97,31 @@ chmod +x scripts/deploy-staging.sh
 ### Manual Deployment
 
 #### Step 1: Build Images
+
 ```bash
 docker-compose -f docker-compose.staging.yml build
 ```
 
 #### Step 2: Start Services
+
 ```bash
 docker-compose -f docker-compose.staging.yml up -d
 ```
 
 #### Step 3: Check Status
+
 ```bash
 docker-compose -f docker-compose.staging.yml ps
 ```
 
 #### Step 4: View Logs
+
 ```bash
 docker-compose -f docker-compose.staging.yml logs -f backend
 ```
 
 #### Step 5: Run Migrations
+
 ```bash
 docker-compose -f docker-compose.staging.yml exec backend npm run migrate:staging
 ```
@@ -122,18 +129,21 @@ docker-compose -f docker-compose.staging.yml exec backend npm run migrate:stagin
 ### Verification
 
 #### Service Health
+
 ```bash
 curl http://localhost:5000/healthz
 curl http://localhost:5000/readyz
 ```
 
 #### Database Connection
+
 ```bash
 docker-compose -f docker-compose.staging.yml exec mongodb \
   mongosh admin -u admin -p staging-password --eval "db.adminCommand('ping')"
 ```
 
 #### Redis Connection
+
 ```bash
 docker-compose -f docker-compose.staging.yml exec redis redis-cli ping
 ```
@@ -142,13 +152,13 @@ docker-compose -f docker-compose.staging.yml exec redis redis-cli ping
 
 ### 1. Access Services
 
-| Service | URL | Credentials |
-|---------|-----|-------------|
-| Backend API | http://localhost:5000 | - |
-| Frontend | http://localhost:3000 | - |
-| Prometheus | http://localhost:9090 | - |
-| Grafana | http://localhost:3001 | admin / password |
-| Nginx Status | http://localhost/nginx_status | - |
+| Service      | URL                           | Credentials      |
+| ------------ | ----------------------------- | ---------------- |
+| Backend API  | http://localhost:5000         | -                |
+| Frontend     | http://localhost:3000         | -                |
+| Prometheus   | http://localhost:9090         | -                |
+| Grafana      | http://localhost:3001         | admin / password |
+| Nginx Status | http://localhost/nginx_status | -                |
 
 ### 2. Run Tests
 
@@ -169,6 +179,7 @@ npm run test:security
 ### 3. Configure Monitoring
 
 #### Grafana Setup
+
 1. Access Grafana at `http://localhost:3001`
 2. Login with default credentials
 3. Add Prometheus data source:
@@ -176,6 +187,7 @@ npm run test:security
 4. Import dashboards (available in `grafana/dashboards/`)
 
 #### Create Dashboards
+
 - Application Health
 - Performance Metrics
 - Error Rates
@@ -233,6 +245,7 @@ upstream backend {
 ```
 
 Restart services:
+
 ```bash
 docker-compose -f docker-compose.staging.yml up -d
 ```
@@ -240,6 +253,7 @@ docker-compose -f docker-compose.staging.yml up -d
 ## Troubleshooting
 
 ### Service Won't Start
+
 ```bash
 # Check logs
 docker-compose -f docker-compose.staging.yml logs backend
@@ -253,6 +267,7 @@ docker-compose -f docker-compose.staging.yml up -d
 ```
 
 ### High CPU/Memory Usage
+
 ```bash
 # Check resource usage
 docker stats
@@ -266,6 +281,7 @@ deploy:
 ```
 
 ### Database Connection Issues
+
 ```bash
 # Test MongoDB connection
 docker-compose -f docker-compose.staging.yml exec backend \
@@ -273,6 +289,7 @@ docker-compose -f docker-compose.staging.yml exec backend \
 ```
 
 ### SSL Certificate Issues
+
 ```bash
 # Check certificate validity
 openssl x509 -in nginx/ssl/staging.crt -text -noout
@@ -284,6 +301,7 @@ certbot renew --force-renewal
 ## Maintenance
 
 ### Regular Backups
+
 ```bash
 # Create full backup
 docker-compose -f docker-compose.staging.yml exec mongodb \
@@ -294,6 +312,7 @@ ls -la /backup/
 ```
 
 ### Database Maintenance
+
 ```bash
 # Run database cleanup
 docker-compose -f docker-compose.staging.yml exec mongodb \
@@ -301,6 +320,7 @@ docker-compose -f docker-compose.staging.yml exec mongodb \
 ```
 
 ### Log Rotation
+
 ```bash
 # Configure logrotate
 sudo tee /etc/logrotate.d/staging-app > /dev/null <<EOF
@@ -319,13 +339,15 @@ EOF
 ## Performance Tuning
 
 ### Database Optimization
+
 ```javascript
 // Create indexes
-db.contributions.createIndex({ groupId: 1, createdAt: -1 })
-db.loans.createIndex({ status: 1, createdAt: -1 })
+db.contributions.createIndex({ groupId: 1, createdAt: -1 });
+db.loans.createIndex({ status: 1, createdAt: -1 });
 ```
 
 ### Nginx Tuning
+
 ```nginx
 # Increase worker connections
 worker_connections 4096;
@@ -336,6 +358,7 @@ proxy_cache cache;
 ```
 
 ### Redis Optimization
+
 ```bash
 # Analyze memory usage
 redis-cli --stat
@@ -347,6 +370,7 @@ redis-cli DEBUG OBJECT key_name
 ## Disaster Recovery
 
 ### Restore from Backup
+
 ```bash
 # Extract backup
 tar -xzf backup-staging-20240115.tar.gz
@@ -362,6 +386,7 @@ docker-compose -f docker-compose.staging.yml up -d
 ## Rollback Procedure
 
 ### Rollback to Previous Version
+
 ```bash
 # Stop services
 docker-compose -f docker-compose.staging.yml down

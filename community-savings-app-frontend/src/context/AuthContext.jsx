@@ -1,13 +1,13 @@
-
-// src/context/AuthContext.js
+// src/context/AuthContext.jsx
 import React, {
   createContext,
   useContext,
   useEffect,
   useState,
   useCallback,
+  useRef,
 } from 'react';
-import socket from '../services/socket';
+import socket, { connectSocket } from '../services/socket';
 import { toast } from 'react-toastify';
 import axios from 'axios';
 
@@ -23,165 +23,232 @@ const AuthContext = createContext({
   refreshToken: async () => {},
 });
 
-// Create an axios instance we can attach interceptors to
-// Set a reasonable timeout so the auth initialization cannot hang
-const api = axios.create({ baseURL: API_BASE, withCredentials: true, timeout: 5000 });
+const api = axios.create({
+  baseURL: API_BASE,
+  withCredentials: true,
+  timeout: 10000,
+});
 
-// Track refresh attempts to prevent cascading failures
+// Helper: parse JWT and return payload or null
+function parseJwt(token) {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const json = decodeURIComponent(
+      atob(payload)
+        .split('')
+        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+        .join('')
+    );
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
+// Helper: compute ms until refresh (refreshBuffer seconds before expiry)
+function msUntilRefresh(token, refreshBuffer = 120) {
+  const payload = parseJwt(token);
+  if (!payload || !payload.exp) return null;
+  const expMs = payload.exp * 1000;
+  const refreshAt = expMs - refreshBuffer * 1000;
+  const now = Date.now();
+  return Math.max(refreshAt - now, 0);
+}
+
 let refreshPromise = null;
-
-/**
- * Calculate exponential backoff delay in milliseconds
- * Attempt 1: 100ms, Attempt 2: 200ms, Attempt 3: 400ms
- */
-const getBackoffDelay = (attempt) => {
-  return Math.min(100 * Math.pow(2, attempt - 1), 1000);
-};
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(null);
+  const [token, setToken] = useState(() => localStorage.getItem('token'));
   const [loading, setLoading] = useState(true);
 
-  // core logout used internally
-  const doLogout = useCallback(async () => {
-    try {
-      await api.post('/api/auth/logout');
-    } catch (err) {
-      // ignore
-    } finally {
-      setToken(null);
-      setUser(null);
-      toast.info('Logged out');
-    }
-  }, []);
+  const refreshTimerRef = useRef(null);
+  const mountedRef = useRef(true);
 
-  // Attach Authorization header when token changes
+  // Sync axios + localStorage when token changes
   useEffect(() => {
     if (token) {
       api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       localStorage.setItem('token', token);
+      // reconnect socket with latest JWT
+      connectSocket();
+      scheduleRefresh(token);
     } else {
       delete api.defaults.headers.common['Authorization'];
       localStorage.removeItem('token');
-    }
-  }, [token]);
-
-  // manage websocket connection whenever auth token updates
-  useEffect(() => {
-    if (token) {
-      socket.auth = { token };
-      socket.connect();
-    } else {
       socket.disconnect();
+      clearScheduledRefresh();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  // global notification listener
+  // Socket listeners
   useEffect(() => {
-    const handleNotification = (data) => {
-      const message = data?.message || 'You have a new notification';
-      toast.info(message);
-    };
-    socket.on('notification', handleNotification);
+    socket.on('connect', () => {
+      console.log('Socket connected:', socket.id);
+    });
+
+    socket.on('disconnect', (reason) => {
+      console.log('Socket disconnected:', reason);
+    });
+
+    socket.on('presence:updated', (data) => {
+      console.log('Presence update:', data);
+    });
+
+    socket.on('notification', (data) => {
+      toast.info(data?.message || 'You have a new notification');
+    });
+
     return () => {
-      socket.off('notification', handleNotification);
+      socket.off('connect');
+      socket.off('disconnect');
+      socket.off('presence:updated');
+      socket.off('notification');
     };
   }, []);
 
-  // Response interceptor: on 401 try refresh with exponential backoff, then retry request
+  // Axios response interceptor: handle 401 with refresh dedupe
   useEffect(() => {
     const interceptor = api.interceptors.response.use(
       (res) => res,
       async (error) => {
         const originalRequest = error.config;
-        
-        // Prevent infinite retry loops
-        if (!originalRequest || originalRequest._retry) return Promise.reject(error);
-        
-        // Only attempt refresh on 401 Unauthorized
-        if (error.response?.status === 401) {
+        if (!originalRequest || originalRequest._retry) {
+          return Promise.reject(error);
+        }
+
+        // If no response (network error / backend down), don't attempt refresh
+        if (!error.response) {
+          return Promise.reject(error);
+        }
+
+        if (error.response.status === 401) {
           originalRequest._retry = true;
-          
+
           try {
-            // Use a shared promise to prevent multiple concurrent refresh attempts
             if (!refreshPromise) {
               refreshPromise = (async () => {
                 const refreshRes = await api.post('/api/auth/refresh');
-                // Handle both 'token' (old) and 'accessToken' (new) response formats
                 const newToken = refreshRes.data.token || refreshRes.data.accessToken;
-                if (!newToken) {
-                  throw new Error('No token in refresh response');
-                }
+                if (!newToken) throw new Error('No token in refresh response');
                 setToken(newToken);
                 return newToken;
               })();
             }
-            
+
             const newToken = await refreshPromise;
             originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
             return api(originalRequest);
           } catch (e) {
-            // Refresh failed - logout user
+            // refresh failed -> force logout
             await doLogout();
             return Promise.reject(e);
           } finally {
             refreshPromise = null;
           }
         }
+
         return Promise.reject(error);
       }
     );
 
     return () => api.interceptors.response.eject(interceptor);
-  }, [doLogout]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // schedule refresh timer (clears previous)
+  const scheduleRefresh = useCallback((currentToken) => {
+    clearScheduledRefresh();
+    if (!currentToken) return;
+
+    const ms = msUntilRefresh(currentToken, 120); // refresh 120s before expiry
+    if (ms === null) return;
+
+    // If token already near expiry, refresh immediately (but debounce via refreshPromise)
+    if (ms <= 1000) {
+      (async () => {
+        try {
+          await refreshAccessToken();
+        } catch (err) {
+          // refreshAccessToken handles logout on failure
+        }
+      })();
+      return;
+    }
+
+    refreshTimerRef.current = setTimeout(async () => {
+      try {
+        await refreshAccessToken();
+      } catch (err) {
+        // refreshAccessToken handles logout on failure
+      }
+    }, ms);
+  }, []);
+
+  const clearScheduledRefresh = useCallback(() => {
+    if (refreshTimerRef.current) {
+      clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = null;
+    }
+  }, []);
+
+  // Core logout helper
+  const doLogout = useCallback(async () => {
+    try {
+      await api.post('/api/auth/logout');
+    } catch (_) {
+      // ignore network errors
+    } finally {
+      setToken(null);
+      setUser(null);
+      clearScheduledRefresh();
+      toast.info('Logged out');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Public logout
   const logout = useCallback(async () => {
     await doLogout();
   }, [doLogout]);
 
-  // Refresh access token explicitly with exponential backoff and retry
+  // Refresh access token (deduped)
   const refreshAccessToken = useCallback(async () => {
-    const MAX_REFRESH_ATTEMPTS = 3;
-    for (let attempt = 1; attempt <= MAX_REFRESH_ATTEMPTS; attempt++) {
-      try {
-        const res = await api.post('/api/auth/refresh');
-        // Handle both 'token' (old) and 'accessToken' (new) response formats
-        const newToken = res.data.token || res.data.accessToken;
-        if (!newToken) {
-          throw new Error('No token in refresh response');
-        }
-        setToken(newToken);
-        return newToken;
-      } catch (err) {
-        // Only retry on specific errors (network, 5xx, 429)
-        const status = err.response?.status;
-        const shouldRetry = !status || status >= 500 || status === 429;
-        
-        if (shouldRetry && attempt < MAX_REFRESH_ATTEMPTS) {
-          // Wait with exponential backoff before retrying
-          const delay = getBackoffDelay(attempt);
-          await new Promise(resolve => setTimeout(resolve, delay));
-          continue;
-        }
-        
-        // Final attempt failed or non-retryable error
-        await doLogout();
-        throw err;
-      }
+    if (!token && !localStorage.getItem('token')) {
+      throw new Error('No token available to refresh');
     }
-  }, [doLogout]);
+
+    if (!refreshPromise) {
+      refreshPromise = (async () => {
+        try {
+          const res = await api.post('/api/auth/refresh');
+          const newToken = res.data.token || res.data.accessToken;
+          if (!newToken) throw new Error('No token in refresh response');
+          setToken(newToken);
+          return newToken;
+        } finally {
+          refreshPromise = null;
+        }
+      })();
+    }
+
+    return refreshPromise;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   // Login
   const login = useCallback(async (email, password, deviceInfo) => {
     try {
       const res = await api.post('/api/auth/login', { email, password, deviceInfo });
-      // Normalize token field names across possible backend responses
       const newToken = res.data.token || res.data.accessToken || res.data.access_token;
       const userData = res.data.user || res.data.userData || res.data;
+
       setToken(newToken);
       setUser(userData);
+
       toast.success('Logged in');
       return userData;
     } catch (err) {
@@ -191,13 +258,16 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
+  // Register
   const register = useCallback(async (email, password, name) => {
     try {
       const res = await api.post('/api/auth/register', { email, password, name });
       const newToken = res.data.token || res.data.accessToken || res.data.access_token;
       const userData = res.data.user || res.data.userData || res.data;
+
       setToken(newToken);
       setUser(userData);
+
       toast.success('Registered');
       return userData;
     } catch (err) {
@@ -207,55 +277,71 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
-  // Initialize: attempt to refresh token to populate session
+  // Initial load: try stored token -> /me, otherwise try refresh
   useEffect(() => {
-    let mounted = true;
+    mountedRef.current = true;
     (async () => {
       try {
         const stored = localStorage.getItem('token');
         if (stored) {
-          // try to validate stored token by calling /api/auth/me
           api.defaults.headers.common['Authorization'] = `Bearer ${stored}`;
           try {
             const meRes = await api.get('/api/auth/me');
-            if (!mounted) return;
+            if (!mountedRef.current) return;
             setUser(meRes.data);
             setToken(stored);
             return;
           } catch (_) {
-            // invalid stored token, attempt refresh
+            // stored token invalid, fall through to refresh attempt
           }
         }
 
-        // attempt refresh (cookie-based)
-        // Use a race against a manual timeout to ensure this initialization
-        // cannot hang indefinitely if the backend is unreachable.
-        const refreshPromise = api.post('/api/auth/refresh');
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('refresh timeout')), 5000));
-        const refreshRes = await Promise.race([refreshPromise, timeoutPromise]);
-        // Handle both 'token' (old) and 'accessToken' (new) response formats
-        const newToken = refreshRes.data?.token || refreshRes.data?.accessToken;
-        if (newToken) {
-          if (!mounted) return;
-          setToken(newToken);
-          // fetch user
-          const meRes = await api.get('/api/auth/me');
-          if (!mounted) return;
-          setUser(meRes.data);
+        // Try refresh once on startup (backend may return 404 if route missing)
+        try {
+          const refreshRes = await api.post('/api/auth/refresh');
+          const newToken = refreshRes.data?.token || refreshRes.data?.accessToken;
+          if (newToken && mountedRef.current) {
+            setToken(newToken);
+            const meRes = await api.get('/api/auth/me');
+            if (!mountedRef.current) return;
+            setUser(meRes.data);
+          }
+        } catch (err) {
+          // initial refresh failed; likely backend offline or route not implemented
+          console.warn('Initial refresh skipped or failed:', err?.response?.status || err.message);
         }
-      } catch (err) {
-        // not authenticated; silently proceed
       } finally {
-        if (mounted) setLoading(false);
+        if (mountedRef.current) setLoading(false);
       }
     })();
 
-    return () => { mounted = false; };
+    return () => {
+      mountedRef.current = false;
+      clearScheduledRefresh();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const value = { user, token, loading, login, logout, register, refreshToken: refreshAccessToken };
+  // Expose refreshToken for manual use
+  const refreshToken = useCallback(async () => {
+    return refreshAccessToken();
+  }, [refreshAccessToken]);
 
-  return <AuthContext.Provider value={value}>{!loading && children}</AuthContext.Provider>;
+  const value = {
+    user,
+    token,
+    loading,
+    login,
+    logout,
+    register,
+    refreshToken,
+  };
+
+  return (
+    <AuthContext.Provider value={value}>
+      {!loading && children}
+    </AuthContext.Provider>
+  );
 };
 
 export const useAuth = () => {

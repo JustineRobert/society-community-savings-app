@@ -1,6 +1,7 @@
 # Security Hardening Guide
 
 ## Overview
+
 This document outlines security considerations and hardening procedures for the 10 core features of the Community Savings App.
 
 ---
@@ -8,6 +9,7 @@ This document outlines security considerations and hardening procedures for the 
 ## 1. Payment Processing Security
 
 ### OWASP Compliance
+
 - **PCI DSS Level 1 Requirements**
   - Never store raw credit card numbers; use provider tokenization
   - All payment data encrypted at rest and in transit (TLS 1.3+)
@@ -15,6 +17,7 @@ This document outlines security considerations and hardening procedures for the 
   - Prevent SQL/NoSQL injection via parameterized queries (Mongoose)
 
 ### Specific Controls
+
 - **Webhook Signature Verification**
   - Verify HMAC signature on all incoming webhooks
   - Use constant-time comparison to prevent timing attacks
@@ -40,6 +43,7 @@ This document outlines security considerations and hardening procedures for the 
   - Use Node `crypto` with AES-256-GCM, store key in vault (HashiCorp Vault or AWS Secrets Manager)
 
 ### Testing
+
 ```bash
 # Verify webhook signature validation
 curl -X POST http://localhost:5000/api/payments/webhook/stripe \
@@ -61,6 +65,7 @@ curl -X POST http://localhost:5000/api/payments/intents \
 ## 2. Email Verification Security
 
 ### Controls
+
 - **Token Security**
   - Generate token: `crypto.randomBytes(32).toString('hex')` → 64-char hex string
   - Hash token before storage: `SHA256(token)` → store hash only
@@ -83,6 +88,7 @@ curl -X POST http://localhost:5000/api/payments/intents \
   - Alert user if verification from unfamiliar location
 
 ### Testing
+
 ```bash
 # Test token expiry
 # Create token, modify expiresAt to past date
@@ -104,6 +110,7 @@ curl http://localhost:5000/api/auth/verify-email?token=T1&id=U1
 ## 3. Password Reset Security
 
 ### Controls
+
 - **Token Handling**
   - Generate: `crypto.randomBytes(32).toString('hex')` → 64-char hex
   - Hash before storage: `SHA256(token)`
@@ -133,6 +140,7 @@ curl http://localhost:5000/api/auth/verify-email?token=T1&id=U1
   - Alert if multiple failed attempts from same IP
 
 ### Testing
+
 ```bash
 # Test weak password rejection
 curl -X POST http://localhost:5000/api/auth/reset-password \
@@ -159,6 +167,7 @@ done
 ## 4. Loan Management Security
 
 ### Controls
+
 - **Status Transition Guards**
   - Enforce strict state machine: validate allowed transitions
   - Reject unauthorized status changes (log event)
@@ -187,6 +196,7 @@ done
   - Notify user and admin
 
 ### Testing
+
 ```bash
 # Test RBAC: user cannot approve their own loan
 curl -X PATCH http://localhost:5000/api/loans/L123/approve \
@@ -210,6 +220,7 @@ db.loanaudits.find({loan: ObjectId("L123")}).pretty()
 ## 5. Chat Security
 
 ### Controls
+
 - **Authentication**
   - Socket.IO auth via JWT token in handshake
   - Revoke tokens on logout: add to token blacklist (Redis TTL)
@@ -242,6 +253,7 @@ db.loanaudits.find({loan: ObjectId("L123")}).pretty()
   - Use TLS for all Socket.IO connections
 
 ### Testing
+
 ```bash
 # Test socket auth failure
 const io = require('socket.io-client');
@@ -264,6 +276,7 @@ for(let i=0; i<31; i++) {
 ## 6. Referral Security
 
 ### Controls
+
 - **Self-Referral Prevention**
   - Check `referrer !== referredUser`
   - Second check: same email domain + phone number overlap → flag as suspicious
@@ -285,6 +298,7 @@ for(let i=0; i<31; i++) {
   - Restrict report access to admin role only
 
 ### Testing
+
 ```bash
 # Test self-referral rejection
 curl -X POST http://localhost:5000/api/referrals/redeem \
@@ -313,6 +327,7 @@ for(let i=0; i<1000; i++) {
 ## 7. Database Migration Security
 
 ### Controls
+
 - **Version Control**
   - Migrations tracked in Git
   - Every migration: review and approval before merge
@@ -334,6 +349,7 @@ for(let i=0; i<1000; i++) {
   - Use blue-green deployment alongside migrations
 
 ### Testing
+
 ```bash
 # Test migration in staging
 mongo mongodb://staging/community-savings
@@ -358,6 +374,7 @@ db.collections()
 ## 8. Testing Security
 
 ### Controls
+
 - **Test Isolation**
   - Use separate test DB (memory-server or test instance)
   - Cleanup after tests: delete all test data
@@ -373,6 +390,7 @@ db.collections()
   - Enforce via CI: fail build if threshold not met
 
 ### Testing
+
 ```bash
 npm run test:ci
 # Output should include:
@@ -387,6 +405,7 @@ npm run test:ci
 ## 9. Rate Limiting Security
 
 ### Controls
+
 - **Per-User & Per-IP Limits**
   - Per-user: 100 requests/minute (adjustable by role)
   - Per-IP: 500 requests/minute
@@ -405,6 +424,7 @@ npm run test:ci
   - No bypass for user-facing endpoints
 
 ### Testing
+
 ```bash
 # Simulate burst and verify 429
 for i in {1..101}; do
@@ -424,6 +444,7 @@ curl -i http://localhost:5000/api/loans
 ## 10. Analytics Security
 
 ### Controls
+
 - **Data Privacy**
   - Never log PII (emails, phone numbers, full names)
   - Hash/anonymize user IDs: use `hash(userId + salt)` for reports
@@ -444,6 +465,7 @@ curl -i http://localhost:5000/api/loans
   - Log all exports with user, IP, timestamp, data scope
 
 ### Testing
+
 ```bash
 # Test admin-only access
 curl http://localhost:5000/api/admin/analytics/payments \
@@ -465,9 +487,10 @@ db.analyticsevents.findOne()
 ## Additional Hardening
 
 ### Global Security Headers (Helmet.js)
+
 ```js
 const helmet = require('helmet');
-app.use(helmet());  // Enables:
+app.use(helmet()); // Enables:
 // - Strict-Transport-Security (HSTS)
 // - X-Content-Type-Options: nosniff
 // - X-Frame-Options: deny
@@ -476,46 +499,57 @@ app.use(helmet());  // Enables:
 ```
 
 ### CORS Configuration
+
 ```js
 const cors = require('cors');
-app.use(cors({
-  origin: process.env.FRONTEND_URL,  // explicit whitelist
-  credentials: true,
-  optionsSuccessStatus: 200
-}));
+app.use(
+  cors({
+    origin: process.env.FRONTEND_URL, // explicit whitelist
+    credentials: true,
+    optionsSuccessStatus: 200,
+  })
+);
 ```
 
 ### Input Validation & Sanitization
+
 ```js
 const { body, validationResult } = require('express-validator');
 const mongoSanitize = require('express-mongo-sanitize');
-app.use(mongoSanitize());  // removes NoSQL injection
-router.post('/api/loans/request', [
-  body('amount').isInt({min:100, max:1000000}),
-  body('groupId').isMongoId(),
-  body('termMonths').isInt({min:1, max:60})
-], (req, res) => {
-  const errors = validationResult(req);
-  if(!errors.isEmpty()) return res.status(400).json({errors});
-});
+app.use(mongoSanitize()); // removes NoSQL injection
+router.post(
+  '/api/loans/request',
+  [
+    body('amount').isInt({ min: 100, max: 1000000 }),
+    body('groupId').isMongoId(),
+    body('termMonths').isInt({ min: 1, max: 60 }),
+  ],
+  (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors });
+  }
+);
 ```
 
 ### Dependency Security
+
 ```bash
 npm audit  # Regular audit of dependencies
 npm update # Keep dependencies patched
 ```
 
 ### Secrets Management
+
 - Use `.env.example` (no secrets)
 - Store secrets in vault (HashiCorp, AWS Secrets Manager, etc.)
 - No secrets in Git commits
 - Rotate secrets regularly
 
 ### Logging & Monitoring
+
 ```js
 const logger = require('./middleware/logging');
-logger.error('Payment failed', {paymentIntentId, error, userId, ip});
+logger.error('Payment failed', { paymentIntentId, error, userId, ip });
 // Structured logging: grep, alerting, dashboards
 ```
 

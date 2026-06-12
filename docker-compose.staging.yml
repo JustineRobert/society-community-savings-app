@@ -18,8 +18,8 @@ services:
     image: nginx:latest
     container_name: staging-nginx
     ports:
-      - "80:80"
-      - "443:443"
+      - '80:80'
+      - '443:443'
     volumes:
       - ./nginx/staging.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/ssl/:/etc/nginx/ssl/:ro
@@ -30,7 +30,7 @@ services:
       - staging-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/healthz"]
+      test: ['CMD', 'curl', '-f', 'http://localhost/healthz']
       interval: 30s
       timeout: 10s
       retries: 3
@@ -51,14 +51,14 @@ services:
       JWT_SECRET: ${JWT_SECRET:-your-staging-jwt-secret}
       ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET:-your-staging-access-token}
       REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:-your-staging-refresh-token}
-      
+
       # Email Configuration
       SMTP_HOST: ${SMTP_HOST:-smtp.staging.example.com}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER}
       SMTP_PASS: ${SMTP_PASS}
       MAIL_FROM: ${MAIL_FROM:-noreply@staging.example.com}
-      
+
       # Payment Providers
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY_STAGING}
       STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY_STAGING}
@@ -67,21 +67,21 @@ services:
       MPESA_BUSINESS_SHORT_CODE: ${MPESA_BUSINESS_SHORT_CODE_STAGING}
       MTN_API_KEY: ${MTN_API_KEY_STAGING}
       AIRTEL_API_KEY: ${AIRTEL_API_KEY_STAGING}
-      
+
       # CORS
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,https://staging.example.com}
       CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:3000}
-      
+
       # Monitoring
       LOG_LEVEL: info
-      PROMETHEUS_ENABLED: "true"
-      
+      PROMETHEUS_ENABLED: 'true'
+
     volumes:
       - ./community-savings-app-backend:/app
       - /app/node_modules
       - ./logs/backend:/app/logs
     ports:
-      - "5000"
+      - '5000'
     depends_on:
       - mongodb
       - redis
@@ -89,7 +89,7 @@ services:
       - staging-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/healthz"]
+      test: ['CMD', 'curl', '-f', 'http://localhost:5000/healthz']
       interval: 30s
       timeout: 10s
       retries: 3
@@ -112,7 +112,7 @@ services:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME:-admin}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-staging-password}
     ports:
-      - "27017:27017"
+      - '27017:27017'
     volumes:
       - mongodb-staging-data:/data/db
       - mongodb-staging-config:/data/configdb
@@ -133,7 +133,7 @@ services:
     image: redis:latest
     container_name: staging-redis
     ports:
-      - "6379:6379"
+      - '6379:6379'
     volumes:
       - redis-staging-data:/data
       - ./redis/staging.conf:/usr/local/etc/redis/redis.conf:ro
@@ -142,7 +142,7 @@ services:
       - staging-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ['CMD', 'redis-cli', 'ping']
       interval: 30s
       timeout: 10s
       retries: 3
@@ -154,7 +154,7 @@ services:
     image: prom/prometheus:latest
     container_name: staging-prometheus
     ports:
-      - "9090:9090"
+      - '9090:9090'
     volumes:
       - ./prometheus/staging.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-staging-data:/prometheus
@@ -175,7 +175,7 @@ services:
     image: grafana/grafana:latest
     container_name: staging-grafana
     ports:
-      - "3001:3000"
+      - '3001:3000'
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-staging-password}
@@ -201,7 +201,7 @@ services:
         REACT_APP_ENVIRONMENT: staging
     container_name: staging-frontend
     ports:
-      - "3000:80"
+      - '3000:80'
     environment:
       REACT_APP_API_URL: ${REACT_APP_API_URL:-http://localhost:5000/api}
       REACT_APP_ENVIRONMENT: staging

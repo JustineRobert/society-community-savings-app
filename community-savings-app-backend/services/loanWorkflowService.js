@@ -14,39 +14,39 @@ const logger = require('../utils/logger');
  * Defines valid transitions between states
  */
 const LOAN_STATUS_MACHINE = {
-  'pending_application': {
+  pending_application: {
     // User submitted loan request, awaiting admin review
     allowedTransitions: ['approved', 'rejected', 'canceled'],
     description: 'Awaiting initial review',
     isPending: true,
   },
-  'approved': {
+  approved: {
     // Admin approved the loan request
     allowedTransitions: ['disbursed', 'canceled'],
     description: 'Loan approved, awaiting disbursement',
     isPending: false,
   },
-  'rejected': {
+  rejected: {
     // Admin rejected the loan request
     allowedTransitions: ['pending_application'], // User can reapply
     description: 'Loan application rejected',
     isPending: false,
     isFinal: true,
   },
-  'disbursed': {
+  disbursed: {
     // Money transferred to borrower account
     allowedTransitions: ['active', 'canceled'],
     description: 'Funds disbursed to borrower',
     isPending: false,
   },
-  'active': {
+  active: {
     // Repayment schedule in progress
     allowedTransitions: ['overdue', 'defaulted', 'closed', 'canceled'],
     description: 'Repayment schedule active',
     isPending: false,
     isActive: true,
   },
-  'overdue': {
+  overdue: {
     // Repayment is late
     allowedTransitions: ['active', 'defaulted', 'closed'],
     description: 'Payment overdue',
@@ -54,7 +54,7 @@ const LOAN_STATUS_MACHINE = {
     isActive: true,
     isOverdue: true,
   },
-  'defaulted': {
+  defaulted: {
     // Loan defaulted (unpaid for extended period)
     allowedTransitions: ['closed'],
     description: 'Loan in default',
@@ -62,14 +62,14 @@ const LOAN_STATUS_MACHINE = {
     isFinal: true,
     isOverdue: true,
   },
-  'closed': {
+  closed: {
     // Loan fully repaid or write-off
     allowedTransitions: [],
     description: 'Loan closed',
     isPending: false,
     isFinal: true,
   },
-  'canceled': {
+  canceled: {
     // Loan canceled before completion
     allowedTransitions: [],
     description: 'Loan canceled',
@@ -159,7 +159,7 @@ class LoanWorkflowService {
       if (!statusConfig.allowedTransitions.includes(newStatus)) {
         throw new Error(
           `Invalid transition: cannot change from '${currentStatus}' to '${newStatus}'. ` +
-          `Allowed: ${statusConfig.allowedTransitions.join(', ')}`
+            `Allowed: ${statusConfig.allowedTransitions.join(', ')}`
         );
       }
 
@@ -239,11 +239,7 @@ class LoanWorkflowService {
     try {
       const installments = [];
       const monthlyRate = loan.interestRate / 12;
-      const monthlyPayment = this.calculateMonthlyPayment(
-        loan.amount,
-        monthlyRate,
-        loan.term
-      );
+      const monthlyPayment = this.calculateMonthlyPayment(loan.amount, monthlyRate, loan.term);
 
       let outstandingBalance = loan.amount;
       const startDate = new Date();
@@ -317,7 +313,7 @@ class LoanWorkflowService {
       }
 
       // Find next pending installment
-      const pendingInstallment = schedule.installments.find(inst => inst.status === 'pending');
+      const pendingInstallment = schedule.installments.find((inst) => inst.status === 'pending');
       if (!pendingInstallment) {
         throw new Error('No pending installments found');
       }
@@ -332,8 +328,11 @@ class LoanWorkflowService {
       pendingInstallment.status = 'paid';
       pendingInstallment.paidAmount = amount;
       pendingInstallment.paidDate = new Date();
-      pendingInstallment.daysOverdue = Math.max(0,
-        Math.floor((pendingInstallment.paidDate - pendingInstallment.dueDate) / (1000 * 60 * 60 * 24))
+      pendingInstallment.daysOverdue = Math.max(
+        0,
+        Math.floor(
+          (pendingInstallment.paidDate - pendingInstallment.dueDate) / (1000 * 60 * 60 * 24)
+        )
       );
 
       // Update loan balance
@@ -342,7 +341,9 @@ class LoanWorkflowService {
       loan.lastPaymentDate = new Date();
 
       // Check if loan is fully paid
-      const paidInstallments = schedule.installments.filter(inst => inst.status === 'paid').length;
+      const paidInstallments = schedule.installments.filter(
+        (inst) => inst.status === 'paid'
+      ).length;
       if (paidInstallments === schedule.totalInstallments) {
         await this.changeLoanStatus(
           loanId,
@@ -353,7 +354,7 @@ class LoanWorkflowService {
       }
 
       // Update status if was overdue but now current
-      const nextInstallment = schedule.installments.find(inst => inst.status === 'pending');
+      const nextInstallment = schedule.installments.find((inst) => inst.status === 'pending');
       if (loan.status === 'overdue' && nextInstallment && nextInstallment.dueDate > new Date()) {
         await this.changeLoanStatus(
           loanId,
@@ -472,8 +473,8 @@ class LoanWorkflowService {
         throw new Error('Repayment schedule not found');
       }
 
-      const pendingInstallments = schedule.installments.filter(inst => inst.status === 'pending');
-      const paidInstallments = schedule.installments.filter(inst => inst.status === 'paid');
+      const pendingInstallments = schedule.installments.filter((inst) => inst.status === 'pending');
+      const paidInstallments = schedule.installments.filter((inst) => inst.status === 'paid');
 
       return {
         loanId: loan._id,
@@ -496,7 +497,9 @@ class LoanWorkflowService {
           outstandingBalance: loan.outstandingBalance,
         },
         progress: {
-          percentComplete: ((paidInstallments.length / schedule.totalInstallments) * 100).toFixed(1),
+          percentComplete: ((paidInstallments.length / schedule.totalInstallments) * 100).toFixed(
+            1
+          ),
           amountPaid: loan.totalPaid || 0,
           amountRemaining: loan.outstandingBalance,
         },
@@ -521,8 +524,10 @@ class LoanWorkflowService {
     if (monthlyRate === 0) {
       return principal / term;
     }
-    return (principal * (monthlyRate * Math.pow(1 + monthlyRate, term))) /
-           (Math.pow(1 + monthlyRate, term) - 1);
+    return (
+      (principal * (monthlyRate * Math.pow(1 + monthlyRate, term))) /
+      (Math.pow(1 + monthlyRate, term) - 1)
+    );
   }
 }
 

@@ -14,8 +14,8 @@ const NODE_ENV = process.env.NODE_ENV || 'development';
 // ============================================================================
 // Connection Retry Configuration
 // ============================================================================
-const MIN_RECONNECT_DELAY = 1000;      // 1 second
-const MAX_RECONNECT_DELAY = 30000;     // 30 seconds
+const MIN_RECONNECT_DELAY = 1000; // 1 second
+const MAX_RECONNECT_DELAY = 30000; // 30 seconds
 const BACKOFF_MULTIPLIER = 1.5;
 const MAX_RETRY_ATTEMPTS = 10;
 
@@ -65,7 +65,11 @@ function logInfo(message) {
     console.log(message);
   } else {
     // In production, only log connection state changes
-    if (message.includes('connected') || message.includes('ready') || message.includes('degraded')) {
+    if (
+      message.includes('connected') ||
+      message.includes('ready') ||
+      message.includes('degraded')
+    ) {
       console.log(message);
     }
   }
@@ -86,17 +90,17 @@ try {
         // Stop retrying after max attempts - will fall back to memory store
         logErrorThrottled(
           `❌ Redis connection exhausted after ${MAX_RETRY_ATTEMPTS} attempts. ` +
-          `Falling back to memory store for rate limiting.`,
+            `Falling back to memory store for rate limiting.`,
           null
         );
         gracefullyDegraded = true;
-        return null;  // null tells ioredis to stop retrying
+        return null; // null tells ioredis to stop retrying
       }
 
       const delay = getBackoffDelay(times - 1);
       logErrorThrottled(
         `🔄 Redis reconnection attempt ${times}/${MAX_RETRY_ATTEMPTS}, ` +
-        `backing off for ${delay}ms...`,
+          `backing off for ${delay}ms...`,
         null
       );
       return delay;
@@ -105,27 +109,27 @@ try {
     // ============================================================================
     // Timeouts and Connection Configuration
     // ============================================================================
-    connectTimeout: 10000,        // 10s to establish connection
-    commandTimeout: 5000,         // 5s for individual commands
-    enableOfflineQueue: true,     // Queue commands while reconnecting
-    maxRetriesPerRequest: 3,      // Prevent infinite retries per command
-    enableReadyCheck: true,       // Wait for Redis to be ready
-    
+    connectTimeout: 10000, // 10s to establish connection
+    commandTimeout: 5000, // 5s for individual commands
+    enableOfflineQueue: true, // Queue commands while reconnecting
+    maxRetriesPerRequest: 3, // Prevent infinite retries per command
+    enableReadyCheck: true, // Wait for Redis to be ready
+
     // ============================================================================
     // Performance and Error Handling
     // ============================================================================
-    lazyConnect: false,           // Connect immediately
-    autoResubscribe: true,        // Resubscribe to channels after reconnect
+    lazyConnect: false, // Connect immediately
+    autoResubscribe: true, // Resubscribe to channels after reconnect
   });
 
   logInfo('🔌 Redis client created');
 } catch (error) {
   console.warn(
     `⚠️ Failed to create Redis client: ${error.message}. ` +
-    `Redis features will be disabled; using memory store fallback.`
+      `Redis features will be disabled; using memory store fallback.`
   );
   gracefullyDegraded = true;
-  
+
   // Create a mock Redis client that gracefully handles missing Redis
   redis = {
     call: () => Promise.reject(new Error('Redis not available - using memory store')),
@@ -195,7 +199,7 @@ process.on('SIGINT', disconnectRedis);
  * Check if Redis is available and connected
  * @returns {boolean} true if Redis is available
  */
-redis.isAvailable = function() {
+redis.isAvailable = function () {
   return this.status === 'ready' || this.status === 'connected';
 };
 
@@ -203,7 +207,7 @@ redis.isAvailable = function() {
  * Get current connection status
  * @returns {string} Status: 'ready', 'connecting', 'mock', etc.
  */
-redis.getStatus = function() {
+redis.getStatus = function () {
   return this.status || 'unknown';
 };
 

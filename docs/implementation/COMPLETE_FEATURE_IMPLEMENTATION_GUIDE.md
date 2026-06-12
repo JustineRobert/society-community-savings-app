@@ -29,14 +29,15 @@ Payment tracking via repayment schedule
 
 ### Scoring Breakdown
 
-| Component | Weight | Calculation | Max Points |
-|-----------|--------|-------------|-----------|
-| Contribution | 40% | Months active + total amount | 40 |
-| Participation | 30% | Contribution consistency | 30 |
-| Repayment | 20% | Completed loans + on-time rate | 20 |
-| Risk | 10% | Active loans + outstanding balance | 10 |
+| Component     | Weight | Calculation                        | Max Points |
+| ------------- | ------ | ---------------------------------- | ---------- |
+| Contribution  | 40%    | Months active + total amount       | 40         |
+| Participation | 30%    | Contribution consistency           | 30         |
+| Repayment     | 20%    | Completed loans + on-time rate     | 20         |
+| Risk          | 10%    | Active loans + outstanding balance | 10         |
 
 ### Eligibility Requirements
+
 - **Minimum Score**: 50/100
 - **Minimum Tenure**: 2 months in group
 - **Minimum Contribution**: Varies by configuration
@@ -76,6 +77,7 @@ Response: { loan details, repayment schedule, payment history }
 ### Database Models
 
 **LoanEligibility**
+
 ```javascript
 {
   user: ObjectId,
@@ -96,6 +98,7 @@ Response: { loan details, repayment schedule, payment history }
 ```
 
 **LoanAudit**
+
 ```javascript
 {
   action: 'eligibility_assessed' | 'loan_applied' | 'loan_approved' | ...,
@@ -193,21 +196,22 @@ Returns: {
 
 ### Key Endpoints
 
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/api/admin/dashboard` | GET | System metrics |
-| `/api/admin/users` | GET | List users (paginated, searchable) |
-| `/api/admin/users/:userId` | GET | User details + activity |
-| `/api/admin/users/:userId/verify` | PUT | Verify email |
-| `/api/admin/users/:userId/suspend` | PUT | Suspend account |
-| `/api/admin/users/:userId/activate` | PUT | Reactivate account |
-| `/api/admin/loan-risk` | GET | Risk analysis |
-| `/api/admin/groups` | GET | Group metrics |
-| `/api/admin/audit-log` | GET | Audit trail |
+| Endpoint                            | Method | Purpose                            |
+| ----------------------------------- | ------ | ---------------------------------- |
+| `/api/admin/dashboard`              | GET    | System metrics                     |
+| `/api/admin/users`                  | GET    | List users (paginated, searchable) |
+| `/api/admin/users/:userId`          | GET    | User details + activity            |
+| `/api/admin/users/:userId/verify`   | PUT    | Verify email                       |
+| `/api/admin/users/:userId/suspend`  | PUT    | Suspend account                    |
+| `/api/admin/users/:userId/activate` | PUT    | Reactivate account                 |
+| `/api/admin/loan-risk`              | GET    | Risk analysis                      |
+| `/api/admin/groups`                 | GET    | Group metrics                      |
+| `/api/admin/audit-log`              | GET    | Audit trail                        |
 
 ### MongoDB Aggregations
 
 **Loan Risk Analysis**
+
 ```javascript
 // At-risk loans (overdue/defaulted)
 Loan.aggregate([
@@ -218,6 +222,7 @@ Loan.aggregate([
 ```
 
 **Group Performance**
+
 ```javascript
 // Groups with member counts, contributions, active loans
 Group.aggregate([
@@ -237,11 +242,13 @@ Group.aggregate([
 ### Authorization
 
 All admin endpoints require:
+
 ```javascript
-req.user.role === 'admin'
+req.user.role === 'admin';
 ```
 
 Proper error responses for unauthorized access:
+
 ```javascript
 {
   success: false,
@@ -256,12 +263,12 @@ Proper error responses for unauthorized access:
 
 ### New Features
 
-| Feature | Capability |
-|---------|-----------|
-| **Read Receipts** | Track who read each message |
-| **Reactions** | Add emoji reactions |
-| **Threading** | Sub-conversations |
-| **Moderation** | Flag, hide, restore messages |
+| Feature           | Capability                          |
+| ----------------- | ----------------------------------- |
+| **Read Receipts** | Track who read each message         |
+| **Reactions**     | Add emoji reactions                 |
+| **Threading**     | Sub-conversations                   |
+| **Moderation**    | Flag, hide, restore messages        |
 | **Message Types** | Text, system, announcement, warning |
 
 ### Message Model
@@ -272,23 +279,23 @@ Proper error responses for unauthorized access:
   sender: ObjectId,
   message: String,
   messageType: 'text' | 'system' | 'announcement' | 'warning',
-  
+
   // Read receipts
   readBy: [{ user: ObjectId, readAt: Date }],
-  
+
   // Reactions
   reactions: [{ emoji: String, users: [ObjectId] }],
-  
+
   // Threading
   parentMessage: ObjectId,
-  
+
   // Moderation
   moderation: {
     flaggedByAdmins: [{ admin: ObjectId, reason, flaggedAt }],
     isHidden: boolean,
     hiddenReason: String
   },
-  
+
   // Metadata
   metadata: { ipAddress, userAgent, edited, editedAt }
 }
@@ -331,22 +338,22 @@ Body: { reason }
 
 ```javascript
 // Mark as read
-await chatMessage.markAsRead(userId)
+await chatMessage.markAsRead(userId);
 
 // Add reaction
-await chatMessage.addReaction('👍', userId)
+await chatMessage.addReaction('👍', userId);
 
 // Remove reaction
-await chatMessage.removeReaction('👍', userId)
+await chatMessage.removeReaction('👍', userId);
 
 // Flag for moderation
-await chatMessage.flagForModeration(adminId, 'inappropriate')
+await chatMessage.flagForModeration(adminId, 'inappropriate');
 
 // Hide message
-await chatMessage.hideMessage(adminId, 'violation')
+await chatMessage.hideMessage(adminId, 'violation');
 
 // Get read count
-const count = chatMessage.readCount
+const count = chatMessage.readCount;
 ```
 
 ### Indices for Performance
@@ -385,12 +392,12 @@ Upon first contribution:
 
 ### Fraud Signals
 
-| Signal | Description | Action |
-|--------|-------------|--------|
-| Same Device | Same user-agent + IP | +1 flag |
-| Same IP | Both from same IP | +1 flag |
-| Same Domain | Same email domain | +1 flag |
-| Fast Signup | Referral within minutes | +1 flag |
+| Signal        | Description             | Action  |
+| ------------- | ----------------------- | ------- |
+| Same Device   | Same user-agent + IP    | +1 flag |
+| Same IP       | Both from same IP       | +1 flag |
+| Same Domain   | Same email domain       | +1 flag |
+| Fast Signup   | Referral within minutes | +1 flag |
 | Pattern Match | Similar signup behavior | +1 flag |
 
 **Decision**: 2+ signals → Flag as fraudulent
@@ -447,13 +454,13 @@ Response: { ...referral details, fraud analysis }
   referralCode: String (unique),
   status: 'pending' | 'completed' | 'expired' | 'fraudulent',
   completedAt: Date,
-  
+
   // Rewards
   rewardAmount: Number,
   rewardType: 'bonus_credit' | 'cash' | 'points' | 'savings_boost',
   rewardIssued: Boolean,
   rewardIssuedAt: Date,
-  
+
   // Fraud detection
   fraud: {
     isFlagged: Boolean,
@@ -467,11 +474,11 @@ Response: { ...referral details, fraud analysis }
     suspiciousEmailPattern: Boolean,
     suspiciousTiming: Boolean
   },
-  
+
   // Verification
   emailVerified: Boolean,
   firstContributionAt: Date,
-  
+
   expiresAt: Date (90 days default)
 }
 ```
@@ -482,33 +489,33 @@ Response: { ...referral details, fraud analysis }
 
 ### OWASP Top 10 (2021) Implementation
 
-| Vulnerability | Implementation |
-|---|---|
-| A01: Broken Access Control | RBAC middleware, permission checks |
-| A02: Cryptographic Failures | bcrypt, SHA-256, TLS/HTTPS |
-| A03: Injection | Schema validation, input sanitization |
-| A04: Insecure Design | Security in design, threat modeling |
-| A05: Misconfiguration | Helmet, secure CORS, env config |
-| A06: Vulnerable Components | npm audit, dependency scanning |
-| A07: Auth Failures | JWT rotation, rate limiting |
-| A08: Data Integrity | Audit trails, change tracking |
-| A09: Logging & Monitoring | Winston, audit logs, metrics |
-| A10: SSRF | Input validation, timeouts |
+| Vulnerability               | Implementation                        |
+| --------------------------- | ------------------------------------- |
+| A01: Broken Access Control  | RBAC middleware, permission checks    |
+| A02: Cryptographic Failures | bcrypt, SHA-256, TLS/HTTPS            |
+| A03: Injection              | Schema validation, input sanitization |
+| A04: Insecure Design        | Security in design, threat modeling   |
+| A05: Misconfiguration       | Helmet, secure CORS, env config       |
+| A06: Vulnerable Components  | npm audit, dependency scanning        |
+| A07: Auth Failures          | JWT rotation, rate limiting           |
+| A08: Data Integrity         | Audit trails, change tracking         |
+| A09: Logging & Monitoring   | Winston, audit logs, metrics          |
+| A10: SSRF                   | Input validation, timeouts            |
 
 ### Rate Limiting
 
 ```javascript
 // Global: 1000 req/15min per IP
-globalLimiter
+globalLimiter;
 
 // Auth: 5 failed attempts/15min
-authLimiter
+authLimiter;
 
 // Email: 3 req/hour per email
-emailLimiter
+emailLimiter;
 
 // Loans: 10 req/minute per user
-loanLimiter
+loanLimiter;
 ```
 
 ### Security Headers (Helmet)
@@ -526,37 +533,37 @@ Referrer-Policy: strict-origin-when-cross-origin
 
 ```javascript
 // Generate token
-const token = csrfProtection.generateToken(req)
+const token = csrfProtection.generateToken(req);
 
 // Verify token
-csrfProtection.verifyToken(req)
+csrfProtection.verifyToken(req);
 
 // Middleware
-router.post('/api/endpoint', csrfProtection.middleware, controller)
+router.post('/api/endpoint', csrfProtection.middleware, controller);
 ```
 
 ### Device Fingerprinting
 
 ```javascript
 // Generate fingerprint
-const fingerprint = deviceFingerprinting.generateFingerprint(req)
+const fingerprint = deviceFingerprinting.generateFingerprint(req);
 // Combines: user-agent, accept-language, accept-encoding, IP, accept
 
 // Check if trusted
-const isTrusted = await deviceFingerprinting.isTrustedDevice(userId, fingerprint)
+const isTrusted = await deviceFingerprinting.isTrustedDevice(userId, fingerprint);
 ```
 
 ### Input Sanitization
 
 ```javascript
 // Remove injection patterns
-const clean = inputSanitization.sanitizeInput(userInput)
+const clean = inputSanitization.sanitizeInput(userInput);
 
 // Validate email
-inputSanitization.isValidEmail(email)
+inputSanitization.isValidEmail(email);
 
 // Check password strength
-inputSanitization.isStrongPassword(password)
+inputSanitization.isStrongPassword(password);
 // Requires: 8+ chars, uppercase, lowercase, number, special char
 ```
 
@@ -564,35 +571,23 @@ inputSanitization.isStrongPassword(password)
 
 ```javascript
 // Get new token pair
-const { accessToken, refreshToken } = await tokenRotation.rotateTokens(
-  userId,
-  currentRefreshToken
-)
+const { accessToken, refreshToken } = await tokenRotation.rotateTokens(userId, currentRefreshToken);
 
 // Detect reuse (breach indicator)
-const isReused = await tokenRotation.detectTokenReuse(userId, token)
+const isReused = await tokenRotation.detectTokenReuse(userId, token);
 ```
 
 ### Audit Logging
 
 ```javascript
 // Log security events
-await auditLogging.logSecurityEvent(
-  'login_attempt',
-  userId,
-  { success: true },
-  req
-)
+await auditLogging.logSecurityEvent('login_attempt', userId, { success: true }, req);
 
 // Log failed auth
-await auditLogging.logFailedAuth(email, ipAddress, 'invalid_password')
+await auditLogging.logFailedAuth(email, ipAddress, 'invalid_password');
 
 // Log suspicious activity
-await auditLogging.logSuspiciousActivity(
-  userId,
-  'multiple_failed_logins',
-  { count: 5 }
-)
+await auditLogging.logSuspiciousActivity(userId, 'multiple_failed_logins', { count: 5 });
 ```
 
 ### Environment-Based Configuration
@@ -701,17 +696,21 @@ NODE_ENV=production
 ## 📊 Performance Metrics
 
 ### Response Times
+
 - **p50**: < 100ms
 - **p95**: < 200ms
 - **p99**: < 500ms
 
 ### Uptime Target
+
 - **SLA**: 99.9%
 
 ### Error Rate
+
 - **Target**: < 0.5%
 
 ### Database
+
 - **Query time (p95)**: < 100ms
 - **Aggregation**: < 500ms
 
@@ -723,24 +722,24 @@ NODE_ENV=production
 
 ```javascript
 // HTTP requests
-http_requests_total
-http_request_duration_ms
-http_response_status_total
+http_requests_total;
+http_request_duration_ms;
+http_response_status_total;
 
 // Errors
-application_errors_total
-db_connection_errors
+application_errors_total;
+db_connection_errors;
 
 // Business
-loans_applied_total
-loans_approved_total
-loan_default_rate
-referral_completions_total
+loans_applied_total;
+loans_approved_total;
+loan_default_rate;
+referral_completions_total;
 
 // Security
-failed_login_attempts
-suspicious_activities_flagged
-fraud_detections
+failed_login_attempts;
+suspicious_activities_flagged;
+fraud_detections;
 ```
 
 ### Alerts to Set

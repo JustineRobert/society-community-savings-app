@@ -7,15 +7,17 @@ const logger = require('../utils/logger');
 // Configuration with Defaults
 // ============================================================================
 const NODE_ENV = process.env.NODE_ENV || 'development';
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://user:pass@cluster.mongodb.net/community_savings';
-const MONGO_URI_FALLBACK = process.env.MONGO_URI_FALLBACK || 'mongodb://127.0.0.1:27017/community_savings';
+const MONGO_URI =
+  process.env.MONGO_URI || 'mongodb+srv://user:pass@cluster.mongodb.net/community_savings';
+const MONGO_URI_FALLBACK =
+  process.env.MONGO_URI_FALLBACK || 'mongodb://127.0.0.1:27017/community_savings';
 
 // Graceful startup configuration
 const GRACEFUL_STARTUP = process.env.GRACEFUL_STARTUP === 'true' || NODE_ENV === 'development';
 const SKIP_DB_CHECKS = process.env.SKIP_DB_CHECKS === 'true';
 
 // Connection retry configuration
-const MAX_RETRIES = GRACEFUL_STARTUP ? 10 : 5;  // More retries in graceful mode
+const MAX_RETRIES = GRACEFUL_STARTUP ? 10 : 5; // More retries in graceful mode
 const INITIAL_RETRY_DELAY = 2000; // 2 seconds
 const MAX_RETRY_DELAY = 30000; // 30 seconds
 
@@ -75,7 +77,8 @@ function validateMongoURI(uri) {
     if (hostPart.match(/:\d+$/)) {
       return {
         isValid: false,
-        error: 'mongodb+srv:// URIs should NOT include a port number (DNS SRV records handle connection)',
+        error:
+          'mongodb+srv:// URIs should NOT include a port number (DNS SRV records handle connection)',
         isSRV: true,
       };
     }
@@ -160,10 +163,7 @@ let isConnecting = false;
  */
 function getRetryDelay(attempt) {
   // Exponential backoff: 2s, 4s, 8s, 16s, 30s max
-  const baseDelay = Math.min(
-    INITIAL_RETRY_DELAY * Math.pow(2, attempt - 1),
-    MAX_RETRY_DELAY
-  );
+  const baseDelay = Math.min(INITIAL_RETRY_DELAY * Math.pow(2, attempt - 1), MAX_RETRY_DELAY);
   // Add jitter (±10% randomness) to prevent thundering herd
   const jitter = baseDelay * 0.1 * (Math.random() - 0.5);
   return Math.floor(baseDelay + jitter);
@@ -185,8 +185,15 @@ const connectDB = async (attempt = 1, forceFallback = false) => {
   const uriConfig = resolveMongoUri(forceFallback);
   const mongoUri = uriConfig.uri;
 
+  if (SKIP_DB_CHECKS) {
+  logger.warn('⚠️ SKIP_DB_CHECKS enabled — skipping MongoDB connection');
+  return;
+}
+
   if (!mongoUri) {
-    logger.error('❌ MongoDB URI is missing. Check MONGO_URI and MONGO_URI_FALLBACK environment variables.');
+    logger.error(
+      '❌ MongoDB URI is missing. Check MONGO_URI and MONGO_URI_FALLBACK environment variables.'
+    );
     process.exit(1);
   }
 
@@ -211,15 +218,9 @@ const connectDB = async (attempt = 1, forceFallback = false) => {
   }
 
   try {
-    logger.info(
-      `🔌 Connecting to MongoDB (Attempt ${attempt}/${MAX_RETRIES})`
-    );
-    logger.info(
-      `   Type: ${uriConfig.type} | Source: ${uriConfig.source}`
-    );
-    logger.info(
-      `   URI (masked): ${uriConfig.masked}`
-    );
+    logger.info(`🔌 Connecting to MongoDB (Attempt ${attempt}/${MAX_RETRIES})`);
+    logger.info(`   Type: ${uriConfig.type} | Source: ${uriConfig.source}`);
+    logger.info(`   URI (masked): ${uriConfig.masked}`);
 
     await mongoose.connect(mongoUri, {
       maxPoolSize: 10,
@@ -234,14 +235,11 @@ const connectDB = async (attempt = 1, forceFallback = false) => {
 
     logger.info(`✅ MongoDB connected successfully (${uriConfig.type})`);
     isConnecting = false;
-
   } catch (error) {
     isConnecting = false;
-    const message = (error && error.message) ? error.message : String(error);
+    const message = error && error.message ? error.message : String(error);
 
-    logger.error(
-      `❌ MongoDB connection error (Attempt ${attempt}/${MAX_RETRIES}): ${message}`
-    );
+    logger.error(`❌ MongoDB connection error (Attempt ${attempt}/${MAX_RETRIES}): ${message}`);
     logger.error(`   Type: ${uriConfig.type}`);
     logger.error(`   URI (masked): ${uriConfig.masked}`);
 
@@ -260,7 +258,9 @@ const connectDB = async (attempt = 1, forceFallback = false) => {
       message.includes('Invalid hostname')
     ) {
       logger.error('🛑 Invalid MongoDB URI configuration.');
-      logger.error(`   Check that the URI format is correct: mongodb://host:port/db or mongodb+srv://...`);
+      logger.error(
+        `   Check that the URI format is correct: mongodb://host:port/db or mongodb+srv://...`
+      );
       logger.error(`   For mongodb+srv:// URIs, ensure NO port number is specified.`);
       logger.error(`   Current source: ${uriConfig.source}`);
       process.exit(1);
@@ -272,7 +272,9 @@ const connectDB = async (attempt = 1, forceFallback = false) => {
     ) {
       logger.error('🛑 MongoDB authentication failed.');
       logger.error(`   Check credentials in ${uriConfig.source} environment variable.`);
-      logger.error(`   Ensure username and password are URL-encoded if they contain special characters.`);
+      logger.error(
+        `   Ensure username and password are URL-encoded if they contain special characters.`
+      );
       logger.error(`   URI (masked): ${uriConfig.masked}`);
       process.exit(1);
     }
@@ -280,7 +282,9 @@ const connectDB = async (attempt = 1, forceFallback = false) => {
     // Fail fast if URI points to wrong environment
     if (message.includes('Certificate verification failed') && uriConfig.inProduction) {
       logger.error('🛑 SSL/TLS certificate verification failed.');
-      logger.error(`   This typically means you're trying to connect to MongoDB Atlas from an environment`);
+      logger.error(
+        `   This typically means you're trying to connect to MongoDB Atlas from an environment`
+      );
       logger.error(`   without proper certificate validation. Check network/firewall settings.`);
       process.exit(1);
     }
@@ -315,7 +319,7 @@ const connectDB = async (attempt = 1, forceFallback = false) => {
       logger.error('   The application will attempt to reconnect automatically.');
       logger.error('   To disable graceful startup, set GRACEFUL_STARTUP=false');
       logger.error('');
-      return;  // Don't exit, let the app start
+      return; // Don't exit, let the app start
     }
 
     process.exit(1);
@@ -325,16 +329,10 @@ const connectDB = async (attempt = 1, forceFallback = false) => {
 /**
  * MongoDB lifecycle events
  */
-mongoose.connection.on('connected', () =>
-  logger.info('📡 MongoDB connection established')
-);
+mongoose.connection.on('connected', () => logger.info('📡 MongoDB connection established'));
 
-mongoose.connection.on('disconnected', () =>
-  logger.warn('⚠️ MongoDB disconnected')
-);
+mongoose.connection.on('disconnected', () => logger.warn('⚠️ MongoDB disconnected'));
 
-mongoose.connection.on('error', (err) =>
-  logger.error(`❌ MongoDB runtime error: ${err.message}`)
-);
+mongoose.connection.on('error', (err) => logger.error(`❌ MongoDB runtime error: ${err.message}`));
 
 module.exports = connectDB;

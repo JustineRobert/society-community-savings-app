@@ -68,13 +68,39 @@ const AdminSessions = () => {
                   <td style={{ padding: 8, verticalAlign: 'top' }}>{s.id}</td>
                   <td style={{ padding: 8, verticalAlign: 'top' }}>{s.userId}</td>
                   <td style={{ padding: 8, verticalAlign: 'top' }}>{s.deviceInfo?.ip}</td>
-                  <td style={{ padding: 8, verticalAlign: 'top', maxWidth: 360, overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.deviceInfo?.ua}</td>
-                  <td style={{ padding: 8, verticalAlign: 'top' }}>{new Date(s.createdAt).toLocaleString()}</td>
-                  <td style={{ padding: 8, verticalAlign: 'top' }}>{new Date(s.expiresAt).toLocaleString()}</td>
-                  <td style={{ padding: 8, verticalAlign: 'top' }}>{s.revokedAt ? new Date(s.revokedAt).toLocaleString() : '-'}</td>
+                  <td
+                    style={{
+                      padding: 8,
+                      verticalAlign: 'top',
+                      maxWidth: 360,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {s.deviceInfo?.ua}
+                  </td>
+                  <td style={{ padding: 8, verticalAlign: 'top' }}>
+                    {new Date(s.createdAt).toLocaleString()}
+                  </td>
+                  <td style={{ padding: 8, verticalAlign: 'top' }}>
+                    {new Date(s.expiresAt).toLocaleString()}
+                  </td>
+                  <td style={{ padding: 8, verticalAlign: 'top' }}>
+                    {s.revokedAt ? new Date(s.revokedAt).toLocaleString() : '-'}
+                  </td>
                   <td style={{ padding: 8, verticalAlign: 'top' }}>
                     {!s.revokedAt && (
-                      <button onClick={() => revoke(s.id)} style={{ padding: '6px 8px', background: '#e53e3e', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer' }}>
+                      <button
+                        onClick={() => revoke(s.id)}
+                        style={{
+                          padding: '6px 8px',
+                          background: '#e53e3e',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: 6,
+                          cursor: 'pointer',
+                        }}
+                      >
                         Revoke
                       </button>
                     )}

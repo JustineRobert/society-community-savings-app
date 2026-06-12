@@ -1,4 +1,3 @@
-
 // community-savings-app-backend/controllers/paymentController.js
 
 /**
@@ -23,21 +22,13 @@ const logger = require('../utils/logger');
  * POST /api/payments/initiate
  */
 exports.initiatePayment = asyncHandler(async (req, res) => {
-  const {
-    groupId,
-    amount,
-    currency = 'KES',
-    method,
-    type,
-    description,
-    metadata = {}
-  } = req.body;
+  const { groupId, amount, currency = 'KES', method, type, description, metadata = {} } = req.body;
 
   // Validate required fields
   if (!groupId || !amount || !method || !type) {
     return res.status(400).json({
       success: false,
-      error: 'Missing required fields: groupId, amount, method, type'
+      error: 'Missing required fields: groupId, amount, method, type',
     });
   }
 
@@ -46,7 +37,7 @@ exports.initiatePayment = asyncHandler(async (req, res) => {
   if (!validMethods.includes(method)) {
     return res.status(400).json({
       success: false,
-      error: `Invalid payment method. Valid methods: ${validMethods.join(', ')}`
+      error: `Invalid payment method. Valid methods: ${validMethods.join(', ')}`,
     });
   }
 
@@ -55,7 +46,7 @@ exports.initiatePayment = asyncHandler(async (req, res) => {
   if (!validTypes.includes(type)) {
     return res.status(400).json({
       success: false,
-      error: `Invalid payment type. Valid types: ${validTypes.join(', ')}`
+      error: `Invalid payment type. Valid types: ${validTypes.join(', ')}`,
     });
   }
 
@@ -65,7 +56,7 @@ exports.initiatePayment = asyncHandler(async (req, res) => {
       ...metadata,
       ipAddress: req.ip,
       userAgent: req.get('User-Agent'),
-      userId: req.user._id
+      userId: req.user._id,
     };
 
     const result = await paymentService.initiatePayment({
@@ -76,20 +67,19 @@ exports.initiatePayment = asyncHandler(async (req, res) => {
       method,
       type,
       description,
-      metadata: enrichedMetadata
+      metadata: enrichedMetadata,
     });
 
     res.status(201).json({
       success: true,
       data: result,
-      message: 'Payment initiated successfully'
+      message: 'Payment initiated successfully',
     });
-
   } catch (error) {
     logger.error('Payment initiation error:', error);
     res.status(400).json({
       success: false,
-      error: error.message || 'Payment initiation failed'
+      error: error.message || 'Payment initiation failed',
     });
   }
 });
@@ -105,7 +95,7 @@ exports.processMobileMoneyPayment = asyncHandler(async (req, res) => {
   if (!phoneNumber) {
     return res.status(400).json({
       success: false,
-      error: 'Phone number is required'
+      error: 'Phone number is required',
     });
   }
 
@@ -114,27 +104,26 @@ exports.processMobileMoneyPayment = asyncHandler(async (req, res) => {
       paymentId,
       phoneNumber,
       provider,
-      accountReference
+      accountReference,
     });
 
     if (result.success) {
       res.json({
         success: true,
         data: result,
-        message: 'Mobile money payment processed successfully'
+        message: 'Mobile money payment processed successfully',
       });
     } else {
       res.status(400).json({
         success: false,
-        error: result.error || 'Payment processing failed'
+        error: result.error || 'Payment processing failed',
       });
     }
-
   } catch (error) {
     logger.error('Mobile money payment error:', error);
     res.status(400).json({
       success: false,
-      error: error.message || 'Mobile money payment failed'
+      error: error.message || 'Mobile money payment failed',
     });
   }
 });
@@ -150,7 +139,7 @@ exports.processBankTransfer = asyncHandler(async (req, res) => {
   if (!bankCode || !accountNumber || !accountName) {
     return res.status(400).json({
       success: false,
-      error: 'Bank code, account number, and account name are required'
+      error: 'Bank code, account number, and account name are required',
     });
   }
 
@@ -160,20 +149,19 @@ exports.processBankTransfer = asyncHandler(async (req, res) => {
       bankCode,
       accountNumber,
       accountName,
-      routingNumber
+      routingNumber,
     });
 
     res.json({
       success: true,
       data: result,
-      message: 'Bank transfer processed successfully'
+      message: 'Bank transfer processed successfully',
     });
-
   } catch (error) {
     logger.error('Bank transfer error:', error);
     res.status(400).json({
       success: false,
-      error: error.message || 'Bank transfer failed'
+      error: error.message || 'Bank transfer failed',
     });
   }
 });
@@ -192,20 +180,19 @@ exports.verifyPayment = asyncHandler(async (req, res) => {
     if (payment.user._id.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
       return res.status(403).json({
         success: false,
-        error: 'Access denied'
+        error: 'Access denied',
       });
     }
 
     res.json({
       success: true,
-      data: payment
+      data: payment,
     });
-
   } catch (error) {
     logger.error('Payment verification error:', error);
     res.status(404).json({
       success: false,
-      error: error.message || 'Payment not found'
+      error: error.message || 'Payment not found',
     });
   }
 });
@@ -215,15 +202,7 @@ exports.verifyPayment = asyncHandler(async (req, res) => {
  * GET /api/payments/history
  */
 exports.getPaymentHistory = asyncHandler(async (req, res) => {
-  const {
-    page = 1,
-    limit = 20,
-    status,
-    type,
-    method,
-    startDate,
-    endDate
-  } = req.query;
+  const { page = 1, limit = 20, status, type, method, startDate, endDate } = req.query;
 
   try {
     const query = { user: req.user._id };
@@ -244,8 +223,8 @@ exports.getPaymentHistory = asyncHandler(async (req, res) => {
       sort: { createdAt: -1 },
       populate: [
         { path: 'group', select: 'name' },
-        { path: 'user', select: 'name email' }
-      ]
+        { path: 'user', select: 'name email' },
+      ],
     };
 
     const payments = await Payment.paginate(query, options);
@@ -258,16 +237,15 @@ exports.getPaymentHistory = asyncHandler(async (req, res) => {
           page: payments.page,
           pages: payments.totalPages,
           total: payments.totalDocs,
-          limit: payments.limit
-        }
-      }
+          limit: payments.limit,
+        },
+      },
     });
-
   } catch (error) {
     logger.error('Payment history error:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to retrieve payment history'
+      error: 'Failed to retrieve payment history',
     });
   }
 });
@@ -283,7 +261,7 @@ exports.processRefund = asyncHandler(async (req, res) => {
   if (!amount || !reason) {
     return res.status(400).json({
       success: false,
-      error: 'Amount and reason are required for refund'
+      error: 'Amount and reason are required for refund',
     });
   }
 
@@ -293,14 +271,14 @@ exports.processRefund = asyncHandler(async (req, res) => {
     if (!payment) {
       return res.status(404).json({
         success: false,
-        error: 'Payment not found'
+        error: 'Payment not found',
       });
     }
 
     if (payment.user.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
       return res.status(403).json({
         success: false,
-        error: 'Access denied'
+        error: 'Access denied',
       });
     }
 
@@ -309,14 +287,13 @@ exports.processRefund = asyncHandler(async (req, res) => {
     res.json({
       success: true,
       data: result,
-      message: 'Refund processed successfully'
+      message: 'Refund processed successfully',
     });
-
   } catch (error) {
     logger.error('Refund processing error:', error);
     res.status(400).json({
       success: false,
-      error: error.message || 'Refund processing failed'
+      error: error.message || 'Refund processing failed',
     });
   }
 });
@@ -330,15 +307,14 @@ exports.getPaymentAnalytics = asyncHandler(async (req, res) => {
     userId,
     groupId,
     startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // 30 days ago
-    endDate = new Date()
+    endDate = new Date(),
   } = req.query;
 
   // Only admins can view analytics for other users/groups
-  if ((userId && userId !== req.user._id.toString()) ||
-      (groupId && req.user.role !== 'admin')) {
+  if ((userId && userId !== req.user._id.toString()) || (groupId && req.user.role !== 'admin')) {
     return res.status(403).json({
       success: false,
-      error: 'Access denied'
+      error: 'Access denied',
     });
   }
 
@@ -352,14 +328,13 @@ exports.getPaymentAnalytics = asyncHandler(async (req, res) => {
 
     res.json({
       success: true,
-      data: analytics
+      data: analytics,
     });
-
   } catch (error) {
     logger.error('Payment analytics error:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to retrieve payment analytics'
+      error: 'Failed to retrieve payment analytics',
     });
   }
 });
@@ -371,12 +346,12 @@ exports.getPaymentAnalytics = asyncHandler(async (req, res) => {
 exports.getPaymentMethods = asyncHandler(async (req, res) => {
   const { amount, currency = 'KES' } = req.query;
 
-  const methods = Object.values(paymentService.PAYMENT_METHODS).map(method => {
+  const methods = Object.values(paymentService.PAYMENT_METHODS).map((method) => {
     const fees = paymentService.calculateFees(method, parseFloat(amount) || 1000, currency);
     return {
       method,
       fees,
-      description: getMethodDescription(method)
+      description: getMethodDescription(method),
     };
   });
 
@@ -384,8 +359,8 @@ exports.getPaymentMethods = asyncHandler(async (req, res) => {
     success: true,
     data: {
       methods,
-      providers: paymentService.MOBILE_MONEY_PROVIDERS
-    }
+      providers: paymentService.MOBILE_MONEY_PROVIDERS,
+    },
   });
 });
 
@@ -413,16 +388,16 @@ exports.getPaymentStats = asyncHandler(async (req, res) => {
           totalAmount: { $sum: '$amount' },
           totalFees: { $sum: '$fees' },
           completedPayments: {
-            $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] }
+            $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] },
           },
           pendingPayments: {
-            $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] }
+            $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] },
           },
           failedPayments: {
-            $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] }
-          }
-        }
-      }
+            $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] },
+          },
+        },
+      },
     ]);
 
     const result = stats[0] || {
@@ -431,23 +406,24 @@ exports.getPaymentStats = asyncHandler(async (req, res) => {
       totalFees: 0,
       completedPayments: 0,
       pendingPayments: 0,
-      failedPayments: 0
+      failedPayments: 0,
     };
 
     res.json({
       success: true,
       data: {
         ...result,
-        successRate: result.totalPayments > 0 ?
-          (result.completedPayments / result.totalPayments * 100).toFixed(2) : 0
-      }
+        successRate:
+          result.totalPayments > 0
+            ? ((result.completedPayments / result.totalPayments) * 100).toFixed(2)
+            : 0,
+      },
     });
-
   } catch (error) {
     logger.error('Payment stats error:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to retrieve payment statistics'
+      error: 'Failed to retrieve payment statistics',
     });
   }
 });
@@ -460,7 +436,7 @@ function getMethodDescription(method) {
     mobile_money: 'Pay using M-Pesa, Airtel Money, or MTN Mobile Money',
     bank_transfer: 'Direct bank transfer to group account',
     card: 'Credit/Debit card payment',
-    cash: 'Cash payment (in-person only)'
+    cash: 'Cash payment (in-person only)',
   };
   return descriptions[method] || 'Payment method';
 }
@@ -471,25 +447,21 @@ function getMethodDescription(method) {
  */
 async function createPaymentIntent(req, res) {
   try {
-    const result = await req.app.locals.paymentService.createPaymentIntent(
-      req.body,
-      req.user._id
-    );
+    const result = await req.app.locals.paymentService.createPaymentIntent(req.body, req.user._id);
 
     return res.status(201).json({
       success: true,
       data: result,
-      message: 'Payment intent created successfully'
+      message: 'Payment intent created successfully',
     });
-
   } catch (error) {
     logger.error('[PaymentController] Error creating payment intent', {
-      error: error.message
+      error: error.message,
     });
 
     return res.status(500).json({
       success: false,
-      error: error.message || 'Failed to create payment intent'
+      error: error.message || 'Failed to create payment intent',
     });
   }
 }
@@ -752,7 +724,10 @@ async function getPaymentAnalyticsSummary(req, res) {
         successfulPayments,
         totalAmount: totalAmount[0]?.total || 0,
         averageAmount: averageAmount[0]?.avg || 0,
-        successRate: totalTransactions > 0 ? ((successfulPayments / totalTransactions) * 100).toFixed(2) + '%' : '0%',
+        successRate:
+          totalTransactions > 0
+            ? ((successfulPayments / totalTransactions) * 100).toFixed(2) + '%'
+            : '0%',
       },
     });
   } catch (error) {
@@ -782,4 +757,3 @@ exports.getPaymentAnalytics = getPaymentAnalyticsSummary;
 
 // Note: all other handler functions above were already attached to `exports` via
 // `exports.foo = ...` earlier in the file. We no longer reassign `module.exports`.
-

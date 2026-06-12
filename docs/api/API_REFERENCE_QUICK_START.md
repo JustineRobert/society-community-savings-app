@@ -1,7 +1,9 @@
 # API REFERENCE - Quick Start
 
 ## Authentication
+
 All protected endpoints require:
+
 ```
 Authorization: Bearer {accessToken}
 or
@@ -13,6 +15,7 @@ x-auth-token: {accessToken}
 ## 🎯 LOAN MANAGEMENT
 
 ### Check Eligibility
+
 ```
 GET /api/loans/eligibility/:groupId
 Authorization: Bearer token
@@ -41,6 +44,7 @@ Response:
 ```
 
 ### Apply for Loan
+
 ```
 POST /api/loans/apply
 Content-Type: application/json
@@ -71,6 +75,7 @@ Response (201):
 ```
 
 ### Approve Loan
+
 ```
 PUT /api/loans/:loanId/approve
 Authorization: Bearer token (admin only)
@@ -91,6 +96,7 @@ Response:
 ```
 
 ### Reject Loan
+
 ```
 PUT /api/loans/:loanId/reject
 Authorization: Bearer token (admin only)
@@ -109,6 +115,7 @@ Response:
 ```
 
 ### Disburse Loan
+
 ```
 PUT /api/loans/:loanId/disburse
 Authorization: Bearer token (admin only)
@@ -136,6 +143,7 @@ Response:
 ```
 
 ### Make Payment
+
 ```
 PUT /api/loans/:loanId/pay
 Authorization: Bearer token
@@ -164,6 +172,7 @@ Response:
 ```
 
 ### Get Loan Details
+
 ```
 GET /api/loans/:loanId
 Authorization: Bearer token
@@ -196,6 +205,7 @@ Response:
 ## 👨‍💼 ADMIN DASHBOARD
 
 ### Dashboard Metrics
+
 ```
 GET /api/admin/dashboard
 Authorization: Bearer token (admin only)
@@ -231,6 +241,7 @@ Response:
 ```
 
 ### List Users
+
 ```
 GET /api/admin/users?status=all&search=john&skip=0&limit=20
 Authorization: Bearer token (admin only)
@@ -255,6 +266,7 @@ Response:
 ```
 
 ### User Details
+
 ```
 GET /api/admin/users/:userId
 Authorization: Bearer token (admin only)
@@ -275,6 +287,7 @@ Response:
 ```
 
 ### Verify User
+
 ```
 PUT /api/admin/users/:userId/verify
 Authorization: Bearer token (admin only)
@@ -287,6 +300,7 @@ Response:
 ```
 
 ### Suspend User
+
 ```
 PUT /api/admin/users/:userId/suspend
 Authorization: Bearer token (admin only)
@@ -304,6 +318,7 @@ Response:
 ```
 
 ### Loan Risk Overview
+
 ```
 GET /api/admin/loan-risk
 Authorization: Bearer token (admin only)
@@ -327,6 +342,7 @@ Response:
 ```
 
 ### Audit Log
+
 ```
 GET /api/admin/audit-log?action=loan_approved&skip=0&limit=50
 Authorization: Bearer token (admin only)
@@ -356,6 +372,7 @@ Response:
 ## 💬 CHAT
 
 ### Send Message
+
 ```
 POST /api/chat/:groupId
 Authorization: Bearer token
@@ -383,6 +400,7 @@ Response:
 ```
 
 ### Get Group Messages
+
 ```
 GET /api/chat/:groupId?skip=0&limit=50
 Authorization: Bearer token
@@ -397,6 +415,7 @@ Response:
 ```
 
 ### Mark as Read
+
 ```
 PUT /api/chat/message/:messageId/read
 Authorization: Bearer token
@@ -409,6 +428,7 @@ Response:
 ```
 
 ### Add Reaction
+
 ```
 POST /api/chat/message/:messageId/reaction
 Authorization: Bearer token
@@ -426,6 +446,7 @@ Response:
 ```
 
 ### Flag Message
+
 ```
 POST /api/chat/message/:messageId/flag
 Authorization: Bearer token
@@ -443,6 +464,7 @@ Response:
 ```
 
 ### Hide Message (Admin)
+
 ```
 PUT /api/chat/message/:messageId/hide
 Authorization: Bearer token (admin only)
@@ -464,6 +486,7 @@ Response:
 ## 🤝 REFERRAL
 
 ### Generate Code
+
 ```
 POST /api/referrals/generate
 Authorization: Bearer token
@@ -480,6 +503,7 @@ Response:
 ```
 
 ### Get My Code
+
 ```
 GET /api/referrals/my-code
 Authorization: Bearer token
@@ -492,6 +516,7 @@ Response:
 ```
 
 ### Use Referral Code
+
 ```
 POST /api/referrals/use
 Content-Type: application/json
@@ -510,6 +535,7 @@ Response:
 ```
 
 ### Pending Referrals
+
 ```
 GET /api/referrals/pending
 Authorization: Bearer token
@@ -530,6 +556,7 @@ Response:
 ```
 
 ### Completed Referrals
+
 ```
 GET /api/referrals/completed
 Authorization: Bearer token
@@ -551,6 +578,7 @@ Response:
 ```
 
 ### Referral Rewards
+
 ```
 GET /api/referrals/rewards
 Authorization: Bearer token
@@ -571,6 +599,7 @@ Response:
 ## 🔒 SECURITY
 
 ### Health Check
+
 ```
 GET /api/health
 
@@ -584,6 +613,7 @@ Response:
 ```
 
 ### Metrics
+
 ```
 GET /api/metrics
 
@@ -599,6 +629,7 @@ http_requests_total{method="GET",status="200"} 1234
 ## 📋 ERROR RESPONSES
 
 ### 400 Bad Request
+
 ```json
 {
   "success": false,
@@ -607,6 +638,7 @@ http_requests_total{method="GET",status="200"} 1234
 ```
 
 ### 401 Unauthorized
+
 ```json
 {
   "success": false,
@@ -615,6 +647,7 @@ http_requests_total{method="GET",status="200"} 1234
 ```
 
 ### 403 Forbidden
+
 ```json
 {
   "success": false,
@@ -623,6 +656,7 @@ http_requests_total{method="GET",status="200"} 1234
 ```
 
 ### 404 Not Found
+
 ```json
 {
   "success": false,
@@ -631,6 +665,7 @@ http_requests_total{method="GET",status="200"} 1234
 ```
 
 ### 409 Conflict
+
 ```json
 {
   "success": false,
@@ -639,6 +674,7 @@ http_requests_total{method="GET",status="200"} 1234
 ```
 
 ### 429 Too Many Requests
+
 ```json
 {
   "success": false,
@@ -647,6 +683,7 @@ http_requests_total{method="GET",status="200"} 1234
 ```
 
 ### 500 Server Error
+
 ```json
 {
   "success": false,

@@ -1,4 +1,3 @@
-
 // controllers/contributionController.js
 
 const mongoose = require('mongoose');
@@ -273,14 +272,13 @@ exports.getGroupStats = async (req, res) => {
 
     return res.json({
       message: 'Group statistics retrieved successfully',
-      data:
-        stats[0] || {
-          totalAmount: 0,
-          contributionCount: 0,
-          avgContribution: 0,
-          firstContributionAt: null,
-          lastContributionAt: null,
-        },
+      data: stats[0] || {
+        totalAmount: 0,
+        contributionCount: 0,
+        avgContribution: 0,
+        firstContributionAt: null,
+        lastContributionAt: null,
+      },
     });
   } catch (err) {
     logger.error('Error fetching group stats', {

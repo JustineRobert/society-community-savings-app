@@ -1,4 +1,3 @@
-
 // routes/chat.js
 
 const express = require('express');
@@ -14,9 +13,9 @@ const { verifyToken, requireRole } = require('../middleware/auth');
 // Controllers (some may be optional)
 const {
   sendMessage,
-  getMessages,        // <– real export from chatController
-  getUserMessages,    // Optional: for private/user-to-user messaging
-  deleteMessage       // Optional: for admin/moderator cleanup
+  getMessages, // <– real export from chatController
+  getUserMessages, // Optional: for private/user-to-user messaging
+  deleteMessage, // Optional: for admin/moderator cleanup
 } = require('../controllers/chatController');
 
 // alias so the route code stays semantically the same
@@ -26,7 +25,9 @@ const getGroupMessages = getMessages;
 const controllers = { sendMessage, getGroupMessages, getUserMessages, deleteMessage };
 for (const [key, val] of Object.entries(controllers)) {
   if (val !== undefined && typeof val !== 'function') {
-    throw new TypeError(`[routes/chat] Controller "${key}" must be a function, received: ${typeof val}`);
+    throw new TypeError(
+      `[routes/chat] Controller "${key}" must be a function, received: ${typeof val}`
+    );
   }
 }
 
@@ -41,7 +42,11 @@ router.post(
   verifyToken,
   [
     body('groupId').isString().trim().notEmpty().withMessage('groupId is required'),
-    body('content').isString().trim().isLength({ min: 1, max: 5000 }).withMessage('content is required (1-5000 chars)'),
+    body('content')
+      .isString()
+      .trim()
+      .isLength({ min: 1, max: 5000 })
+      .withMessage('content is required (1-5000 chars)'),
     body('attachments').optional().isArray().withMessage('attachments must be an array'),
   ],
   handleValidation,

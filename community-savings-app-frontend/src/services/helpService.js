@@ -1,11 +1,21 @@
+/* global console */
+
 /**
  * helpService.js
  * Service for managing help center articles
  */
 
-const axios = require('axios');
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
+/**
+ * helpService.js
+ * Service for managing help center articles
+ */
+
+import axios from 'axios';
+
+const API_BASE_URL =
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) ||
+  'http://localhost:3001/api';
 
 const helpService = {
   /**
@@ -140,9 +150,7 @@ const helpService = {
    */
   incrementArticleViews: async (articleId) => {
     try {
-      const response = await axios.post(
-        `${API_BASE_URL}/help/articles/${articleId}/views`
-      );
+      const response = await axios.post(`${API_BASE_URL}/help/articles/${articleId}/views`);
       return response.data;
     } catch (error) {
       console.error('Error incrementing views:', error);
@@ -181,10 +189,7 @@ const helpService = {
    */
   updateArticle: async (articleId, articleData) => {
     try {
-      const response = await axios.put(
-        `${API_BASE_URL}/help/articles/${articleId}`,
-        articleData
-      );
+      const response = await axios.put(`${API_BASE_URL}/help/articles/${articleId}`, articleData);
       return response.data.article;
     } catch (error) {
       console.error('Error updating article:', error);
@@ -219,4 +224,4 @@ const helpService = {
   },
 };
 
-module.exports = helpService;
+export default helpService;

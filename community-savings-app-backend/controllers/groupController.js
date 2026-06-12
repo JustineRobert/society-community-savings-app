@@ -5,6 +5,7 @@ const User = require('../models/User');
 const logger = require('../utils/logger');
 const { notificationQueue } = require('../services/queue');
 
+
 /**
  * Create a new group with enhanced features:
  * - Support group type and description
@@ -14,14 +15,14 @@ const { notificationQueue } = require('../services/queue');
  */
 exports.createGroup = async (req, res) => {
   try {
-    const { 
-      name, 
-      type = 'savings', 
+    const {
+      name,
+      type = 'savings',
       description = '',
       members: memberData = [],
-      createdBy = req.user?.id
+      createdBy = req.user?.id,
     } = req.body;
-    
+
     // Validation
     if (!name || !createdBy) {
       return res.status(400).json({ message: 'Group name and creator are required' });
@@ -40,7 +41,9 @@ exports.createGroup = async (req, res) => {
     // Validate group type
     const validTypes = ['savings', 'investment', 'community', 'welfare'];
     if (!validTypes.includes(type)) {
-      return res.status(400).json({ message: `Invalid group type. Valid types: ${validTypes.join(', ')}` });
+      return res
+        .status(400)
+        .json({ message: `Invalid group type. Valid types: ${validTypes.join(', ')}` });
     }
 
     // Process member data (can be array of objects with email and role, or just emails)
@@ -66,7 +69,7 @@ exports.createGroup = async (req, res) => {
     }
 
     // Deduplicate by email
-    const uniqueEmails = [...new Map(processedMembers.map(m => [m.email, m])).values()];
+    const uniqueEmails = [...new Map(processedMembers.map((m) => [m.email, m])).values()];
 
     // Create group
     const group = new Group({
@@ -78,7 +81,7 @@ exports.createGroup = async (req, res) => {
       metadata: {
         createdAt: new Date(),
         totalInvited: uniqueEmails.length,
-      }
+      },
     });
 
     await group.save();
@@ -105,7 +108,10 @@ exports.createGroup = async (req, res) => {
           batchSize: 5,
         });
       } catch (qErr) {
-        logger.warn('Failed to queue batch invitations', { groupId: group._id, error: qErr.message });
+        logger.warn('Failed to queue batch invitations', {
+          groupId: group._id,
+          error: qErr.message,
+        });
       }
     }
 
@@ -128,7 +134,7 @@ exports.createGroup = async (req, res) => {
       error: err.message,
       stack: err.stack,
     });
-    res.status(500).json({ 
+    res.status(500).json({
       message: 'Failed to create group',
       error: process.env.NODE_ENV === 'production' ? undefined : err.message,
     });
@@ -155,9 +161,9 @@ exports.sendBatchInvitations = async (req, res) => {
     }
 
     if (req.user?.role !== 'admin' && !group.members.includes(req.user?.id)) {
-      logger.warn('Unauthorized invitation attempt', { 
-        userId: req.user?.id, 
-        groupId 
+      logger.warn('Unauthorized invitation attempt', {
+        userId: req.user?.id,
+        groupId,
       });
       return res.status(403).json({ message: 'Unauthorized' });
     }
@@ -175,17 +181,20 @@ exports.sendBatchInvitations = async (req, res) => {
 
       try {
         // Queue invitation
-        await notificationQueue.add({
-          type: 'group-invitation',
-          groupId: groupId,
-          email: email.toLowerCase().trim(),
-          role,
-          invitedBy: req.user?.id,
-          retries: 0,
-        }, {
-          attempts: 3,
-          backoff: { type: 'exponential', delay: 2000 },
-        });
+        await notificationQueue.add(
+          {
+            type: 'group-invitation',
+            groupId: groupId,
+            email: email.toLowerCase().trim(),
+            role,
+            invitedBy: req.user?.id,
+            retries: 0,
+          },
+          {
+            attempts: 3,
+            backoff: { type: 'exponential', delay: 2000 },
+          }
+        );
 
         results.successCount++;
 
@@ -234,7 +243,7 @@ exports.sendBatchInvitations = async (req, res) => {
       userId: req.user?.id,
       error: err.message,
     });
-    res.status(500).json({ 
+    res.status(500).json({
       message: 'Failed to send invitations',
       error: process.env.NODE_ENV === 'production' ? undefined : err.message,
     });
@@ -280,7 +289,7 @@ exports.joinGroup = async (req, res) => {
     });
   } catch (err) {
     logger.error('Error joining group:', { userId: req.user.id, error: err.message });
-    res.status(500).json({ 
+    res.status(500).json({
       message: 'Failed to join group',
       error: process.env.NODE_ENV === 'production' ? undefined : err.message,
     });
@@ -315,7 +324,7 @@ exports.getGroups = async (req, res) => {
     });
   } catch (err) {
     logger.error('Error fetching groups:', { userId: req.user.id, error: err.message });
-    res.status(500).json({ 
+    res.status(500).json({
       message: 'Failed to fetch groups',
       error: process.env.NODE_ENV === 'production' ? undefined : err.message,
     });
@@ -338,7 +347,7 @@ exports.getGroupById = async (req, res) => {
     }
 
     // Check if user is a member
-    if (!group.members.some(member => member._id.equals(req.user.id))) {
+    if (!group.members.some((member) => member._id.equals(req.user.id))) {
       return res.status(403).json({ message: 'Not authorized to view this group' });
     }
 
@@ -348,7 +357,7 @@ exports.getGroupById = async (req, res) => {
     });
   } catch (err) {
     logger.error('Error fetching group:', { userId: req.user.id, error: err.message });
-    res.status(500).json({ 
+    res.status(500).json({
       message: 'Failed to fetch group',
       error: process.env.NODE_ENV === 'production' ? undefined : err.message,
     });
@@ -372,7 +381,7 @@ exports.leaveGroup = async (req, res) => {
       return res.status(403).json({ message: 'Group creator cannot leave the group' });
     }
 
-    group.members = group.members.filter(memberId => !memberId.equals(req.user.id));
+    group.members = group.members.filter((memberId) => !memberId.equals(req.user.id));
     await group.save();
 
     logger.info(`User ${req.user.id} left group ${groupId}`);
@@ -383,7 +392,7 @@ exports.leaveGroup = async (req, res) => {
     });
   } catch (err) {
     logger.error('Error leaving group:', { userId: req.user.id, error: err.message });
-    res.status(500).json({ 
+    res.status(500).json({
       message: 'Failed to leave group',
       error: process.env.NODE_ENV === 'production' ? undefined : err.message,
     });

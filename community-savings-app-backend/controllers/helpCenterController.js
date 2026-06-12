@@ -13,18 +13,18 @@ const helpCenterService = require('../services/helpCenterService');
 exports.getCategories = async (req, res) => {
   try {
     const categories = await helpCenterService.getAllCategories();
-    
+
     return res.status(200).json({
       success: true,
       message: 'Categories retrieved successfully',
-      data: categories
+      data: categories,
     });
   } catch (error) {
     console.error('Error retrieving categories:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to retrieve categories',
-      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
+      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message,
     });
   }
 };
@@ -36,28 +36,28 @@ exports.getCategories = async (req, res) => {
 exports.getArticlesByCategory = async (req, res) => {
   try {
     const { slug } = req.params;
-    
+
     if (!slug) {
       return res.status(400).json({
         success: false,
-        message: 'Category slug is required'
+        message: 'Category slug is required',
       });
     }
 
     const articles = await helpCenterService.getArticlesByCategory(slug);
-    
+
     return res.status(200).json({
       success: true,
       message: 'Articles retrieved successfully',
       data: articles,
-      count: articles.length
+      count: articles.length,
     });
   } catch (error) {
     console.error('Error retrieving articles:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to retrieve articles',
-      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
+      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message,
     });
   }
 };
@@ -69,20 +69,20 @@ exports.getArticlesByCategory = async (req, res) => {
 exports.getArticle = async (req, res) => {
   try {
     const { slug } = req.params;
-    
+
     if (!slug) {
       return res.status(400).json({
         success: false,
-        message: 'Article slug is required'
+        message: 'Article slug is required',
       });
     }
 
     const article = await helpCenterService.getArticleBySlug(slug);
-    
+
     if (!article) {
       return res.status(404).json({
         success: false,
-        message: 'Article not found'
+        message: 'Article not found',
       });
     }
 
@@ -93,14 +93,14 @@ exports.getArticle = async (req, res) => {
       success: true,
       message: 'Article retrieved successfully',
       data: article,
-      related: relatedArticles
+      related: relatedArticles,
     });
   } catch (error) {
     console.error('Error retrieving article:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to retrieve article',
-      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
+      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message,
     });
   }
 };
@@ -112,29 +112,29 @@ exports.getArticle = async (req, res) => {
 exports.searchArticles = async (req, res) => {
   try {
     const { q } = req.query;
-    
+
     if (!q || q.trim().length < 2) {
       return res.status(400).json({
         success: false,
-        message: 'Search query must be at least 2 characters'
+        message: 'Search query must be at least 2 characters',
       });
     }
 
     const articles = await helpCenterService.searchArticles(q);
-    
+
     return res.status(200).json({
       success: true,
       message: 'Search results retrieved',
       query: q,
       data: articles,
-      count: articles.length
+      count: articles.length,
     });
   } catch (error) {
     console.error('Error searching articles:', error);
     return res.status(500).json({
       success: false,
       message: 'Search failed',
-      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
+      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message,
     });
   }
 };
@@ -146,21 +146,21 @@ exports.searchArticles = async (req, res) => {
 exports.getFeaturedArticles = async (req, res) => {
   try {
     const limit = req.query.limit ? parseInt(req.query.limit) : 5;
-    
+
     const articles = await helpCenterService.getFeaturedArticles(limit);
-    
+
     return res.status(200).json({
       success: true,
       message: 'Featured articles retrieved successfully',
       data: articles,
-      count: articles.length
+      count: articles.length,
     });
   } catch (error) {
     console.error('Error retrieving featured articles:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to retrieve featured articles',
-      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
+      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message,
     });
   }
 };
@@ -172,21 +172,21 @@ exports.getFeaturedArticles = async (req, res) => {
 exports.getPopularArticles = async (req, res) => {
   try {
     const limit = req.query.limit ? parseInt(req.query.limit) : 10;
-    
+
     const articles = await helpCenterService.getMostViewedArticles(limit);
-    
+
     return res.status(200).json({
       success: true,
       message: 'Popular articles retrieved successfully',
       data: articles,
-      count: articles.length
+      count: articles.length,
     });
   } catch (error) {
     console.error('Error retrieving popular articles:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to retrieve popular articles',
-      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
+      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message,
     });
   }
 };
@@ -204,7 +204,7 @@ exports.submitFeedback = async (req, res) => {
     if (typeof helpful !== 'boolean') {
       return res.status(400).json({
         success: false,
-        message: 'Helpful flag must be a boolean'
+        message: 'Helpful flag must be a boolean',
       });
     }
 
@@ -218,14 +218,14 @@ exports.submitFeedback = async (req, res) => {
     return res.status(201).json({
       success: true,
       message: 'Thank you for your feedback!',
-      data: feedbackRecord
+      data: feedbackRecord,
     });
   } catch (error) {
     console.error('Error submitting feedback:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to submit feedback',
-      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
+      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message,
     });
   }
 };
@@ -240,7 +240,7 @@ exports.initializeHelpCenter = async (req, res) => {
     if (process.env.INIT_ALLOWED !== 'true') {
       return res.status(403).json({
         success: false,
-        message: 'Initialization not allowed'
+        message: 'Initialization not allowed',
       });
     }
 
@@ -249,14 +249,14 @@ exports.initializeHelpCenter = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: 'Help center initialized',
-      data: result
+      data: result,
     });
   } catch (error) {
     console.error('Error initializing help center:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to initialize help center',
-      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
+      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message,
     });
   }
 };

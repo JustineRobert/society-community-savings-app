@@ -11,9 +11,11 @@ This document provides a comprehensive inventory of all files created/modified f
 ### 1. Service Layer
 
 #### File: `community-savings-app-backend/services/termsAndPrivacy.js`
+
 **Purpose**: Core business logic for legal documents management
 **Size**: ~180 lines
 **Key Exports**:
+
 - `getTermsOfService()` - Returns full Terms of Service document
 - `getPrivacyPolicy()` - Returns full Privacy Policy document
 - `recordAcceptance(userId, termsVersion, privacyVersion, ipAddress, userAgent)` - Records acceptance
@@ -24,10 +26,12 @@ This document provides a comprehensive inventory of all files created/modified f
 - `LegalAcceptance` - Mongoose model for database
 
 **Dependencies**:
+
 - `mongoose` - Database operations
 - No external services
 
 **Database Schema**:
+
 ```javascript
 LegalAcceptanceSchema {
   userId: ObjectId,
@@ -44,9 +48,11 @@ LegalAcceptanceSchema {
 ### 2. Controller Layer
 
 #### File: `community-savings-app-backend/controllers/legalController.js`
+
 **Purpose**: HTTP request handlers for legal endpoints
 **Size**: ~160 lines
 **Key Exports**:
+
 - `getTermsOfService(req, res)` - GET handler for Terms
 - `getPrivacyPolicy(req, res)` - GET handler for Privacy Policy
 - `acceptTermsAndPrivacy(req, res)` - POST handler for acceptance
@@ -54,14 +60,17 @@ LegalAcceptanceSchema {
 - `getChangelog(req, res)` - GET handler for changelog
 
 **Dependencies**:
+
 - `termsAndPrivacy` service
 - `express` (implicit)
 
 **Middleware Integration**:
+
 - Authentication required for POST and status endpoints
 - Public access for document retrieval
 
 **Error Handling**:
+
 - 401 for missing authentication
 - 500 for server errors
 - Environment-aware error messages
@@ -71,9 +80,11 @@ LegalAcceptanceSchema {
 ### 3. Routes Layer
 
 #### File: `community-savings-app-backend/routes/legal.routes.js`
+
 **Purpose**: URL routing for legal endpoints
 **Size**: ~20 lines
 **Routes Defined**:
+
 ```
 GET    /terms-of-service       → legalController.getTermsOfService
 GET    /privacy-policy         → legalController.getPrivacyPolicy
@@ -83,10 +94,12 @@ GET    /acceptance-status      → authentication → legalController.getAccepta
 ```
 
 **Middleware Stack**:
+
 - No middleware for GET endpoints (public)
 - `authentication` for POST and status endpoints
 
 **Dependencies**:
+
 - `express`
 - `legalController`
 - `authMiddleware`
@@ -96,14 +109,17 @@ GET    /acceptance-status      → authentication → legalController.getAccepta
 ### 4. Middleware
 
 #### File: `community-savings-app-backend/middleware/legalAcceptanceMiddleware.js`
+
 **Purpose**: Enforce legal acceptance requirements
 **Size**: ~100 lines
 **Key Exports**:
+
 - `requireLegalAcceptance(req, res, next)` - Mandatory enforcement
 - `logLegalAcceptance(req, res, next)` - Logging without blocking
 - `requireAcceptanceForTransaction(req, res, next)` - Transaction gate
 
 **Usage Examples**:
+
 ```javascript
 // Mandatory enforcement
 app.post('/api/payments', requireLegalAcceptance, handler);
@@ -116,6 +132,7 @@ app.get('/api/public', logLegalAcceptance, handler);
 ```
 
 **Dependencies**:
+
 - `termsAndPrivacy` service
 - Express middleware pattern
 
@@ -124,9 +141,11 @@ app.get('/api/public', logLegalAcceptance, handler);
 ### 5. Tests
 
 #### File: `community-savings-app-backend/tests/integration/legal.test.js`
+
 **Purpose**: Comprehensive test coverage for legal features
 **Size**: ~300 lines
 **Test Categories**:
+
 - API endpoint tests (5 endpoints)
 - Authentication tests
 - Document content validation
@@ -140,6 +159,7 @@ app.get('/api/public', logLegalAcceptance, handler);
 **Test Framework**: Jest + Supertest
 
 **Dependencies**:
+
 - `supertest`
 - `mongoose`
 - `jest`
@@ -149,8 +169,10 @@ app.get('/api/public', logLegalAcceptance, handler);
 ### 6. Server Integration
 
 #### File: `community-savings-app-backend/server.js` (Modified)
+
 **Change**: Added route mounting for legal endpoints
 **Line Added**:
+
 ```javascript
 app.use('/api/legal', require('./routes/legal.routes'));
 ```
@@ -166,9 +188,11 @@ app.use('/api/legal', require('./routes/legal.routes'));
 ### 1. React Component
 
 #### File: `community-savings-app-frontend/src/components/LegalDocuments.jsx`
+
 **Purpose**: User-facing component for viewing and accepting legal documents
 **Size**: ~200 lines
 **Key Features**:
+
 - Displays Terms of Service modal
 - Displays Privacy Policy modal
 - Shows acceptance status
@@ -176,6 +200,7 @@ app.use('/api/legal', require('./routes/legal.routes'));
 - Error display and loading states
 
 **State Management**:
+
 ```javascript
 {
   showTermsModal: boolean,
@@ -190,17 +215,20 @@ app.use('/api/legal', require('./routes/legal.routes'));
 ```
 
 **Key Functions**:
+
 - `fetchLegalDocuments()` - Loads documents and status
 - `handleAcceptTerms()` - Records acceptance
 - Component lifecycle: useEffect for initialization
 
 **API Calls**:
+
 - GET `/api/legal/terms-of-service`
 - GET `/api/legal/privacy-policy`
 - GET `/api/legal/acceptance-status` (auth required)
 - POST `/api/legal/accept-terms` (auth required)
 
 **Dependencies**:
+
 - React (17+)
 - Fetch API
 - localStorage for token
@@ -210,15 +238,18 @@ app.use('/api/legal', require('./routes/legal.routes'));
 ### 2. Component Styling
 
 #### File: `community-savings-app-frontend/src/components/LegalDocuments.css`
+
 **Purpose**: Professional styling for legal documents UI
 **Size**: ~400 lines
 
 **Design System**:
+
 - Primary color: #667eea (gradient purple)
 - Secondary colors: grays (#1f2937, #6b7280, etc.)
 - Responsive breakpoints: 480px, 768px, desktop
 
 **Components Styled**:
+
 - `.legal-modal-overlay` - Backdrop (fixed, z-index 1000)
 - `.legal-modal` - Main modal container
 - `.legal-modal-header` - Title and metadata area
@@ -230,10 +261,12 @@ app.use('/api/legal', require('./routes/legal.routes'));
 - `.legal-btn-secondary` - Cancel/close button
 
 **Animations**:
+
 - fadeIn - Modal appearance (0.3s ease)
 - slideUp - Modal entrance (0.3s ease)
 
 **Responsive Design**:
+
 ```
 Desktop (> 768px):     900px max-width modal
 Tablet (480-768px):    90vw max-width, flex buttons
@@ -241,6 +274,7 @@ Mobile (< 480px):      Full width, stacked buttons
 ```
 
 **Accessibility**:
+
 - `:hover`, `:active` states
 - `:disabled` state styling
 - Sufficient color contrast
@@ -253,9 +287,11 @@ Mobile (< 480px):      Full width, stacked buttons
 ### 1. Implementation Guide
 
 #### File: `LEGAL_DOCUMENTS_IMPLEMENTATION.md`
+
 **Purpose**: Complete technical reference for the legal documents system
 **Size**: ~800 lines
 **Sections**:
+
 1. Overview and features implemented
 2. Complete API endpoint documentation with examples
 3. Backend implementation details
@@ -278,9 +314,11 @@ Mobile (< 480px):      Full width, stacked buttons
 ### 2. Integration Guide
 
 #### File: `LEGAL_INTEGRATION_GUIDE.md`
+
 **Purpose**: Step-by-step guide for integrating legal system into app
 **Size**: ~600 lines
 **Sections**:
+
 1. Quick start for backend
 2. Quick start for frontend
 3. Key integration points
@@ -298,9 +336,11 @@ Mobile (< 480px):      Full width, stacked buttons
 ### 3. Summary Document
 
 #### File: `TERMS_OF_SERVICE_PRIVACY_SUMMARY.md`
+
 **Purpose**: Executive summary of implementation
 **Size**: ~500 lines
 **Sections**:
+
 1. What has been implemented
 2. Feature checklist (✅)
 3. Backend API overview
@@ -323,9 +363,11 @@ Mobile (< 480px):      Full width, stacked buttons
 ### 4. Quick Reference Card
 
 #### File: `LEGAL_DOCUMENTS_QUICK_REFERENCE.md`
+
 **Purpose**: Quick lookup reference for developers
 **Size**: ~300 lines
 **Sections**:
+
 1. Quick start code snippets
 2. API endpoints table
 3. Middleware options
@@ -383,27 +425,28 @@ Mobile (< 480px):      Full width, stacked buttons
 
 ## 📊 File Statistics
 
-| Category | File Count | Total Lines | Documentation |
-|----------|-----------|------------|--------------|
-| Backend Services | 1 | ~180 | ✅ |
-| Backend Controllers | 1 | ~160 | ✅ |
-| Backend Routes | 1 | ~20 | ✅ |
-| Backend Middleware | 1 | ~100 | ✅ |
-| Backend Tests | 1 | ~300 | ✅ |
-| Backend Modified | 1 | +1 line | ✅ |
-| Frontend Components | 1 | ~200 | ✅ |
-| Frontend Styling | 1 | ~400 | ✅ |
-| **Backend Total** | **6** | **~760** | ✅ |
-| **Frontend Total** | **2** | **~600** | ✅ |
-| **Tests** | **1** | **~300** | ✅ |
-| **Documentation** | **4** | **~2,100** | ✅ |
-| **TOTAL** | **13** | **~3,500+** | ✅ |
+| Category            | File Count | Total Lines | Documentation |
+| ------------------- | ---------- | ----------- | ------------- |
+| Backend Services    | 1          | ~180        | ✅            |
+| Backend Controllers | 1          | ~160        | ✅            |
+| Backend Routes      | 1          | ~20         | ✅            |
+| Backend Middleware  | 1          | ~100        | ✅            |
+| Backend Tests       | 1          | ~300        | ✅            |
+| Backend Modified    | 1          | +1 line     | ✅            |
+| Frontend Components | 1          | ~200        | ✅            |
+| Frontend Styling    | 1          | ~400        | ✅            |
+| **Backend Total**   | **6**      | **~760**    | ✅            |
+| **Frontend Total**  | **2**      | **~600**    | ✅            |
+| **Tests**           | **1**      | **~300**    | ✅            |
+| **Documentation**   | **4**      | **~2,100**  | ✅            |
+| **TOTAL**           | **13**     | **~3,500+** | ✅            |
 
 ---
 
 ## 🔄 Data Flow
 
 ### 1. Document Retrieval Flow
+
 ```
 User Clicks "View Terms"
     ↓
@@ -419,6 +462,7 @@ Frontend: Display in LegalDocuments modal
 ```
 
 ### 2. Acceptance Recording Flow
+
 ```
 User Clicks "Accept Terms"
     ↓
@@ -438,6 +482,7 @@ Frontend: Show success, hide modal
 ```
 
 ### 3. Transaction Protection Flow
+
 ```
 User Initiates Payment
     ↓
@@ -452,7 +497,7 @@ Database: Query latest LegalAcceptance
 If Not Accepted:
     ← Response: 403 Forbidden + acceptance link
     ← Frontend: Redirect to /legal
-    
+
 If Accepted:
     → Continue to paymentsController
     → Process payment
@@ -463,6 +508,7 @@ If Accepted:
 ## 🚀 Deployment Steps
 
 ### 1. Backend Deployment
+
 ```bash
 # Copy files to server
 scp services/termsAndPrivacy.js server:/app/services/
@@ -479,6 +525,7 @@ systemctl restart community-savings-app
 ```
 
 ### 2. Frontend Deployment
+
 ```bash
 # Copy files
 scp src/components/LegalDocuments.jsx server:/app/src/components/
@@ -490,6 +537,7 @@ cd /app && npm run build
 ```
 
 ### 3. Database Preparation
+
 ```bash
 # Create indexes for performance
 db.LegalAcceptance.createIndex({ userId: 1, acceptedAt: -1 })
@@ -502,16 +550,19 @@ db.LegalAcceptance.createIndex({ termsVersion: 1 })
 ## 🔒 Security Considerations
 
 ### Files with Sensitive Code
+
 - `termsAndPrivacy.js` - Contains document content
 - `legalController.js` - Contains error handling
 - `legalAcceptanceMiddleware.js` - Contains permission logic
 
 ### Environment Isolation
+
 - All files follow NODE_ENV pattern (dev vs production)
 - Error messages different in production vs development
 - No credentials in code
 
 ### API Security
+
 - All POST endpoints require JWT authentication
 - Acceptance records include audit trail (IP, user agent)
 - Database enforces user ID integrity
@@ -521,20 +572,23 @@ db.LegalAcceptance.createIndex({ termsVersion: 1 })
 ## 📈 Performance Characteristics
 
 ### Time Complexity
-| Operation | Complexity | Time |
-|-----------|-----------|------|
-| Get Terms | O(1) | <1ms |
-| Get Privacy | O(1) | <1ms |
-| Record Acceptance | O(1) | 5-10ms |
-| Check Status | O(log n) | 1-5ms |
-| Get Changelog | O(1) | <1ms |
+
+| Operation         | Complexity | Time   |
+| ----------------- | ---------- | ------ |
+| Get Terms         | O(1)       | <1ms   |
+| Get Privacy       | O(1)       | <1ms   |
+| Record Acceptance | O(1)       | 5-10ms |
+| Check Status      | O(log n)   | 1-5ms  |
+| Get Changelog     | O(1)       | <1ms   |
 
 ### Space Complexity
+
 - Document content: ~50KB (stored in service, not DB)
 - Acceptance record: ~200 bytes
 - Million users: ~200MB storage
 
 ### Caching Opportunities
+
 - Document content (CDN cacheable)
 - Acceptance status (1-hour cache)
 - Changelog (never changes for old versions)
@@ -544,24 +598,28 @@ db.LegalAcceptance.createIndex({ termsVersion: 1 })
 ## 📝 Maintenance Guidelines
 
 ### Version Updates
+
 When updating documents:
+
 1. Update CURRENT_VERSIONS in `termsAndPrivacy.js`
 2. Update LAST_UPDATED dates
 3. Add entry to getChangelog()
-4. Update content in get*Policy() functions
+4. Update content in get\*Policy() functions
 5. Run tests to verify
 6. Deploy
 7. Monitor acceptance metrics
 
 ### Database Cleanup
+
 ```javascript
 // Archive old acceptances (yearly)
 db.LegalAcceptance.deleteMany({
-  acceptedAt: { $lt: ISODate("2025-01-01") }
+  acceptedAt: { $lt: ISODate('2025-01-01') },
 });
 ```
 
 ### Monitoring Alerts
+
 - Alert if acceptance POST endpoint fails
 - Alert if 30%+ of users haven't accepted new version
 - Alert if 403 Forbidden errors spike
@@ -572,6 +630,7 @@ db.LegalAcceptance.deleteMany({
 ## 🎯 Quality Metrics
 
 ### Test Coverage
+
 - ✅ 30+ test cases
 - ✅ 100% endpoint coverage
 - ✅ 100% middleware coverage
@@ -580,6 +639,7 @@ db.LegalAcceptance.deleteMany({
 - ✅ Edge case tests
 
 ### Code Quality
+
 - ✅ ESLint compatible
 - ✅ Proper error handling
 - ✅ Input validation
@@ -588,6 +648,7 @@ db.LegalAcceptance.deleteMany({
 - ✅ Well documented
 
 ### Performance
+
 - ✅ < 50ms average response time
 - ✅ < 100 bytes acceptance record
 - ✅ O(1) document retrieval
@@ -598,15 +659,15 @@ db.LegalAcceptance.deleteMany({
 
 ## 📞 Support Matrix
 
-| Question | File to Check | Answer Location |
-|----------|--------------|-----------------|
-| "How do I integrate?" | LEGAL_INTEGRATION_GUIDE.md | Section 1-5 |
-| "What are the endpoints?" | LEGAL_DOCUMENTS_IMPLEMENTATION.md | Section 4 |
-| "How do I use the component?" | LegalDocuments.jsx | Comments in code |
-| "What's the DB schema?" | termsAndPrivacy.js | Line 10-20 |
-| "What middleware exists?" | legalAcceptanceMiddleware.js | Exported functions |
-| "How do I test?" | legal.test.js | Test cases |
-| "Quick reference?" | LEGAL_DOCUMENTS_QUICK_REFERENCE.md | All sections |
+| Question                      | File to Check                      | Answer Location    |
+| ----------------------------- | ---------------------------------- | ------------------ |
+| "How do I integrate?"         | LEGAL_INTEGRATION_GUIDE.md         | Section 1-5        |
+| "What are the endpoints?"     | LEGAL_DOCUMENTS_IMPLEMENTATION.md  | Section 4          |
+| "How do I use the component?" | LegalDocuments.jsx                 | Comments in code   |
+| "What's the DB schema?"       | termsAndPrivacy.js                 | Line 10-20         |
+| "What middleware exists?"     | legalAcceptanceMiddleware.js       | Exported functions |
+| "How do I test?"              | legal.test.js                      | Test cases         |
+| "Quick reference?"            | LEGAL_DOCUMENTS_QUICK_REFERENCE.md | All sections       |
 
 ---
 

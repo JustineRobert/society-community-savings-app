@@ -13,18 +13,18 @@ const faqService = require('../services/faqService');
 exports.getCategories = async (req, res) => {
   try {
     const categories = await faqService.getAllCategories();
-    
+
     return res.status(200).json({
       success: true,
       message: 'FAQ categories retrieved successfully',
-      data: categories
+      data: categories,
     });
   } catch (error) {
     console.error('Error retrieving FAQ categories:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to retrieve FAQ categories',
-      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
+      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message,
     });
   }
 };
@@ -36,19 +36,19 @@ exports.getCategories = async (req, res) => {
 exports.getAllFAQs = async (req, res) => {
   try {
     const faqs = await faqService.getAllFAQs();
-    
+
     return res.status(200).json({
       success: true,
       message: 'All FAQs retrieved successfully',
       data: faqs,
-      count: faqs.length
+      count: faqs.length,
     });
   } catch (error) {
     console.error('Error retrieving FAQs:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to retrieve FAQs',
-      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
+      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message,
     });
   }
 };
@@ -60,29 +60,29 @@ exports.getAllFAQs = async (req, res) => {
 exports.getFAQsByCategory = async (req, res) => {
   try {
     const { slug } = req.params;
-    
+
     if (!slug) {
       return res.status(400).json({
         success: false,
-        message: 'Category slug is required'
+        message: 'Category slug is required',
       });
     }
 
     const faqs = await faqService.getFAQsByCategory(slug);
-    
+
     return res.status(200).json({
       success: true,
       message: 'FAQs retrieved successfully',
       category: slug,
       data: faqs,
-      count: faqs.length
+      count: faqs.length,
     });
   } catch (error) {
     console.error('Error retrieving FAQs by category:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to retrieve FAQs',
-      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
+      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message,
     });
   }
 };
@@ -94,21 +94,21 @@ exports.getFAQsByCategory = async (req, res) => {
 exports.getFeaturedFAQs = async (req, res) => {
   try {
     const limit = req.query.limit ? parseInt(req.query.limit) : 10;
-    
+
     const faqs = await faqService.getFeaturedFAQs(limit);
-    
+
     return res.status(200).json({
       success: true,
       message: 'Featured FAQs retrieved successfully',
       data: faqs,
-      count: faqs.length
+      count: faqs.length,
     });
   } catch (error) {
     console.error('Error retrieving featured FAQs:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to retrieve featured FAQs',
-      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
+      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message,
     });
   }
 };
@@ -120,21 +120,21 @@ exports.getFeaturedFAQs = async (req, res) => {
 exports.getPopularFAQs = async (req, res) => {
   try {
     const limit = req.query.limit ? parseInt(req.query.limit) : 10;
-    
+
     const faqs = await faqService.getMostViewedFAQs(limit);
-    
+
     return res.status(200).json({
       success: true,
       message: 'Popular FAQs retrieved successfully',
       data: faqs,
-      count: faqs.length
+      count: faqs.length,
     });
   } catch (error) {
     console.error('Error retrieving popular FAQs:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to retrieve popular FAQs',
-      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
+      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message,
     });
   }
 };
@@ -146,21 +146,21 @@ exports.getPopularFAQs = async (req, res) => {
 exports.getFAQ = async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     if (!id) {
       return res.status(400).json({
         success: false,
-        message: 'FAQ ID is required'
+        message: 'FAQ ID is required',
       });
     }
 
     const { FAQ } = require('../services/faqService');
     const faq = await FAQ.findById(id);
-    
+
     if (!faq) {
       return res.status(404).json({
         success: false,
-        message: 'FAQ not found'
+        message: 'FAQ not found',
       });
     }
 
@@ -174,14 +174,14 @@ exports.getFAQ = async (req, res) => {
       success: true,
       message: 'FAQ retrieved successfully',
       data: faq,
-      related: relatedFAQs
+      related: relatedFAQs,
     });
   } catch (error) {
     console.error('Error retrieving FAQ:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to retrieve FAQ',
-      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
+      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message,
     });
   }
 };
@@ -193,29 +193,29 @@ exports.getFAQ = async (req, res) => {
 exports.searchFAQs = async (req, res) => {
   try {
     const { q } = req.query;
-    
+
     if (!q || q.trim().length < 2) {
       return res.status(400).json({
         success: false,
-        message: 'Search query must be at least 2 characters'
+        message: 'Search query must be at least 2 characters',
       });
     }
 
     const faqs = await faqService.searchFAQs(q);
-    
+
     return res.status(200).json({
       success: true,
       message: 'Search results retrieved',
       query: q,
       data: faqs,
-      count: faqs.length
+      count: faqs.length,
     });
   } catch (error) {
     console.error('Error searching FAQs:', error);
     return res.status(500).json({
       success: false,
       message: 'FAQ search failed',
-      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
+      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message,
     });
   }
 };
@@ -233,28 +233,23 @@ exports.submitFeedback = async (req, res) => {
     if (typeof helpful !== 'boolean') {
       return res.status(400).json({
         success: false,
-        message: 'Helpful flag must be a boolean'
+        message: 'Helpful flag must be a boolean',
       });
     }
 
-    const feedback = await faqService.recordFeedback(
-      id,
-      userId,
-      helpful,
-      comment || ''
-    );
+    const feedback = await faqService.recordFeedback(id, userId, helpful, comment || '');
 
     return res.status(201).json({
       success: true,
       message: 'Thank you for your feedback!',
-      data: feedback
+      data: feedback,
     });
   } catch (error) {
     console.error('Error submitting FAQ feedback:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to submit feedback',
-      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
+      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message,
     });
   }
 };
@@ -269,7 +264,7 @@ exports.initializeFAQ = async (req, res) => {
     if (process.env.INIT_ALLOWED !== 'true') {
       return res.status(403).json({
         success: false,
-        message: 'Initialization not allowed'
+        message: 'Initialization not allowed',
       });
     }
 
@@ -278,14 +273,14 @@ exports.initializeFAQ = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: 'FAQ system initialized',
-      data: result
+      data: result,
     });
   } catch (error) {
     console.error('Error initializing FAQ:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to initialize FAQ system',
-      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
+      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message,
     });
   }
 };

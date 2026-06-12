@@ -79,10 +79,13 @@ class RetryPolicy {
 
         if (attempt < this.maxRetries) {
           const delay = this.getDelay(attempt);
-          logger.warn(`[RetryPolicy] ${context} - Attempt ${attempt + 1}/${this.maxRetries + 1} failed, retrying in ${delay}ms`, {
-            error: error.message,
-            code: error.code,
-          });
+          logger.warn(
+            `[RetryPolicy] ${context} - Attempt ${attempt + 1}/${this.maxRetries + 1} failed, retrying in ${delay}ms`,
+            {
+              error: error.message,
+              code: error.code,
+            }
+          );
 
           await new Promise((resolve) => setTimeout(resolve, delay));
         }
@@ -233,10 +236,7 @@ class IdempotencyKey {
 
     if (!key && req.body) {
       // Generate from request method, path, and body hash
-      const bodyHash = crypto
-        .createHash('sha256')
-        .update(JSON.stringify(req.body))
-        .digest('hex');
+      const bodyHash = crypto.createHash('sha256').update(JSON.stringify(req.body)).digest('hex');
       key = `${req.method}:${req.path}:${bodyHash}`;
     }
 
@@ -396,12 +396,9 @@ class ResilientClient {
 
     const executeWithCircuitBreaker = async () => {
       return this.circuitBreaker.execute(async () => {
-        return this.retryPolicy.execute(
-          async () => {
-            return withTimeout(fn(), this.timeoutMs);
-          },
-          this.name
-        );
+        return this.retryPolicy.execute(async () => {
+          return withTimeout(fn(), this.timeoutMs);
+        }, this.name);
       });
     };
 

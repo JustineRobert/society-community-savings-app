@@ -39,3 +39,18 @@ EXPOSE 5000
 
 # Use npm start for consistency with package.json scripts
 CMD ["npm", "start"]
+
+
+FROM node:18
+
+WORKDIR /app
+
+COPY package*.json ./
+
+RUN npm install
+
+COPY . .
+
+EXPOSE 5000
+
+CMD ["npm", "start"]

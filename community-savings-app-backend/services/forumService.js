@@ -1,10 +1,25 @@
 /**
+ * Community Forums Service (BACKEND SAFE VERSION)
+ * ============================================================================
+ * NOTE:
+ * ✅ Removed VITE env usage (not allowed in Node)
+ * ✅ Removed frontend axios service (belongs in React only)
+ * ✅ Fixed mongoose import
+ */
+/**
  * Community Forums Service
  * ============================================================================
  * Manages community discussions, topics, and replies
  */
-
 const mongoose = require('mongoose');
+const axios = require('axios'); // ✅ FIX
+
+const API_BASE_URL =
+  process.env.API_URL ||
+  process.env.BASE_URL ||
+  'http://localhost:5000/api';
+
+// ================= MODELS =================
 
 // Forum Topic Schema
 const ForumTopicSchema = new mongoose.Schema({
@@ -15,7 +30,7 @@ const ForumTopicSchema = new mongoose.Schema({
   author: {
     userId: mongoose.Schema.Types.ObjectId,
     username: String,
-    avatar: String
+    avatar: String,
   },
   tags: [String],
   views: { type: Number, default: 0 },
@@ -27,7 +42,7 @@ const ForumTopicSchema = new mongoose.Schema({
   solved: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
-  lastReplyAt: { type: Date, default: Date.now }
+  lastReplyAt: { type: Date, default: Date.now },
 });
 
 // Forum Reply Schema
@@ -37,13 +52,150 @@ const ForumReplySchema = new mongoose.Schema({
   author: {
     userId: mongoose.Schema.Types.ObjectId,
     username: String,
-    avatar: String
+    avatar: String,
   },
   likes: { type: Number, default: 0 },
   dislikes: { type: Number, default: 0 },
   acceptedAnswer: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
+});
+
+// Forum Category Schema
+const ForumCategorySchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  slug: { type: String, unique: true, required: true },
+  description: String,
+  icon: String,
+});
+
+// Forum Reaction Schema
+const ForumReactionSchema = new mongoose.Schema({
+  targetId: mongoose.Schema.Types.ObjectId,
+  targetType: { type: String, enum: ['topic', 'reply'] },
+  userId: mongoose.Schema.Types.ObjectId,
+  type: { type: String, enum: ['like', 'dislike'] },
+});
+
+// ================= MODELS =================
+
+const ForumTopic = mongoose.model('ForumTopic', ForumTopicSchema);
+const ForumReply = mongoose.model('ForumReply', ForumReplySchema);
+const ForumCategory = mongoose.model('ForumCategory', ForumCategorySchema);
+const ForumReaction = mongoose.model('ForumReaction', ForumReactionSchema);
+
+// ================= SERVICES =================
+const forumService = {
+
+  getCategories: async () => {
+    try {
+      const res = await axios.get(`${API_BASE_URL}/forum/categories`);
+      return res.data;
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+      throw error;
+    }
+  },
+
+  getTopics: async (category, page = 1) => {
+    try {
+      const res = await axios.get(`${API_BASE_URL}/forum/topics`, {
+        params: { category, page },
+      });
+      return res.data;
+    } catch (error) {
+      console.error('Error fetching topics:', error);
+      throw error;
+    }
+  },
+
+  getTopic: async (slug) => {
+    try {
+      const res = await axios.get(`${API_BASE_URL}/forum/topic/${slug}`);
+      return res.data;
+    } catch (error) {
+      console.error('Error fetching topic:', error);
+      throw error;
+    }
+  },
+
+  createTopic: async (data) => {
+    try {
+      const res = await axios.post(`${API_BASE_URL}/forum/topics`, data);
+      return res.data;
+    } catch (error) {
+      console.error('Error creating topic:', error);
+      throw error;
+    }
+  },
+
+  addReply: async (topicId, data) => {
+    try {
+      const res = await axios.post(
+        `${API_BASE_URL}/forum/topics/${topicId}/replies`,
+        data
+      );
+      return res.data;
+    } catch (error) {
+      console.error('Error adding reply:', error);
+      throw error;
+    }
+  },
+
+  addReaction: async (targetId, type) => {
+    try {
+      const res = await axios.post(
+        `${API_BASE_URL}/forum/react/${targetId}`,
+        { type }
+      );
+      return res.data;
+    } catch (error) {
+      console.error('Error reacting:', error);
+      throw error;
+    }
+  }
+};
+
+module.exports = forumService;
+// const mongoose = require('mongoose');
+
+// Forum Topic Schema
+const ForumTopicSchema = new mongoose.Schema({
+  title: { type: String, required: true },
+  slug: { type: String, unique: true, required: true },
+  content: { type: String, required: true },
+  category: { type: String, required: true },
+  author: {
+    userId: mongoose.Schema.Types.ObjectId,
+    username: String,
+    avatar: String,
+  },
+  tags: [String],
+  views: { type: Number, default: 0 },
+  replies: { type: Number, default: 0 },
+  likes: { type: Number, default: 0 },
+  dislikes: { type: Number, default: 0 },
+  pinned: { type: Boolean, default: false },
+  locked: { type: Boolean, default: false },
+  solved: { type: Boolean, default: false },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
+  lastReplyAt: { type: Date, default: Date.now },
+});
+
+// Forum Reply Schema
+const ForumReplySchema = new mongoose.Schema({
+  topicId: mongoose.Schema.Types.ObjectId,
+  content: { type: String, required: true },
+  author: {
+    userId: mongoose.Schema.Types.ObjectId,
+    username: String,
+    avatar: String,
+  },
+  likes: { type: Number, default: 0 },
+  dislikes: { type: Number, default: 0 },
+  acceptedAnswer: { type: Boolean, default: false },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
 });
 
 // Forum Category Schema
@@ -56,7 +208,7 @@ const ForumCategorySchema = new mongoose.Schema({
   replyCount: { type: Number, default: 0 },
   lastActivityAt: Date,
   order: { type: Number, default: 0 },
-  private: { type: Boolean, default: false }
+  private: { type: Boolean, default: false },
 });
 
 // Forum Reaction Schema (likes/dislikes)
@@ -65,7 +217,7 @@ const ForumReactionSchema = new mongoose.Schema({
   targetType: { type: String, enum: ['topic', 'reply'] },
   userId: mongoose.Schema.Types.ObjectId,
   type: { type: String, enum: ['like', 'dislike'] },
-  createdAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now },
 });
 
 const ForumTopic = mongoose.model('ForumTopic', ForumTopicSchema);
@@ -97,15 +249,15 @@ async function getTopicsByCategory(categorySlug, page = 1, limit = 20) {
       .limit(limit);
 
     const total = await ForumTopic.countDocuments({ category: categorySlug });
-    
+
     return {
       topics,
       pagination: {
         page,
         limit,
         total,
-        pages: Math.ceil(total / limit)
-      }
+        pages: Math.ceil(total / limit),
+      },
     };
   } catch (error) {
     throw new Error(`Failed to retrieve topics: ${error.message}`);
@@ -143,8 +295,8 @@ async function getTopicWithReplies(topicSlug, page = 1, limit = 10) {
         page,
         limit,
         total: totalReplies,
-        pages: Math.ceil(totalReplies / limit)
-      }
+        pages: Math.ceil(totalReplies / limit),
+      },
     };
   } catch (error) {
     throw new Error(`Failed to retrieve topic: ${error.message}`);
@@ -168,7 +320,7 @@ async function createTopic(title, content, category, author) {
       slug: `${slug}-${Date.now()}`,
       content,
       category,
-      author
+      author,
     });
 
     await topic.save();
@@ -193,7 +345,7 @@ async function addReply(topicId, content, author) {
     const reply = new ForumReply({
       topicId,
       content,
-      author
+      author,
     });
 
     await reply.save();
@@ -228,11 +380,11 @@ async function searchTopics(query) {
       $or: [
         { title: { $regex: query, $options: 'i' } },
         { content: { $regex: query, $options: 'i' } },
-        { tags: { $regex: query, $options: 'i' } }
-      ]
+        { tags: { $regex: query, $options: 'i' } },
+      ],
     })
-    .sort({ views: -1 })
-    .limit(20);
+      .sort({ views: -1 })
+      .limit(20);
 
     return topics;
   } catch (error) {
@@ -245,9 +397,7 @@ async function searchTopics(query) {
  */
 async function getTrendingTopics(limit = 10) {
   try {
-    const topics = await ForumTopic.find()
-      .sort({ views: -1, replies: -1 })
-      .limit(limit);
+    const topics = await ForumTopic.find().sort({ views: -1, replies: -1 }).limit(limit);
 
     return topics;
   } catch (error) {
@@ -260,9 +410,7 @@ async function getTrendingTopics(limit = 10) {
  */
 async function getLatestTopics(limit = 10) {
   try {
-    const topics = await ForumTopic.find()
-      .sort({ createdAt: -1 })
-      .limit(limit);
+    const topics = await ForumTopic.find().sort({ createdAt: -1 }).limit(limit);
 
     return topics;
   } catch (error) {
@@ -276,10 +424,7 @@ async function getLatestTopics(limit = 10) {
 async function markAsAcceptedAnswer(replyId, topicId) {
   try {
     // Clear other accepted answers
-    await ForumReply.updateMany(
-      { topicId, _id: { $ne: replyId } },
-      { acceptedAnswer: false }
-    );
+    await ForumReply.updateMany({ topicId, _id: { $ne: replyId } }, { acceptedAnswer: false });
 
     // Mark this reply as accepted
     const reply = await ForumReply.findByIdAndUpdate(
@@ -306,7 +451,7 @@ async function addReaction(targetId, targetType, userId, reactionType) {
     const existing = await ForumReaction.findOne({
       targetId,
       targetType,
-      userId
+      userId,
     });
 
     if (existing) {
@@ -323,7 +468,7 @@ async function addReaction(targetId, targetType, userId, reactionType) {
         targetId,
         targetType,
         userId,
-        type: reactionType
+        type: reactionType,
       });
       await reaction.save();
     }
@@ -332,13 +477,13 @@ async function addReaction(targetId, targetType, userId, reactionType) {
     const likes = await ForumReaction.countDocuments({
       targetId,
       targetType,
-      type: 'like'
+      type: 'like',
     });
 
     const dislikes = await ForumReaction.countDocuments({
       targetId,
       targetType,
-      type: 'dislike'
+      type: 'dislike',
     });
 
     // Update target
@@ -367,13 +512,55 @@ async function seedInitialData() {
 
     // Create categories
     const categories = [
-      { name: 'General Discussion', slug: 'general', description: 'General app discussions', icon: 'comments', order: 1 },
-      { name: 'Groups', slug: 'groups', description: 'Discuss savings groups', icon: 'users', order: 2 },
-      { name: 'Loans', slug: 'loans', description: 'Loan-related discussions', icon: 'money-bill', order: 3 },
-      { name: 'Payments', slug: 'payments', description: 'Payment and transaction help', icon: 'credit-card', order: 4 },
-      { name: 'Feature Requests', slug: 'features', description: 'Request new features', icon: 'lightbulb', order: 5 },
-      { name: 'Bug Reports', slug: 'bugs', description: 'Report issues and bugs', icon: 'bug', order: 6 },
-      { name: 'Success Stories', slug: 'stories', description: 'Share your success stories', icon: 'star', order: 7 }
+      {
+        name: 'General Discussion',
+        slug: 'general',
+        description: 'General app discussions',
+        icon: 'comments',
+        order: 1,
+      },
+      {
+        name: 'Groups',
+        slug: 'groups',
+        description: 'Discuss savings groups',
+        icon: 'users',
+        order: 2,
+      },
+      {
+        name: 'Loans',
+        slug: 'loans',
+        description: 'Loan-related discussions',
+        icon: 'money-bill',
+        order: 3,
+      },
+      {
+        name: 'Payments',
+        slug: 'payments',
+        description: 'Payment and transaction help',
+        icon: 'credit-card',
+        order: 4,
+      },
+      {
+        name: 'Feature Requests',
+        slug: 'features',
+        description: 'Request new features',
+        icon: 'lightbulb',
+        order: 5,
+      },
+      {
+        name: 'Bug Reports',
+        slug: 'bugs',
+        description: 'Report issues and bugs',
+        icon: 'bug',
+        order: 6,
+      },
+      {
+        name: 'Success Stories',
+        slug: 'stories',
+        description: 'Share your success stories',
+        icon: 'star',
+        order: 7,
+      },
     ];
 
     await ForumCategory.insertMany(categories);
@@ -383,20 +570,22 @@ async function seedInitialData() {
       {
         title: 'Welcome to Community Savings Forum!',
         slug: 'welcome-forum-' + Date.now(),
-        content: 'Welcome to our community forum! This is a space for members to discuss, ask questions, and share experiences. Please be respectful and follow community guidelines.',
+        content:
+          'Welcome to our community forum! This is a space for members to discuss, ask questions, and share experiences. Please be respectful and follow community guidelines.',
         category: 'general',
         author: { username: 'Admin', avatar: 'admin.jpg' },
         tags: ['welcome', 'community'],
-        pinned: true
+        pinned: true,
       },
       {
         title: 'Tips for Starting Your First Savings Group',
         slug: 'starting-group-' + Date.now(),
-        content: 'Here are some tips for starting your first savings group: 1. Find 3-5 trusted members, 2. Set clear rules, 3. Choose contribution amounts, 4. Regular meetings...',
+        content:
+          'Here are some tips for starting your first savings group: 1. Find 3-5 trusted members, 2. Set clear rules, 3. Choose contribution amounts, 4. Regular meetings...',
         category: 'groups',
         author: { username: 'Moderator', avatar: 'mod.jpg' },
-        tags: ['groups', 'tips', 'beginners']
-      }
+        tags: ['groups', 'tips', 'beginners'],
+      },
     ];
 
     await ForumTopic.insertMany(topics);
@@ -404,7 +593,7 @@ async function seedInitialData() {
     return {
       message: 'Forum initialized successfully',
       categoriesCreated: categories.length,
-      topicsCreated: topics.length
+      topicsCreated: topics.length,
     };
   } catch (error) {
     throw new Error(`Failed to seed forum data: ${error.message}`);
@@ -426,5 +615,5 @@ module.exports = {
   ForumTopic,
   ForumReply,
   ForumCategory,
-  ForumReaction
+  ForumReaction,
 };

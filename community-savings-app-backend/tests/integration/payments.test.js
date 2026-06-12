@@ -24,12 +24,10 @@ describe('Payments (POST /api/payments)', () => {
       email: `payment-test-${Date.now()}@example.com`,
       password: 'SecurePassword123!',
       fullName: 'Payment Test User',
-      phoneNumber: '+256782397907'
+      phoneNumber: '+256782397907',
     };
 
-    const registerRes = await request(app)
-      .post('/api/auth/register')
-      .send(userData);
+    const registerRes = await request(app).post('/api/auth/register').send(userData);
 
     userToken = registerRes.body.token;
     userId = registerRes.body.user._id;
@@ -42,7 +40,7 @@ describe('Payments (POST /api/payments)', () => {
         amount: 100,
         description: 'Contribution Payment',
         provider: 'mpesa',
-        groupId
+        groupId,
       };
 
       request(app)
@@ -65,7 +63,7 @@ describe('Payments (POST /api/payments)', () => {
         amount: 100,
         currency: 'USD',
         description: 'Contribution Payment',
-        provider: 'stripe'
+        provider: 'stripe',
       };
 
       request(app)
@@ -85,7 +83,7 @@ describe('Payments (POST /api/payments)', () => {
     it('should fail with missing required fields', (done) => {
       const paymentData = {
         // missing amount
-        provider: 'mpesa'
+        provider: 'mpesa',
       };
 
       request(app)
@@ -104,7 +102,7 @@ describe('Payments (POST /api/payments)', () => {
       const paymentData = {
         phone: '+256782397907',
         amount: 100,
-        provider: 'invalid-provider'
+        provider: 'invalid-provider',
       };
 
       request(app)
@@ -123,7 +121,7 @@ describe('Payments (POST /api/payments)', () => {
       const paymentData = {
         phone: '+256782397907',
         amount: -100, // negative amount
-        provider: 'mpesa'
+        provider: 'mpesa',
       };
 
       request(app)
@@ -142,7 +140,7 @@ describe('Payments (POST /api/payments)', () => {
       const paymentData = {
         phone: '+256782397907',
         amount: 100,
-        provider: 'mpesa'
+        provider: 'mpesa',
       };
 
       request(app)
@@ -166,7 +164,7 @@ describe('Payments (POST /api/payments)', () => {
         phone: '+256782397907',
         amount: 100,
         description: 'Test Payment',
-        provider: 'mpesa'
+        provider: 'mpesa',
       };
 
       const res = await request(app)
@@ -249,7 +247,7 @@ describe('Payments (POST /api/payments)', () => {
       const paymentData = {
         phone: '+254712345678',
         amount: 100,
-        provider: 'mpesa'
+        provider: 'mpesa',
       };
 
       const res = await request(app)
@@ -300,11 +298,11 @@ describe('Payments (POST /api/payments)', () => {
               Item: [
                 { Name: 'Amount', Value: 100 },
                 { Name: 'MpesaReceiptNumber', Value: 'test-receipt' },
-                { Name: 'PhoneNumber', Value: '+254712345678' }
-              ]
-            }
-          }
-        }
+                { Name: 'PhoneNumber', Value: '+254712345678' },
+              ],
+            },
+          },
+        },
       };
 
       request(app)
@@ -325,9 +323,9 @@ describe('Payments (POST /api/payments)', () => {
           object: {
             id: 'pi_test123',
             status: 'succeeded',
-            amount: 10000
-          }
-        }
+            amount: 10000,
+          },
+        },
       };
 
       request(app)

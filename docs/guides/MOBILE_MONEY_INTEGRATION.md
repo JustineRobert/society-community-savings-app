@@ -40,6 +40,7 @@ This document outlines the Mobile Money Payment Integration for the Community Sa
 ### 1. MTN Mobile Money Setup
 
 #### Prerequisites
+
 - MTN Developer Account
 - Sandbox/Production API credentials
 - Active MTN subscription
@@ -58,6 +59,7 @@ This document outlines the Mobile Money Payment Integration for the Community Sa
    - API User: Service account username
 
 3. **Update Environment Variables**
+
    ```env
    MTN_MOMO_BASE_URL=https://api.sandbox.mtn.com.gh/mocserver/3.0.0
    MTN_MOMO_API_KEY=your_api_key_here
@@ -74,6 +76,7 @@ This document outlines the Mobile Money Payment Integration for the Community Sa
 ### 2. Airtel Money Setup
 
 #### Prerequisites
+
 - Airtel Business Account
 - Merchant/Business Code
 - OAuth credentials
@@ -91,6 +94,7 @@ This document outlines the Mobile Money Payment Integration for the Community Sa
    - Business Code: Your merchant code
 
 3. **Update Environment Variables**
+
    ```env
    AIRTEL_MONEY_BASE_URL=https://openapiuat.airtel.africa/merchant/v1
    AIRTEL_MONEY_CLIENT_ID=your_client_id_here
@@ -111,6 +115,7 @@ This document outlines the Mobile Money Payment Integration for the Community Sa
 **Endpoint**: `POST /api/payments/initiate`
 
 **Headers**:
+
 ```
 Authorization: Bearer {access_token}
 Content-Type: application/json
@@ -118,6 +123,7 @@ Idempotency-Key: {unique_request_id}  # Optional but recommended
 ```
 
 **Request Body**:
+
 ```json
 {
   "phoneNumber": "+256772123546",
@@ -131,6 +137,7 @@ Idempotency-Key: {unique_request_id}  # Optional but recommended
 ```
 
 **Response** (201 Created):
+
 ```json
 {
   "message": "Payment initiated successfully",
@@ -145,6 +152,7 @@ Idempotency-Key: {unique_request_id}  # Optional but recommended
 ```
 
 **Error Responses**:
+
 ```json
 {
   "message": "Invalid phone number format",
@@ -157,11 +165,13 @@ Idempotency-Key: {unique_request_id}  # Optional but recommended
 **Endpoint**: `GET /api/payments/status/{transactionId}`
 
 **Headers**:
+
 ```
 Authorization: Bearer {access_token}
 ```
 
 **Response** (200 OK):
+
 ```json
 {
   "transactionId": "TXN-1234567890-abc123def456",
@@ -177,6 +187,7 @@ Authorization: Bearer {access_token}
 ```
 
 **Possible Status Values**:
+
 - `PENDING` - Payment initiated, awaiting provider confirmation
 - `PROCESSING` - Payment being processed
 - `COMPLETED` - Payment successful
@@ -189,12 +200,14 @@ Authorization: Bearer {access_token}
 **Endpoint**: `POST /api/payments/{transactionId}/refund`
 
 **Headers**:
+
 ```
 Authorization: Bearer {access_token}
 Content-Type: application/json
 ```
 
 **Request Body**:
+
 ```json
 {
   "refundAmount": 5000,
@@ -203,6 +216,7 @@ Content-Type: application/json
 ```
 
 **Response** (200 OK):
+
 ```json
 {
   "message": "Refund processed successfully",
@@ -219,11 +233,13 @@ Content-Type: application/json
 **Endpoint**: `GET /api/payments?status=COMPLETED&provider=MTN_MOMO&skip=0&limit=20`
 
 **Headers**:
+
 ```
 Authorization: Bearer {access_token}
 ```
 
 **Response** (200 OK):
+
 ```json
 {
   "message": "Payment history retrieved",
@@ -251,11 +267,13 @@ Authorization: Bearer {access_token}
 **Endpoint**: `GET /api/payments/{transactionId}`
 
 **Headers**:
+
 ```
 Authorization: Bearer {access_token}
 ```
 
 **Response** (200 OK):
+
 ```json
 {
   "message": "Payment details retrieved",
@@ -338,29 +356,34 @@ const statusResponse = await api.get(`/api/payments/status/${transactionId}`);
 ## Security Best Practices
 
 ### 1. Environment Variables
+
 - Never commit `.env` files to version control
 - Use `.env.example` for documentation
 - Rotate secrets regularly
 - Use different credentials for sandbox vs production
 
 ### 2. API Security
+
 - All payment endpoints require authentication
 - Use HTTPS only in production
 - Implement rate limiting (default: 100 requests/15min)
 - Validate all input parameters
 
 ### 3. Phone Number Security
-- Phone numbers are masked in responses: +237****6789
+
+- Phone numbers are masked in responses: +237\*\*\*\*6789
 - Raw phone numbers stored securely in database
 - Encryption layer recommended for sensitive data
 
 ### 4. Transaction Security
+
 - Implement idempotency keys to prevent duplicate processing
 - Use transaction IDs for audit trails
 - Log all payment events for compliance
 - Implement fraud detection
 
 ### 5. Data Protection
+
 - PCI DSS compliance for payment data
 - GDPR compliance for user data
 - Regular security audits
@@ -372,14 +395,14 @@ const statusResponse = await api.get(`/api/payments/status/${transactionId}`);
 
 ### Common Error Codes
 
-| Code | Message | Solution |
-|------|---------|----------|
-| 400 | Invalid phone number format | Validate phone in E.164 format |
-| 422 | Validation failed | Check all required fields |
-| 409 | Duplicate payment request | Use idempotency key or wait |
-| 401 | Unauthorized | Provide valid access token |
-| 403 | Forbidden | Check user permissions |
-| 500 | Server error | Retry or contact support |
+| Code | Message                     | Solution                       |
+| ---- | --------------------------- | ------------------------------ |
+| 400  | Invalid phone number format | Validate phone in E.164 format |
+| 422  | Validation failed           | Check all required fields      |
+| 409  | Duplicate payment request   | Use idempotency key or wait    |
+| 401  | Unauthorized                | Provide valid access token     |
+| 403  | Forbidden                   | Check user permissions         |
+| 500  | Server error                | Retry or contact support       |
 
 ### Retry Logic
 
@@ -439,18 +462,15 @@ For production, implement webhooks instead of polling:
 // Backend webhook endpoint
 app.post('/api/payments/webhook/mtn', (req, res) => {
   const { transactionId, status, financialId } = req.body;
-  
+
   // Verify webhook signature
   if (!verifySignature(req)) {
     return res.status(401).json({ message: 'Invalid signature' });
   }
-  
+
   // Update payment status
-  Payment.findOneAndUpdate(
-    { transactionId },
-    { status, providerReference: financialId }
-  );
-  
+  Payment.findOneAndUpdate({ transactionId }, { status, providerReference: financialId });
+
   res.status(200).json({ message: 'Webhook received' });
 });
 ```
@@ -462,6 +482,7 @@ app.post('/api/payments/webhook/mtn', (req, res) => {
 ### Sandbox Testing
 
 1. **Test Phone Numbers**
+
    ```
    MTN MoMo: +237650000000 - +237669999999
    Airtel: +237650000000 - +237669999999
@@ -483,6 +504,7 @@ app.post('/api/payments/webhook/mtn', (req, res) => {
 Available at: `postman/Mobile-Money-Tests.postman_collection.json`
 
 **Setup**:
+
 1. Import collection into Postman
 2. Set environment variables:
    - `API_BASE_URL`: http://localhost:5000
@@ -533,16 +555,19 @@ describe('Payment API', () => {
 ## Support & Troubleshooting
 
 ### MTN Issues
+
 - **Invalid API Key**: Check MTN Developer Console credentials
 - **Request Timeout**: Increase `PAYMENT_TIMEOUT` in `.env`
 - **Network Error**: Check firewall/proxy settings
 
 ### Airtel Issues
+
 - **Authentication Failed**: Verify OAuth credentials
 - **Invalid Business Code**: Check merchant setup
 - **Token Expiration**: Tokens auto-refresh, no action needed
 
 ### General Issues
+
 - Check application logs: `logs/combined.log`
 - Enable debug mode: `DEBUG=true`
 - Review transaction details in database

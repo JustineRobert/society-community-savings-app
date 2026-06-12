@@ -128,11 +128,13 @@ npm run test:watch
 ### Test Coverage Report
 
 After running tests:
+
 ```bash
 open coverage/lcov-report/index.html  # Open coverage report in browser
 ```
 
 Target coverage:
+
 - Statements: > 80%
 - Branches: > 75%
 - Functions: > 80%
@@ -397,11 +399,13 @@ curl http://localhost:5000/api/health/redis
 ### Performance Metrics
 
 Access Prometheus metrics:
+
 ```
 http://localhost:5000/metrics
 ```
 
 View in Grafana dashboard (if configured):
+
 ```
 http://localhost:3001
 ```
@@ -480,11 +484,13 @@ redis-cli -u $REDIS_URL ping
 ## API Documentation
 
 Full API documentation available at:
+
 ```
 http://localhost:5000/api/docs
 ```
 
 Or in:
+
 - `API_DOCUMENTATION.md`
 - `API_REFERENCE_QUICK_START.md`
 
@@ -493,6 +499,7 @@ Or in:
 ## Support & Issues
 
 For issues or questions:
+
 1. Check logs in `community-savings-app-backend/logs/`
 2. Review test results: `npm run test:coverage`
 3. Check documentation in root directory

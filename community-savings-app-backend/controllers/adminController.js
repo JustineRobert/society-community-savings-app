@@ -1,6 +1,6 @@
 /**
  * adminController.js
- * 
+ *
  * Production-grade admin dashboard
  * User management, loan oversight, risk analysis, system metrics
  */
@@ -144,7 +144,9 @@ exports.getUsers = asyncHandler(async (req, res) => {
 exports.getUserDetails = asyncHandler(async (req, res) => {
   const { userId } = req.params;
 
-  const user = await User.findById(userId).select('-password -resetPasswordToken -verificationToken');
+  const user = await User.findById(userId).select(
+    '-password -resetPasswordToken -verificationToken'
+  );
 
   if (!user) {
     return res.status(404).json({
@@ -485,11 +487,11 @@ exports.getAuditLog = asyncHandler(async (req, res) => {
  */
 exports.getLoanAnalytics = asyncHandler(async (req, res) => {
   const { period = '30d' } = req.query;
-  
+
   // Calculate date range based on period
   const now = new Date();
   let startDate;
-  
+
   switch (period) {
     case '7d':
       startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -637,15 +639,15 @@ exports.getUserAnalytics = asyncHandler(async (req, res) => {
  */
 exports.getSystemHealth = asyncHandler(async (req, res) => {
   const start = Date.now();
-  
+
   try {
     // Database connectivity test
     const dbStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
-    
+
     // Query performance (measure response time)
     const userCount = await User.countDocuments();
     const queryTime = Date.now() - start;
-    
+
     // Check for overdue loans/payments
     const now = new Date();
     const overdueCount = await require('../models/LoanRepaymentSchedule').countDocuments({
@@ -686,7 +688,7 @@ exports.getSystemHealth = asyncHandler(async (req, res) => {
  */
 exports.getPaymentAnalytics = asyncHandler(async (req, res) => {
   const LoanRepaymentSchedule = require('../models/LoanRepaymentSchedule');
-  
+
   // Payment status summary
   const paymentStats = await LoanRepaymentSchedule.aggregate([
     {
@@ -725,7 +727,7 @@ exports.getPaymentAnalytics = asyncHandler(async (req, res) => {
   ]);
 
   const collectionRate = paymentStats[0]?.collectionRate[0];
-  const percentPaid = collectionRate 
+  const percentPaid = collectionRate
     ? ((collectionRate.totalPaid / collectionRate.totalAmount) * 100).toFixed(2)
     : 0;
 
@@ -753,33 +755,35 @@ exports.getComplianceReport = asyncHandler(async (req, res) => {
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
   // High-risk loans (overdue)
-  const riskyLoans = await require('../models/LoanRepaymentSchedule').find({
-    $expr: {
-      $gt: [
-        {
-          $size: {
-            $filter: {
-              input: '$installments',
-              as: 'inst',
-              cond: {
-                $and: [
-                  { $lt: ['$$inst.dueDate', now] },
-                  { $eq: ['$$inst.paid', false] },
-                ],
+  const riskyLoans = await require('../models/LoanRepaymentSchedule')
+    .find({
+      $expr: {
+        $gt: [
+          {
+            $size: {
+              $filter: {
+                input: '$installments',
+                as: 'inst',
+                cond: {
+                  $and: [{ $lt: ['$$inst.dueDate', now] }, { $eq: ['$$inst.paid', false] }],
+                },
               },
             },
           },
-        },
-        0,
-      ],
-    },
-  }).populate('loan');
+          0,
+        ],
+      },
+    })
+    .populate('loan');
 
   // Recent defaults
-  const recentDefaults = await require('../models/LoanAudit').find({
-    action: 'loan_defaulted',
-    createdAt: { $gte: thirtyDaysAgo },
-  }).populate('loan').populate('user');
+  const recentDefaults = await require('../models/LoanAudit')
+    .find({
+      action: 'loan_defaulted',
+      createdAt: { $gte: thirtyDaysAgo },
+    })
+    .populate('loan')
+    .populate('user');
 
   // Verification compliance
   const unverifiedUsers = await User.countDocuments({ isVerified: false });

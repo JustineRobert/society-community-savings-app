@@ -1,4 +1,3 @@
-
 // routes/contributions.js
 
 const express = require('express');
@@ -42,10 +41,7 @@ router.post(
   '/',
   verifyToken,
   [
-    body('amount')
-      .isFloat({ gt: 0 })
-      .withMessage('amount must be > 0')
-      .toFloat(),
+    body('amount').isFloat({ gt: 0 }).withMessage('amount must be > 0').toFloat(),
     body('groupId').isMongoId().withMessage('groupId must be a valid ObjectId'),
     body('note').optional().isString().trim().isLength({ max: 1000 }),
     body('date').optional().isISO8601().withMessage('date must be ISO8601'),
@@ -82,10 +78,7 @@ router.get(
 router.get(
   '/group/:groupId/stats',
   verifyToken,
-  [
-    param('groupId').isMongoId().withMessage('groupId must be a valid ObjectId'),
-    ...validateFromTo,
-  ],
+  [param('groupId').isMongoId().withMessage('groupId must be a valid ObjectId'), ...validateFromTo],
   handleValidation,
   asyncHandler(getGroupStats)
 );

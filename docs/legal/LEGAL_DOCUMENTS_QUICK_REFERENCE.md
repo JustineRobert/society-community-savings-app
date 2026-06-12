@@ -3,18 +3,21 @@
 ## 🚀 Quick Start for Developers
 
 ### Import the Component (React)
+
 ```jsx
 import LegalDocuments from './components/LegalDocuments';
 
 // Use in your app
-<LegalDocuments />
+<LegalDocuments />;
 ```
 
 ### Protect a Payment Route (Backend)
+
 ```javascript
 const { requireAcceptanceForTransaction } = require('./middleware/legalAcceptanceMiddleware');
 
-router.post('/payments/initiate', 
+router.post(
+  '/payments/initiate',
   authentication,
   requireAcceptanceForTransaction,
   paymentsController.initiatePayment
@@ -22,15 +25,16 @@ router.post('/payments/initiate',
 ```
 
 ### Check Acceptance Status (Frontend)
+
 ```jsx
 const [accepted, setAccepted] = useState(false);
 
 useEffect(() => {
   fetch('/api/legal/acceptance-status', {
-    headers: { 'Authorization': `Bearer ${token}` }
+    headers: { Authorization: `Bearer ${token}` },
   })
-  .then(r => r.json())
-  .then(data => setAccepted(data.data.acceptedTerms && data.data.acceptedPrivacy));
+    .then((r) => r.json())
+    .then((data) => setAccepted(data.data.acceptedTerms && data.data.acceptedPrivacy));
 }, []);
 ```
 
@@ -38,19 +42,20 @@ useEffect(() => {
 
 ## 📚 API Endpoints at a Glance
 
-| Method | Endpoint | Auth | Purpose |
-|--------|----------|------|---------|
-| GET | `/api/legal/terms-of-service` | ❌ | Get full ToS |
-| GET | `/api/legal/privacy-policy` | ❌ | Get full privacy policy |
-| GET | `/api/legal/changelog` | ❌ | Get version history |
-| POST | `/api/legal/accept-terms` | ✅ | Record acceptance |
-| GET | `/api/legal/acceptance-status` | ✅ | Check compliance |
+| Method | Endpoint                       | Auth | Purpose                 |
+| ------ | ------------------------------ | ---- | ----------------------- |
+| GET    | `/api/legal/terms-of-service`  | ❌   | Get full ToS            |
+| GET    | `/api/legal/privacy-policy`    | ❌   | Get full privacy policy |
+| GET    | `/api/legal/changelog`         | ❌   | Get version history     |
+| POST   | `/api/legal/accept-terms`      | ✅   | Record acceptance       |
+| GET    | `/api/legal/acceptance-status` | ✅   | Check compliance        |
 
 ---
 
 ## 🔐 Middleware Options
 
 ### Option 1: Block Without Acceptance
+
 ```javascript
 const { requireLegalAcceptance } = require('./middleware/legalAcceptanceMiddleware');
 app.post('/api/sensitive-endpoint', authentication, requireLegalAcceptance, handler);
@@ -58,6 +63,7 @@ app.post('/api/sensitive-endpoint', authentication, requireLegalAcceptance, hand
 ```
 
 ### Option 2: Block Without Transaction Acceptance
+
 ```javascript
 const { requireAcceptanceForTransaction } = require('./middleware/legalAcceptanceMiddleware');
 app.post('/api/payments/initiate', authentication, requireAcceptanceForTransaction, handler);
@@ -65,6 +71,7 @@ app.post('/api/payments/initiate', authentication, requireAcceptanceForTransacti
 ```
 
 ### Option 3: Log Without Blocking
+
 ```javascript
 const { logLegalAcceptance } = require('./middleware/legalAcceptanceMiddleware');
 app.get('/api/public-endpoint', authentication, logLegalAcceptance, handler);
@@ -76,24 +83,26 @@ app.get('/api/public-endpoint', authentication, logLegalAcceptance, handler);
 ## 🎯 Common Scenarios
 
 ### Scenario 1: Require Acceptance on Signup
+
 ```javascript
 // After user registration succeeds
 return res.status(201).json({
   success: true,
   message: 'Please review our Terms and Privacy Policy',
   redirectTo: '/legal',
-  requiresLegalAcceptance: true
+  requiresLegalAcceptance: true,
 });
 ```
 
 ### Scenario 2: Block Payment Without Acceptance
+
 ```javascript
 // In payment controller
 async function initiatePayment(req, res) {
   if (!req.legalAcceptance?.acceptedTerms) {
     return res.status(403).json({
       message: 'Accept Terms & Privacy Policy first',
-      redirectTo: '/legal'
+      redirectTo: '/legal',
     });
   }
   // Process payment
@@ -101,16 +110,17 @@ async function initiatePayment(req, res) {
 ```
 
 ### Scenario 3: Update Legal Documents
+
 ```javascript
 // In termsAndPrivacy.js
 const CURRENT_VERSIONS = {
-  terms: '1.1.0',      // Increment
-  privacy: '1.1.0'     // Increment
+  terms: '1.1.0', // Increment
+  privacy: '1.1.0', // Increment
 };
 
 LAST_UPDATED = {
   terms: new Date('2026-02-01'),
-  privacy: new Date('2026-02-01')
+  privacy: new Date('2026-02-01'),
 };
 
 // Add to changelog
@@ -120,9 +130,9 @@ function getChangelog() {
       version: '1.1.0',
       date: '2026-02-01',
       document: 'terms',
-      changes: [ 'Updated payment terms', 'New AI features clause' ]
+      changes: ['Updated payment terms', 'New AI features clause'],
     },
-    ...existing
+    ...existing,
   ];
 }
 ```
@@ -151,26 +161,28 @@ npm test -- legal.test.js -t "should return Terms of Service"
 ## 📋 Database Query Patterns
 
 ### Get User's Latest Acceptance
+
 ```javascript
 const { LegalAcceptance } = require('./services/termsAndPrivacy');
-const latest = await LegalAcceptance.findOne({ userId })
-  .sort({ acceptedAt: -1 });
+const latest = await LegalAcceptance.findOne({ userId }).sort({ acceptedAt: -1 });
 ```
 
 ### Get All Acceptances This Month
+
 ```javascript
 const startOfMonth = new Date();
 startOfMonth.setDate(1);
 
 const acceptances = await LegalAcceptance.find({
-  acceptedAt: { $gte: startOfMonth }
+  acceptedAt: { $gte: startOfMonth },
 });
 ```
 
 ### Find Users with Outdated Versions
+
 ```javascript
 const oldAcceptances = await LegalAcceptance.find({
-  termsVersion: { $ne: '1.0.0' }
+  termsVersion: { $ne: '1.0.0' },
 });
 ```
 
@@ -179,11 +191,12 @@ const oldAcceptances = await LegalAcceptance.find({
 ## 🔍 Error Handling Patterns
 
 ### Handle 403 Forbidden
+
 ```javascript
-fetch(url, options).then(res => {
+fetch(url, options).then((res) => {
   if (res.status === 403) {
     // Check if it's a legal acceptance error
-    return res.json().then(data => {
+    return res.json().then((data) => {
       if (data.action === 'REQUIRE_LEGAL_ACCEPTANCE') {
         window.location.href = '/legal';
       }
@@ -194,6 +207,7 @@ fetch(url, options).then(res => {
 ```
 
 ### Handle Missing Token
+
 ```javascript
 if (!localStorage.getItem('token')) {
   // Must be logged in to accept terms
@@ -205,20 +219,21 @@ if (!localStorage.getItem('token')) {
 
 ## 📊 Key Files Reference
 
-| File | Purpose | Size |
-|------|---------|------|
-| `termsAndPrivacy.js` | Service layer | 180 lines |
-| `legalController.js` | API handlers | 160 lines |
-| `legal.routes.js` | Route definitions | 20 lines |
-| `legalAcceptanceMiddleware.js` | Enforcement | 100 lines |
-| `LegalDocuments.jsx` | React component | 200 lines |
-| `LegalDocuments.css` | Styling | 400 lines |
+| File                           | Purpose           | Size      |
+| ------------------------------ | ----------------- | --------- |
+| `termsAndPrivacy.js`           | Service layer     | 180 lines |
+| `legalController.js`           | API handlers      | 160 lines |
+| `legal.routes.js`              | Route definitions | 20 lines  |
+| `legalAcceptanceMiddleware.js` | Enforcement       | 100 lines |
+| `LegalDocuments.jsx`           | React component   | 200 lines |
+| `LegalDocuments.css`           | Styling           | 400 lines |
 
 ---
 
 ## ⚙️ Environment Variables
 
 No additional environment variables required! The service uses:
+
 - `NODE_ENV` (existing)
 - `JWT_SECRET` (existing for auth)
 - `MONGO_URI` (existing for database)
@@ -228,27 +243,35 @@ No additional environment variables required! The service uses:
 ## 🚨 Common Issues & Fixes
 
 ### Issue: 401 Unauthorized on /accept-terms
+
 **Fix**: Ensure you're sending valid JWT token in Authorization header
+
 ```javascript
 headers: { 'Authorization': `Bearer ${token}` }
 ```
 
 ### Issue: Modal not showing in React
+
 **Fix**: Verify API endpoints are accessible and returning data
+
 ```javascript
 // Test endpoint
 curl http://localhost:5000/api/legal/terms-of-service
 ```
 
 ### Issue: Acceptance not being recorded
+
 **Fix**: Check MongoDB connection and user is authenticated
+
 ```javascript
 // Verify MongoDB connection
-db.Legal.findOne({}) // Should return null or a document
+db.Legal.findOne({}); // Should return null or a document
 ```
 
 ### Issue: Acceptance middleware returning 500
+
 **Fix**: Check `termsAndPrivacy.js` service is properly initialized
+
 ```javascript
 const service = require('./services/termsAndPrivacy');
 console.log(service.getVersion('terms')); // Should return '1.0.0'

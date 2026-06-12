@@ -12,13 +12,64 @@
  * - Responsive mobile-first design
  */
 
-import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import { useAuth } from '../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
-import api from '../services/api';
-import { Menu, X, AlertCircle, RefreshCw, LogOut, Plus, Users } from 'lucide-react';
-import { toast } from 'react-toastify';
-import './Dashboard.css';
+import React, { useEffect, useState } from 'react';
+import axios from 'axios';
+// import { AdminDashboard } from '../pages/Dashboard';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  PieChart,
+  Pie,
+  Cell
+} from 'recharts';
+
+// // ✅ FIXED: Single declaration using arrow function
+
+const AdminDashboard = () => {
+  const [data, setData] = useState({ loans: [], fraud: [] });
+
+  useEffect(() => {
+    axios.get('/api/admin/stats').then(res => {
+      setData(res.data);
+    });
+  }, []);
+
+  return null; // keep if rendering handled elsewhere
+};
+
+
+
+const AdminDashboard = () => {
+  return (
+    <div style={{ padding: 20 }}>
+      <h2>📊 TITech Admin Dashboard</h2>
+
+      <h3>Loan Distribution</h3>
+      <BarChart width={500} height={300} data={data.loans}>
+        <XAxis dataKey="status" />
+        <YAxis />
+        <Tooltip />
+        <Bar dataKey="count" fill="#8884d8" />
+      </BarChart>
+
+      <h3>Fraud Detection</h3>
+      <PieChart width={400} height={300}>
+        <Pie
+          data={data.fraud}
+          dataKey="value"
+          outerRadius={100}
+        >
+          {data.fraud?.map((entry, index) => (
+            <Cell key={index} fill={index === 0 ? 'red' : 'green'} />
+          ))}
+        </Pie>
+      </PieChart>
+    </div>
+  );
+};
 
 // Skeleton Loader Component
 const GroupCardSkeleton = () => (
@@ -115,7 +166,7 @@ const Dashboard = () => {
 
       // Handle various response formats
       const groupsData = response?.data?.data || response?.data || [];
-      
+
       // Validate groups array
       if (!Array.isArray(groupsData)) {
         throw new Error('Invalid groups data format');
@@ -139,9 +190,7 @@ const Dashboard = () => {
       }
 
       // Set user-friendly error message
-      const errorMsg =
-        err?.response?.data?.message ||
-        'Failed to load groups. Please try again.';
+      const errorMsg = err?.response?.data?.message || 'Failed to load groups. Please try again.';
       setError(errorMsg);
       toast.error(errorMsg);
     } finally {
@@ -260,8 +309,7 @@ const Dashboard = () => {
           .filter(Boolean);
 
         const remaining = members.length - displayNames.length;
-        const suffix =
-          remaining > 0 ? ` and ${remaining} more` : '';
+        const suffix = remaining > 0 ? ` and ${remaining} more` : '';
 
         return displayNames.join(', ') + suffix;
       } catch (err) {
@@ -378,20 +426,13 @@ const Dashboard = () => {
 
       <div className="dashboard-layout">
         {/* Sidebar Navigation */}
-        <aside
-          className={`dashboard-sidebar ${menuOpen ? 'open' : ''}`}
-          aria-label="User menu"
-        >
+        <aside className={`dashboard-sidebar ${menuOpen ? 'open' : ''}`} aria-label="User menu">
           {/* User Profile Section */}
           <div className="user-profile">
-            <div className="user-avatar">
-              {user?.name?.charAt(0).toUpperCase() || '?'}
-            </div>
+            <div className="user-avatar">{user?.name?.charAt(0).toUpperCase() || '?'}</div>
             <div className="user-info">
               <h2 className="user-name">{user?.name || 'User'}</h2>
-              <p className="user-role">
-                {user?.role === 'admin' ? 'Administrator' : 'Member'}
-              </p>
+              <p className="user-role">{user?.role === 'admin' ? 'Administrator' : 'Member'}</p>
             </div>
           </div>
 
@@ -484,19 +525,12 @@ const Dashboard = () => {
           {/* Groups List */}
           {!loading && groups.length > 0 && (
             <section className="groups-section">
-              <h2 className="section-title">
-                Your Community Savings Groups
-              </h2>
+              <h2 className="section-title">Your Community Savings Groups</h2>
               <p className="section-subtitle">
-                {groups.length}{' '}
-                {groups.length === 1 ? 'group' : 'groups'} available
+                {groups.length} {groups.length === 1 ? 'group' : 'groups'} available
               </p>
 
-              <div
-                className="groups-grid"
-                role="list"
-                aria-label="Community savings groups"
-              >
+              <div className="groups-grid" role="list" aria-label="Community savings groups">
                 {groups.map((group) => (
                   <article
                     key={group._id}
@@ -525,9 +559,7 @@ const Dashboard = () => {
                     <div className="group-stats">
                       <div className="stat">
                         <span className="stat-label">Members</span>
-                        <span className="stat-value">
-                          {formatMembers(group?.members)}
-                        </span>
+                        <span className="stat-value">{formatMembers(group?.members)}</span>
                       </div>
 
                       <div className="stat">
@@ -567,15 +599,9 @@ const Dashboard = () => {
             <section className="empty-state">
               <div className="empty-state-icon">👥</div>
               <h2 className="empty-state-title">No Groups Yet</h2>
-              <p className="empty-state-text">
-                You haven't joined any community savings groups.
-              </p>
+              <p className="empty-state-text">You haven't joined any community savings groups.</p>
               {isAdmin && (
-                <button
-                  onClick={handleCreateGroup}
-                  className="btn-primary"
-                  type="button"
-                >
+                <button onClick={handleCreateGroup} className="btn-primary" type="button">
                   <Plus size={18} />
                   Create Your First Group
                 </button>

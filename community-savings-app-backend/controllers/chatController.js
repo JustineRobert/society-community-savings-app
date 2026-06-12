@@ -464,12 +464,10 @@ exports.searchMessages = async (req, res, next) => {
     const limit = Math.min(200, Number(req.query.limit) || 50);
     const skip = (page - 1) * limit;
 
-    const result = await chatService.searchMessages(
-      conversationId,
-      userId,
-      q.trim(),
-      { skip, limit }
-    );
+    const result = await chatService.searchMessages(conversationId, userId, q.trim(), {
+      skip,
+      limit,
+    });
 
     res.status(200).json({
       message: 'Search results retrieved successfully',

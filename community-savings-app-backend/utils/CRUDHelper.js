@@ -25,14 +25,14 @@ class CRUDHelper {
     const skip = (page - 1) * limit;
     const [docs, total] = await Promise.all([
       Model.find(query).skip(skip).limit(limit),
-      Model.countDocuments(query)
+      Model.countDocuments(query),
     ]);
     return {
       docs,
       page,
       limit,
       total,
-      pages: Math.ceil(total / limit)
+      pages: Math.ceil(total / limit),
     };
   }
 

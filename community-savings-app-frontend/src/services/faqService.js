@@ -1,16 +1,17 @@
+/* global console, FormData */
+
 /**
  * faqService.js
  * Service for managing FAQ items
  */
 
-const axios = require('axios');
+import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
+const API_BASE_URL =
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) ||
+  'http://localhost:3001/api';
 
 const faqService = {
-  /**
-   * Get all FAQ items
-   */
   getFAQItems: async (page = 1, limit = 20) => {
     try {
       const response = await axios.get(`${API_BASE_URL}/faq`, {
@@ -23,9 +24,6 @@ const faqService = {
     }
   },
 
-  /**
-   * Search FAQ items
-   */
   searchFAQ: async (query) => {
     try {
       const response = await axios.get(`${API_BASE_URL}/faq/search`, {
@@ -38,9 +36,6 @@ const faqService = {
     }
   },
 
-  /**
-   * Get FAQ items by category
-   */
   getFAQsByCategory: async (category, page = 1, limit = 20) => {
     try {
       const response = await axios.get(`${API_BASE_URL}/faq/category/${category}`, {
@@ -53,9 +48,6 @@ const faqService = {
     }
   },
 
-  /**
-   * Get specific FAQ item details
-   */
   getFAQItem: async (faqId) => {
     try {
       const response = await axios.get(`${API_BASE_URL}/faq/${faqId}`);
@@ -66,9 +58,6 @@ const faqService = {
     }
   },
 
-  /**
-   * Get all FAQ categories
-   */
   getCategories: async () => {
     try {
       const response = await axios.get(`${API_BASE_URL}/faq/categories`);
@@ -79,9 +68,6 @@ const faqService = {
     }
   },
 
-  /**
-   * Get popular FAQ items
-   */
   getPopularFAQs: async (limit = 5) => {
     try {
       const response = await axios.get(`${API_BASE_URL}/faq/popular`, {
@@ -94,9 +80,6 @@ const faqService = {
     }
   },
 
-  /**
-   * Mark FAQ as helpful
-   */
   markFAQHelpful: async (faqId) => {
     try {
       const response = await axios.post(`${API_BASE_URL}/faq/${faqId}/helpful`);
@@ -107,9 +90,6 @@ const faqService = {
     }
   },
 
-  /**
-   * Mark FAQ as not helpful
-   */
   markFAQUnhelpful: async (faqId) => {
     try {
       const response = await axios.post(`${API_BASE_URL}/faq/${faqId}/unhelpful`);
@@ -120,9 +100,6 @@ const faqService = {
     }
   },
 
-  /**
-   * Get related FAQ items
-   */
   getRelatedFAQs: async (faqId, limit = 5) => {
     try {
       const response = await axios.get(`${API_BASE_URL}/faq/${faqId}/related`, {
@@ -135,9 +112,6 @@ const faqService = {
     }
   },
 
-  /**
-   * Increment FAQ view count
-   */
   incrementFAQViews: async (faqId) => {
     try {
       const response = await axios.post(`${API_BASE_URL}/faq/${faqId}/views`);
@@ -148,9 +122,6 @@ const faqService = {
     }
   },
 
-  /**
-   * Get FAQ statistics
-   */
   getFAQStats: async () => {
     try {
       const response = await axios.get(`${API_BASE_URL}/faq/stats`);
@@ -161,9 +132,6 @@ const faqService = {
     }
   },
 
-  /**
-   * Create FAQ item (admin only)
-   */
   createFAQ: async (faqData) => {
     try {
       const response = await axios.post(`${API_BASE_URL}/faq`, faqData);
@@ -174,9 +142,6 @@ const faqService = {
     }
   },
 
-  /**
-   * Update FAQ item (admin only)
-   */
   updateFAQ: async (faqId, faqData) => {
     try {
       const response = await axios.put(`${API_BASE_URL}/faq/${faqId}`, faqData);
@@ -187,9 +152,6 @@ const faqService = {
     }
   },
 
-  /**
-   * Delete FAQ item (admin only)
-   */
   deleteFAQ: async (faqId) => {
     try {
       const response = await axios.delete(`${API_BASE_URL}/faq/${faqId}`);
@@ -200,9 +162,6 @@ const faqService = {
     }
   },
 
-  /**
-   * Get FAQ item by slug (for SEO-friendly URLs)
-   */
   getFAQBySlug: async (slug) => {
     try {
       const response = await axios.get(`${API_BASE_URL}/faq/slug/${slug}`);
@@ -213,16 +172,16 @@ const faqService = {
     }
   },
 
-  /**
-   * Bulk import FAQ items (admin only)
-   */
   bulkImportFAQs: async (file) => {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const response = await axios.post(`${API_BASE_URL}/faq/bulk-import`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+
+      const response = await axios.post(
+        `${API_BASE_URL}/faq/bulk-import`,
+        formData,
+        { headers: { 'Content-Type': 'multipart/form-data' } }
+      );
       return response.data;
     } catch (error) {
       console.error('Error bulk importing FAQs:', error);
@@ -230,9 +189,6 @@ const faqService = {
     }
   },
 
-  /**
-   * Export FAQs to CSV (admin only)
-   */
   exportFAQsCSV: async () => {
     try {
       const response = await axios.get(`${API_BASE_URL}/faq/export/csv`, {
@@ -246,4 +202,4 @@ const faqService = {
   },
 };
 
-module.exports = faqService;
+export default faqService;

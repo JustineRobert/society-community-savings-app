@@ -13,6 +13,21 @@ const asyncHandler = require('../utils/asyncHandler');
 const emailService = require('../services/emailService');
 const User = require('../models/User');
 const logger = require('../utils/logger');
+const crypto = require('crypto');
+const EmailAudit = require('../models/EmailAudit');
+
+const {
+  sendVerificationEmail,
+  sendPasswordResetEmail,
+} = require('../services/emailService');
+
+// ✅ ADD THIS
+const {
+  requestVerificationLimiter,
+  requestResetLimiter,
+  resetPasswordLimiter,
+  verifyEmailLimiter,
+} = require('../middleware/rateLimiters');
 
 /**
  * Send email verification
@@ -24,14 +39,13 @@ exports.sendEmailVerification = asyncHandler(async (req, res) => {
 
     res.json({
       success: true,
-      message: result.message
+      message: result.message,
     });
-
   } catch (error) {
     logger.error('Send email verification error:', error);
     res.status(400).json({
       success: false,
-      error: error.message || 'Failed to send verification email'
+      error: error.message || 'Failed to send verification email',
     });
   }
 });
@@ -46,7 +60,7 @@ exports.verifyEmail = asyncHandler(async (req, res) => {
   if (!token) {
     return res.status(400).json({
       success: false,
-      error: 'Verification token is required'
+      error: 'Verification token is required',
     });
   }
 
@@ -56,14 +70,13 @@ exports.verifyEmail = asyncHandler(async (req, res) => {
     res.json({
       success: true,
       message: 'Email verified successfully',
-      data: result.user
+      data: result.user,
     });
-
   } catch (error) {
     logger.error('Email verification error:', error);
     res.status(400).json({
       success: false,
-      error: error.message || 'Email verification failed'
+      error: error.message || 'Email verification failed',
     });
   }
 });
@@ -78,7 +91,7 @@ exports.sendPasswordReset = asyncHandler(async (req, res) => {
   if (!email) {
     return res.status(400).json({
       success: false,
-      error: 'Email address is required'
+      error: 'Email address is required',
     });
   }
 
@@ -87,7 +100,7 @@ exports.sendPasswordReset = asyncHandler(async (req, res) => {
   if (!emailRegex.test(email)) {
     return res.status(400).json({
       success: false,
-      error: 'Invalid email format'
+      error: 'Invalid email format',
     });
   }
 
@@ -97,15 +110,14 @@ exports.sendPasswordReset = asyncHandler(async (req, res) => {
     // Always return success for security (don't reveal if email exists)
     res.json({
       success: true,
-      message: result.message
+      message: result.message,
     });
-
   } catch (error) {
     logger.error('Send password reset error:', error);
     // Still return success for security
     res.json({
       success: true,
-      message: 'If an account with that email exists, a reset link has been sent'
+      message: 'If an account with that email exists, a reset link has been sent',
     });
   }
 });
@@ -120,7 +132,7 @@ exports.resetPassword = asyncHandler(async (req, res) => {
   if (!token || !newPassword) {
     return res.status(400).json({
       success: false,
-      error: 'Token and new password are required'
+      error: 'Token and new password are required',
     });
   }
 
@@ -128,7 +140,7 @@ exports.resetPassword = asyncHandler(async (req, res) => {
   if (newPassword.length < 8) {
     return res.status(400).json({
       success: false,
-      error: 'Password must be at least 8 characters long'
+      error: 'Password must be at least 8 characters long',
     });
   }
 
@@ -137,14 +149,13 @@ exports.resetPassword = asyncHandler(async (req, res) => {
 
     res.json({
       success: true,
-      message: result.message
+      message: result.message,
     });
-
   } catch (error) {
     logger.error('Password reset error:', error);
     res.status(400).json({
       success: false,
-      error: error.message || 'Password reset failed'
+      error: error.message || 'Password reset failed',
     });
   }
 });
@@ -160,7 +171,7 @@ exports.resendEmailVerification = asyncHandler(async (req, res) => {
     if (user.isEmailVerified) {
       return res.status(400).json({
         success: false,
-        error: 'Email is already verified'
+        error: 'Email is already verified',
       });
     }
 
@@ -168,14 +179,13 @@ exports.resendEmailVerification = asyncHandler(async (req, res) => {
 
     res.json({
       success: true,
-      message: result.message
+      message: result.message,
     });
-
   } catch (error) {
     logger.error('Resend email verification error:', error);
     res.status(400).json({
       success: false,
-      error: error.message || 'Failed to resend verification email'
+      error: error.message || 'Failed to resend verification email',
     });
   }
 });
@@ -193,15 +203,14 @@ exports.getEmailVerificationStatus = asyncHandler(async (req, res) => {
       data: {
         email: user.email,
         isVerified: user.isEmailVerified,
-        verifiedAt: user.emailVerifiedAt
-      }
+        verifiedAt: user.emailVerifiedAt,
+      },
     });
-
   } catch (error) {
     logger.error('Get email verification status error:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to get verification status'
+      error: 'Failed to get verification status',
     });
   }
 });
@@ -215,7 +224,7 @@ exports.testEmailConfiguration = asyncHandler(async (req, res) => {
   if (req.user.role !== 'admin') {
     return res.status(403).json({
       success: false,
-      error: 'Admin access required'
+      error: 'Admin access required',
     });
   }
 
@@ -225,20 +234,19 @@ exports.testEmailConfiguration = asyncHandler(async (req, res) => {
     if (result.success) {
       res.json({
         success: true,
-        message: result.message
+        message: result.message,
       });
     } else {
       res.status(500).json({
         success: false,
-        error: result.error
+        error: result.error,
       });
     }
-
   } catch (error) {
     logger.error('Test email configuration error:', error);
     res.status(500).json({
       success: false,
-      error: error.message || 'Email configuration test failed'
+      error: error.message || 'Email configuration test failed',
     });
   }
 });
@@ -252,7 +260,7 @@ exports.sendTestEmail = asyncHandler(async (req, res) => {
   if (req.user.role !== 'admin') {
     return res.status(403).json({
       success: false,
-      error: 'Admin access required'
+      error: 'Admin access required',
     });
   }
 
@@ -261,7 +269,7 @@ exports.sendTestEmail = asyncHandler(async (req, res) => {
   if (!to || !subject || !message) {
     return res.status(400).json({
       success: false,
-      error: 'Recipient email, subject, and message are required'
+      error: 'Recipient email, subject, and message are required',
     });
   }
 
@@ -273,26 +281,24 @@ exports.sendTestEmail = asyncHandler(async (req, res) => {
       data: {
         message,
         sentBy: req.user.name,
-        timestamp: new Date().toISOString()
-      }
+        timestamp: new Date().toISOString(),
+      },
     };
 
     await emailService.sendEmail(emailData);
 
-    res.json({
+    return res.json({
       success: true,
-      message: 'Test email sent successfully'
+      message: 'Test email sent successfully',
     });
-
   } catch (error) {
     logger.error('Send test email error:', error);
-    res.status(500).json({
+
+    return res.status(500).json({
       success: false,
-      error: error.message || 'Failed to send test email'
+      error: error.message || 'Failed to send test email',
     });
   }
-});
-  legacyHeaders: false,
 });
 
 // ============================================================================

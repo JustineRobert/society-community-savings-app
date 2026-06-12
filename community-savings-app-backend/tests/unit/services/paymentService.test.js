@@ -14,7 +14,17 @@ jest.mock('../../../models/Group');
 jest.mock('../../../utils/logger');
 
 describe('Payment Service', () => {
+  let mockPayment;
+  
   beforeEach(() => {
+    mockPayment = {
+      _id: 'payment123',
+      status: 'pending',
+      totalAmount: 1005,
+      metadata: {},
+      save: jest.fn().mockResolvedValue(),
+    };
+
     jest.clearAllMocks();
   });
 
@@ -80,14 +90,16 @@ describe('Payment Service', () => {
   });
 
   describe('initiatePayment', () => {
+
     const mockUser = { _id: 'user123', totalContributions: 1000 };
-    const mockGroup = { _id: 'group123' };
-    const mockPayment = {
-      _id: 'payment123',
-      transactionRef: 'TXN-abc123',
-      status: 'pending',
-      save: jest.fn().mockResolvedValue()
-    };
+    // const mockGroup = { _id: 'group123' };
+    //const mockPayment = {
+    //  _id: 'payment123',
+    //  transactionRef: 'TXN-abc123',
+    //  transactionRef: 'TXN-abc123',
+    //  status: 'pending',
+    //  save: jest.fn().mockResolvedValue(),
+    //};
 
     beforeEach(() => {
       User.findById.mockResolvedValue(mockUser);
@@ -103,7 +115,7 @@ describe('Payment Service', () => {
         amount: 1000,
         method: 'mobile_money',
         type: 'contribution',
-        description: 'Monthly contribution'
+        description: 'Monthly contribution',
       };
 
       const result = await paymentService.initiatePayment(paymentData);
@@ -120,7 +132,7 @@ describe('Payment Service', () => {
         groupId: 'group123',
         amount: 1000,
         method: 'mobile_money',
-        type: 'contribution'
+        type: 'contribution',
       };
 
       await paymentService.initiatePayment(paymentData);
@@ -129,7 +141,7 @@ describe('Payment Service', () => {
         expect.objectContaining({
           amount: 1000,
           fees: 5, // 0.5% of 1000
-          totalAmount: 1005
+          totalAmount: 1005,
         })
       );
     });
@@ -140,7 +152,7 @@ describe('Payment Service', () => {
         groupId: 'group123',
         amount: 500,
         method: 'mobile_money',
-        type: 'contribution'
+        type: 'contribution',
       };
 
       await paymentService.initiatePayment(paymentData);
@@ -158,7 +170,7 @@ describe('Payment Service', () => {
         groupId: 'group123',
         amount: 500,
         method: 'mobile_money',
-        type: 'contribution'
+        type: 'contribution',
       };
 
       await paymentService.initiatePayment(paymentData);
@@ -169,19 +181,20 @@ describe('Payment Service', () => {
           group: 'group123',
           amount: 500,
           type: 'regular',
-          status: 'completed'
+          status: 'completed',
         })
       );
     });
   });
 
   describe('processMobileMoneyPayment', () => {
+
     const mockPayment = {
       _id: 'payment123',
       status: 'pending',
       totalAmount: 1005,
       metadata: {},
-      save: jest.fn().mockResolvedValue()
+      save: jest.fn().mockResolvedValue(),
     };
 
     beforeEach(() => {
@@ -192,7 +205,7 @@ describe('Payment Service', () => {
       // Mock successful mobile money API response
       const mockApiResponse = {
         success: true,
-        transactionId: 'MM-123456'
+        transactionId: 'MM-123456',
       };
 
       // Mock the simulateMobileMoneyAPI function
@@ -201,7 +214,7 @@ describe('Payment Service', () => {
       const result = await paymentService.processMobileMoneyPayment({
         paymentId: 'payment123',
         phoneNumber: '+256772123546',
-        provider: 'mpesa'
+        provider: 'mpesa',
       });
 
       expect(result.success).toBe(true);
@@ -213,14 +226,14 @@ describe('Payment Service', () => {
     test('should handle mobile money payment failure', async () => {
       const mockApiResponse = {
         success: false,
-        error: 'Insufficient balance'
+        error: 'Insufficient balance',
       };
 
       paymentService.simulateMobileMoneyAPI = jest.fn().mockResolvedValue(mockApiResponse);
 
       const result = await paymentService.processMobileMoneyPayment({
         paymentId: 'payment123',
-        phoneNumber: '+256772123546'
+        phoneNumber: '+256772123546',
       });
 
       expect(result.success).toBe(false);
@@ -232,7 +245,7 @@ describe('Payment Service', () => {
       await expect(
         paymentService.processMobileMoneyPayment({
           paymentId: 'payment123',
-          phoneNumber: 'invalid'
+          phoneNumber: 'invalid',
         })
       ).rejects.toThrow();
     });
@@ -245,14 +258,14 @@ describe('Payment Service', () => {
       amount: 1000,
       status: 'completed',
       user: { _id: 'user123', name: 'John Doe' },
-      group: { _id: 'group123', name: 'Test Group' }
+      group: { _id: 'group123', name: 'Test Group' },
     };
 
     test('should return payment details with populated user and group', async () => {
       Payment.findById.mockReturnValue({
         populate: jest.fn().mockReturnValue({
-          populate: jest.fn().mockResolvedValue(mockPayment)
-        })
+          populate: jest.fn().mockResolvedValue(mockPayment),
+        }),
       });
 
       const result = await paymentService.verifyPayment('payment123');
@@ -267,8 +280,8 @@ describe('Payment Service', () => {
     test('should throw error for non-existent payment', async () => {
       Payment.findById.mockReturnValue({
         populate: jest.fn().mockReturnValue({
-          populate: jest.fn().mockResolvedValue(null)
-        })
+          populate: jest.fn().mockResolvedValue(null),
+        }),
       });
 
       await expect(paymentService.verifyPayment('invalid')).rejects.toThrow('Payment not found');
@@ -284,13 +297,13 @@ describe('Payment Service', () => {
       currency: 'KES',
       status: 'completed',
       metadata: {},
-      save: jest.fn().mockResolvedValue()
+      save: jest.fn().mockResolvedValue(),
     };
 
-    const mockRefundPayment = {
-      _id: 'refund123',
-      save: jest.fn().mockResolvedValue()
-    };
+    // const mockRefundPayment = {
+    //  _id: 'refund123',
+    //  save: jest.fn().mockResolvedValue(),
+    //};
 
     beforeEach(() => {
       Payment.findById.mockResolvedValue(mockPayment);
@@ -309,9 +322,9 @@ describe('Payment Service', () => {
     test('should reject refund for non-completed payments', async () => {
       mockPayment.status = 'pending';
 
-      await expect(
-        paymentService.processRefund('payment123', 500, 'Test')
-      ).rejects.toThrow('Can only refund completed payments');
+      await expect(paymentService.processRefund('payment123', 500, 'Test')).rejects.toThrow(
+        'Can only refund completed payments'
+      );
     });
 
     test('should prevent over-refund', async () => {
@@ -334,13 +347,13 @@ describe('Payment Service', () => {
               status: 'completed',
               count: 10,
               amount: 10000,
-              fees: 50
-            }
+              fees: 50,
+            },
           ],
           totalCount: 10,
           totalAmount: 10000,
-          totalFees: 50
-        }
+          totalFees: 50,
+        },
       ];
 
       Payment.aggregate.mockResolvedValue(mockAnalytics);
@@ -354,9 +367,7 @@ describe('Payment Service', () => {
 
       expect(result).toEqual(mockAnalytics);
       expect(Payment.aggregate).toHaveBeenCalledWith(
-        expect.arrayContaining([
-          expect.objectContaining({ $match: expect.any(Object) })
-        ])
+        expect.arrayContaining([expect.objectContaining({ $match: expect.any(Object) })])
       );
     });
   });

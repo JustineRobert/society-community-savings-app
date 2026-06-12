@@ -228,7 +228,7 @@ class StripeProvider {
         limit,
       });
 
-      return intents.data.map(pi => ({
+      return intents.data.map((pi) => ({
         id: pi.id,
         status: pi.status,
         amount: pi.amount / 100,

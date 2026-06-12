@@ -183,9 +183,7 @@ const MobileMoneyPayment = ({
 
       <div className="provider-grid">
         {/* MTN MoMo */}
-        <label
-          className={`provider-card ${provider === 'MTN_MOMO' ? 'selected' : ''}`}
-        >
+        <label className={`provider-card ${provider === 'MTN_MOMO' ? 'selected' : ''}`}>
           <input
             type="radio"
             name="provider"
@@ -204,9 +202,7 @@ const MobileMoneyPayment = ({
         </label>
 
         {/* Airtel Money */}
-        <label
-          className={`provider-card ${provider === 'AIRTEL_MONEY' ? 'selected' : ''}`}
-        >
+        <label className={`provider-card ${provider === 'AIRTEL_MONEY' ? 'selected' : ''}`}>
           <input
             type="radio"
             name="provider"
@@ -225,11 +221,7 @@ const MobileMoneyPayment = ({
         </label>
       </div>
 
-      <button
-        onClick={() => setStep('phone')}
-        disabled={!provider}
-        className="btn-primary mt-6"
-      >
+      <button onClick={() => setStep('phone')} disabled={!provider} className="btn-primary mt-6">
         Continue
       </button>
     </div>

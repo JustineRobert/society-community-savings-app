@@ -8,7 +8,10 @@ import { toast } from 'react-toastify';
  */
 const getAuthHeaders = () => ({
   headers: {
-    Authorization: `Bearer ${localStorage.getItem('token') || ''}`,
+    Authorization:
+      typeof window !== 'undefined'
+        ? `Bearer ${window.localStorage.getItem('token') || ''}`
+        : 'Bearer ',
   },
 });
 
@@ -27,10 +30,7 @@ export const fetchSettings = () => async (dispatch) => {
       payload: response.data,
     });
   } catch (error) {
-    const message =
-      error?.response?.data?.message ||
-      error?.message ||
-      'Failed to fetch settings.';
+    const message = error?.response?.data?.message || error?.message || 'Failed to fetch settings.';
 
     dispatch({
       type: 'FETCH_SETTINGS_FAILURE',
@@ -57,9 +57,7 @@ export const updateSettings = (settings) => async (dispatch) => {
     toast.success('Settings updated successfully!');
   } catch (error) {
     const message =
-      error?.response?.data?.message ||
-      error?.message ||
-      'Failed to update settings.';
+      error?.response?.data?.message || error?.message || 'Failed to update settings.';
 
     dispatch({
       type: 'UPDATE_SETTINGS_FAILURE',

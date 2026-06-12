@@ -1,4 +1,3 @@
-
 // routes/settings.js
 
 const express = require('express');
@@ -34,7 +33,9 @@ router.put(
   isAdmin,
   [
     // Example validations; adjust to your settings schema
-    body().custom(v => typeof v === 'object' && v !== null).withMessage('payload must be an object'),
+    body()
+      .custom((v) => typeof v === 'object' && v !== null)
+      .withMessage('payload must be an object'),
     body('siteName').optional().isString().trim().isLength({ max: 255 }),
     body('supportEmail').optional().isEmail(),
     body('features').optional().isObject(),

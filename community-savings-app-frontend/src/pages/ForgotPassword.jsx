@@ -22,10 +22,7 @@ const ForgotPasswordSchema = Yup.object().shape({
     .email('Invalid email address')
     .required('Email is required')
     .max(254, 'Email is too long')
-    .matches(
-      /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-      'Please enter a valid email address'
-    ),
+    .matches(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'Please enter a valid email address'),
 });
 
 const ForgotPassword = () => {
@@ -44,16 +41,14 @@ const ForgotPassword = () => {
       if (response.status === 200 || response.status === 201) {
         setSubmittedEmail(values.email);
         setSubmitted(true);
-        toast.success(
-          'Password reset link sent! Check your email.',
-          { autoClose: 5000 }
-        );
+        toast.success('Password reset link sent! Check your email.', { autoClose: 5000 });
       }
     } catch (err) {
       // Don't reveal if email exists or not for security
-      const message = err?.response?.data?.message || 
+      const message =
+        err?.response?.data?.message ||
         'If this email is registered, you will receive a password reset link.';
-      
+
       // Show success-like message for security (don't leak email existence info)
       setSubmittedEmail(values.email);
       setSubmitted(true);
@@ -102,15 +97,13 @@ const ForgotPassword = () => {
               <div className="success-icon" aria-hidden="true">
                 <CheckCircle size={48} />
               </div>
-              
+
               <h2 className="success-heading">Check Your Email</h2>
-              
-              <p className="success-message">
-                We've sent a password reset link to:
-              </p>
-              
+
+              <p className="success-message">We've sent a password reset link to:</p>
+
               <div className="email-display">{submittedEmail}</div>
-              
+
               <div className="success-instructions">
                 <p>
                   <strong>Next steps:</strong>
@@ -126,16 +119,13 @@ const ForgotPassword = () => {
               <div className="info-box">
                 <AlertCircle size={18} aria-hidden="true" />
                 <p>
-                  The reset link will expire in <strong>24 hours</strong> for security.
-                  Didn't receive the email? Check your spam folder.
+                  The reset link will expire in <strong>24 hours</strong> for security. Didn't
+                  receive the email? Check your spam folder.
                 </p>
               </div>
 
               <div className="success-actions">
-                <button
-                  className="btn-secondary"
-                  onClick={() => navigate('/login')}
-                >
+                <button className="btn-secondary" onClick={() => navigate('/login')}>
                   <ArrowLeft size={16} aria-hidden="true" />
                   Back to Login
                 </button>
@@ -222,9 +212,7 @@ const ForgotPassword = () => {
                       placeholder="your@email.com"
                       autoComplete="email"
                       disabled={loading}
-                      className={`form-input ${
-                        touched.email && errors.email ? 'has-error' : ''
-                      }`}
+                      className={`form-input ${touched.email && errors.email ? 'has-error' : ''}`}
                       aria-describedby={touched.email && errors.email ? 'email-error' : undefined}
                     />
                     {touched.email && errors.email && (
@@ -238,8 +226,8 @@ const ForgotPassword = () => {
                   <div className="info-box">
                     <AlertCircle size={18} aria-hidden="true" />
                     <p>
-                      We'll send you an email with a secure link to reset your password.
-                      The link will expire after 24 hours for security.
+                      We'll send you an email with a secure link to reset your password. The link
+                      will expire after 24 hours for security.
                     </p>
                   </div>
 
@@ -275,21 +263,11 @@ const ForgotPassword = () => {
           {/* Footer */}
           <p className="forgot-password-footer">
             By using this service, you agree to our{' '}
-            <a
-              href="/terms"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="footer-link"
-            >
+            <a href="/terms" target="_blank" rel="noopener noreferrer" className="footer-link">
               Terms of Service
-            </a>
-            {' '}&{' '}
-            <a
-              href="/privacy"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="footer-link"
-            >
+            </a>{' '}
+            &{' '}
+            <a href="/privacy" target="_blank" rel="noopener noreferrer" className="footer-link">
               Privacy Policy
             </a>
           </p>

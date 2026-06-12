@@ -46,22 +46,26 @@
 ### Backend Preparation
 
 - [ ] Verify MongoDB connection in `.env`
+
   ```
   MONGODB_URI=mongodb://localhost:27017/society-savings
   ```
 
 - [ ] Verify Redis connection (optional, for queue system)
+
   ```
   REDIS_URL=redis://localhost:6379
   ```
 
 - [ ] Check queue system is initialized
+
   ```bash
   # Verify in server.js
   grep -n "notificationQueue" community-savings-app-backend/server.js
   ```
 
 - [ ] Verify admin user exists in database
+
   ```bash
   # Run seed script
   npm run seed-admin
@@ -76,12 +80,14 @@
 ### Frontend Preparation
 
 - [ ] Verify Node modules are installed
+
   ```bash
   cd community-savings-app-frontend
   npm list react react-router-dom axios react-toastify lucide-react
   ```
 
 - [ ] Check API service is configured
+
   ```bash
   cat community-savings-app-frontend/src/services/api.js | grep baseURL
   ```
@@ -104,6 +110,7 @@ npm run dev
 ```
 
 **Expected Output**:
+
 ```
 ✓ Server listening on port 5000
 ✓ Connected to MongoDB
@@ -143,6 +150,7 @@ curl -X POST http://localhost:5000/api/groups \
 ```
 
 **Expected Response** (201):
+
 ```json
 {
   "message": "Group created successfully",
@@ -175,6 +183,7 @@ curl -X POST http://localhost:5000/api/groups/60d5ec49c1234567890abcde/send-invi
 ```
 
 **Expected Response** (200):
+
 ```json
 {
   "message": "Invitations processed",
@@ -188,6 +197,7 @@ curl -X POST http://localhost:5000/api/groups/60d5ec49c1234567890abcde/send-invi
 #### 1.4 Validation Tests
 
 **Test Invalid Group Type**:
+
 ```bash
 curl -X POST http://localhost:5000/api/groups \
   -H "Content-Type: application/json" \
@@ -200,6 +210,7 @@ curl -X POST http://localhost:5000/api/groups \
 ```
 
 **Expected Response** (400):
+
 ```json
 {
   "message": "Invalid group type. Valid types: savings, investment, community, welfare"
@@ -207,6 +218,7 @@ curl -X POST http://localhost:5000/api/groups \
 ```
 
 **Test Non-Admin User**:
+
 ```bash
 # Login as regular user
 curl -X POST http://localhost:5000/api/auth/login \
@@ -228,6 +240,7 @@ curl -X POST http://localhost:5000/api/groups \
 ```
 
 **Expected Response** (403):
+
 ```json
 {
   "message": "Only administrators can create groups"
@@ -252,6 +265,7 @@ npm run dev
 4. Verify component loads without errors
 
 **Console Check**:
+
 ```javascript
 // Should NOT see any errors
 // Check in DevTools > Console
@@ -260,12 +274,14 @@ npm run dev
 #### 2.3 Test Step 1: Group Information
 
 **Valid Input**:
+
 - Group Name: "Test Savings Group" ✓
 - Group Type: "savings" ✓
 - Description: "A test group for validation" ✓
 - Click "Next" → Should proceed to Step 2
 
 **Invalid Inputs** (each should show error):
+
 - Empty name → "Please enter a group name"
 - Name < 3 chars ("ab") → "Group name must be at least 3 characters"
 - Description > 500 chars → "Description must be less than 500 characters"
@@ -273,6 +289,7 @@ npm run dev
 #### 2.4 Test Step 2: Members Management
 
 **CSV Upload Test**:
+
 1. Create test file `members.csv`:
    ```
    john@example.com,treasurer
@@ -284,17 +301,20 @@ npm run dev
 4. Verify members appear in list
 
 **CSV Validation Tests**:
+
 - Invalid email format: "invalid-email" → Error shown
 - Invalid role: "invalid_role" → Error with valid roles listed
 - Duplicate email: "john@example.com" twice → Error shown
 
 **Manual Entry Test**:
+
 1. Add member: "new@example.com" role "treasurer"
 2. Add another: "another@example.com" role "member"
 3. Remove one with trash button
 4. Verify "2 valid member(s) ready" shown
 
 **Error Handling**:
+
 - No members → Error when clicking Next
 - Invalid emails → Error when clicking Next
 - Duplicates → Error showing duplicates
@@ -304,11 +324,9 @@ npm run dev
 1. Verify group details displayed:
    - Name, type, description
    - Total members count
-   
 2. Verify members grid shows:
    - Email address
    - Role badge
-   
 3. Verify role distribution stats
 
 #### 2.6 Test Step 4: Confirmation & Progress
@@ -357,14 +375,16 @@ npm run dev
    - Redirected to group details page
 
 7. **Verify in Database**
+
    ```bash
    # Connect to MongoDB
    mongo
    > use society-savings
    > db.groups.findOne({ name: "Integration Test Group" })
    ```
-   
+
    Should show:
+
    ```javascript
    {
      _id: ObjectId("..."),
@@ -381,6 +401,7 @@ npm run dev
 #### 3.2 Cross-Browser Testing
 
 Test in all supported browsers:
+
 - [ ] Chrome/Chromium (latest)
 - [ ] Firefox (latest)
 - [ ] Safari (if on macOS)
@@ -389,11 +410,13 @@ Test in all supported browsers:
 #### 3.3 Responsive Design Testing
 
 Test on different screen sizes:
+
 - [ ] Desktop (1920x1080)
 - [ ] Tablet (768x1024)
 - [ ] Mobile (375x667)
 
 Check for:
+
 - Button alignment
 - Form field width
 - Member card layout
@@ -472,41 +495,41 @@ time curl -X POST http://localhost:5000/api/groups \
 
 ### Network Errors
 
-| Scenario | How to Test | Expected Behavior |
-|----------|------------|-------------------|
-| API timeout | Mock slow response in DevTools | Loading spinner, then error message |
-| Network disconnect | Disable network in DevTools | Error notification, save to queue |
-| Invalid token | Delete/expire JWT | Redirect to login |
-| CORS error | Call from different domain | Browser blocks, console error |
+| Scenario           | How to Test                    | Expected Behavior                   |
+| ------------------ | ------------------------------ | ----------------------------------- |
+| API timeout        | Mock slow response in DevTools | Loading spinner, then error message |
+| Network disconnect | Disable network in DevTools    | Error notification, save to queue   |
+| Invalid token      | Delete/expire JWT              | Redirect to login                   |
+| CORS error         | Call from different domain     | Browser blocks, console error       |
 
 ### Data Errors
 
-| Scenario | How to Test | Expected Behavior |
-|----------|------------|-------------------|
-| Duplicate group name | Create two groups with same name | Backend returns error |
-| Missing required field | Omit "name" in request | 400 Bad Request |
-| Invalid member role | Send "admin" as role | Error: invalid role enum |
-| Malformed email | Send "notanemail" | Row error in CSV validation |
+| Scenario               | How to Test                      | Expected Behavior           |
+| ---------------------- | -------------------------------- | --------------------------- |
+| Duplicate group name   | Create two groups with same name | Backend returns error       |
+| Missing required field | Omit "name" in request           | 400 Bad Request             |
+| Invalid member role    | Send "admin" as role             | Error: invalid role enum    |
+| Malformed email        | Send "notanemail"                | Row error in CSV validation |
 
 ### Database Errors
 
-| Scenario | How to Test | Expected Behavior |
-|----------|------------|-------------------|
-| DB connection fails | Stop MongoDB | 500 error with fallback message |
-| Write conflict | Simultaneous group creation | One succeeds, one fails with error |
-| User not found | Use non-existent userId | 400 or 404 error |
+| Scenario            | How to Test                 | Expected Behavior                  |
+| ------------------- | --------------------------- | ---------------------------------- |
+| DB connection fails | Stop MongoDB                | 500 error with fallback message    |
+| Write conflict      | Simultaneous group creation | One succeeds, one fails with error |
+| User not found      | Use non-existent userId     | 400 or 404 error                   |
 
 ## Performance Benchmarks
 
 ### Target Metrics
 
-| Metric | Target | Acceptable |
-|--------|--------|-----------|
-| Component load | < 500ms | < 1000ms |
-| Form submission | < 2s | < 5s |
-| CSV parsing (100 rows) | < 500ms | < 1000ms |
-| Batch invitation (5 members) | < 1s | < 3s |
-| Page transition | < 300ms | < 500ms |
+| Metric                       | Target  | Acceptable |
+| ---------------------------- | ------- | ---------- |
+| Component load               | < 500ms | < 1000ms   |
+| Form submission              | < 2s    | < 5s       |
+| CSV parsing (100 rows)       | < 500ms | < 1000ms   |
+| Batch invitation (5 members) | < 1s    | < 3s       |
+| Page transition              | < 300ms | < 500ms    |
 
 ### Measurement Commands
 
@@ -525,12 +548,14 @@ ab -n 100 -c 10 http://localhost:5000/api/groups  # ApacheBench
 ### Enable Debug Logging
 
 **Frontend** (in CreateGroupV2.jsx):
+
 ```javascript
 const DEBUG = process.env.NODE_ENV === 'development';
 if (DEBUG) console.log('CreateGroupV2:', { step, groupName });
 ```
 
 **Backend** (in groupController.js):
+
 ```javascript
 logger.debug('Creating group:', { name, type, memberCount });
 logger.info('Batch invitations sent:', { groupId, batch, count });
@@ -560,6 +585,7 @@ DevTools > Network tab > Filter: XHR/Fetch
 **Environment**: [Dev/Staging/Prod]
 
 ### Summary
+
 - Total Tests: XX
 - Passed: XX
 - Failed: XX
@@ -568,28 +594,31 @@ DevTools > Network tab > Filter: XHR/Fetch
 ### Test Results
 
 #### Phase 1: Backend API Testing
+
 - [x] Group creation successful
 - [x] Group creation RBAC enforced
 - [x] Batch invitations sent
 - [ ] [Issue] Timeout on large batch
 
 #### Phase 2: Frontend Component Testing
+
 - [x] Component renders without errors
 - [x] CSV upload works
 - [ ] [Issue] Responsive layout broken on mobile
 
 #### Phase 3: Integration Testing
+
 - [x] Full flow successful
 - [x] Database records correct
 - [ ] [Issue] Auto-redirect doesn't work
 
 ### Issues Found
 
-| ID | Severity | Description | Status |
-|----|---------:|-------------|--------|
-| 001 | High | CSV upload fails with 500+ rows | Open |
-| 002 | Medium | Mobile layout misaligned | Open |
-| 003 | Low | Typo in error message | Open |
+| ID  | Severity | Description                     | Status |
+| --- | -------: | ------------------------------- | ------ |
+| 001 |     High | CSV upload fails with 500+ rows | Open   |
+| 002 |   Medium | Mobile layout misaligned        | Open   |
+| 003 |      Low | Typo in error message           | Open   |
 
 ### Recommendations
 
@@ -603,8 +632,8 @@ DevTools > Network tab > Filter: XHR/Fetch
 - [ ] No blocking issues
 - [ ] Ready for release
 
-**Approved by**: _________________
-**Date**: _________________
+**Approved by**: ********\_********
+**Date**: ********\_********
 ```
 
 ## Deployment Checklist

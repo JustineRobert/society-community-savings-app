@@ -1,6 +1,6 @@
 // Migration: Add Payment, Chat, and Auth Token collections
 module.exports = {
-  up: async function({ mongoose }) {
+  up: async function ({ mongoose }) {
     const PaymentIntent = require('../models/PaymentIntent');
     const Transaction = require('../models/Transaction');
     const EmailVerificationToken = require('../models/EmailVerificationToken');
@@ -12,13 +12,19 @@ module.exports = {
     // Create collections and indexes
     await PaymentIntent.collection.createIndex({ user: 1, createdAt: -1 });
     await PaymentIntent.collection.createIndex({ status: 1 });
-    await PaymentIntent.collection.createIndex({ idempotencyKey: 1 }, { unique: true, sparse: true });
+    await PaymentIntent.collection.createIndex(
+      { idempotencyKey: 1 },
+      { unique: true, sparse: true }
+    );
 
     await Transaction.collection.createIndex({ user: 1, createdAt: -1 });
     await Transaction.collection.createIndex({ type: 1, status: 1 });
 
     await EmailVerificationToken.collection.createIndex({ user: 1 });
-    await EmailVerificationToken.collection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 86400 });
+    await EmailVerificationToken.collection.createIndex(
+      { expiresAt: 1 },
+      { expireAfterSeconds: 86400 }
+    );
 
     await PasswordResetToken.collection.createIndex({ user: 1 });
     await PasswordResetToken.collection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 3600 });
@@ -36,7 +42,7 @@ module.exports = {
     console.log('Migration: Payment, Chat, Auth and Referral collections created with indexes');
   },
 
-  down: async function({ mongoose }) {
+  down: async function ({ mongoose }) {
     // Drop collections if needed
     await mongoose.connection.db.dropCollection('paymentintents').catch(() => {});
     await mongoose.connection.db.dropCollection('transactions').catch(() => {});
@@ -46,5 +52,5 @@ module.exports = {
     await mongoose.connection.db.dropCollection('chatmessages').catch(() => {});
     await mongoose.connection.db.dropCollection('referrals').catch(() => {});
     console.log('Migration: Collections rolled back');
-  }
+  },
 };

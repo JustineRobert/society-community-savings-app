@@ -1,9 +1,10 @@
 # 🚀 Quick Start - Vite Frontend
 
 ## Current Status
+
 ✅ **App Running**: http://localhost:3002  
 ✅ **No Errors**: Vite dev server healthy  
-✅ **All Components**: Working correctly  
+✅ **All Components**: Working correctly
 
 ## Start Development
 
@@ -36,34 +37,42 @@ npm run test:ui
 ## What to Know
 
 ### ✅ Hot Module Replacement (HMR)
+
 - Edit any component and see changes instantly
 - No page reload needed
 - App state preserved during updates
 
 ### ✅ File Extensions
+
 - React components: `.jsx`
 - Logic/utils: `.js`
 - Tests: `.test.js` or `.test.jsx`
 
 ### ✅ Environment Variables
+
 Use `VITE_` prefix (not `REACT_APP_`):
+
 ```env
 VITE_API_URL=http://localhost:5000
 VITE_APP_NAME=Community Savings
 ```
 
 Access in code:
+
 ```javascript
 const apiUrl = import.meta.env.VITE_API_URL;
 ```
 
 ### ✅ Public Assets
+
 Place static files in `public/` directory:
+
 - Images: `public/images/Designer.png`
 - Fonts: `public/fonts/`
 - Icons: `public/icons/`
 
 Access in code:
+
 ```html
 <img src="/images/Designer.png" alt="Logo" />
 ```
@@ -78,7 +87,9 @@ Access in code:
 ## Common Issues & Solutions
 
 ### Issue: Page doesn't load
-**Solution**: 
+
+**Solution**:
+
 ```bash
 # Kill server: Ctrl+C
 # Restart:
@@ -87,19 +98,25 @@ npm start
 ```
 
 ### Issue: HMR not updating
-**Solution**: 
+
+**Solution**:
+
 - Ensure file is `.jsx` (not `.js` if it has JSX)
 - Restart dev server
 - Clear browser cache
 
 ### Issue: API calls failing
-**Solution**: 
+
+**Solution**:
+
 - Start backend: `npm start` (in backend directory)
 - Verify it runs on localhost:5000
 - Check VITE_API_URL in .env
 
 ### Issue: Import not found
+
 **Solution**:
+
 - Check file extension (.jsx for React components)
 - Verify import path matches file location
 - Use path alias: `import { Foo } from '@/components/Foo'`
@@ -131,11 +148,13 @@ community-savings-app-frontend/
 ## Development Workflow
 
 1. **Start server**
+
    ```bash
    npm start
    ```
 
 2. **Open browser**
+
    ```
    http://localhost:3002
    ```
@@ -159,12 +178,14 @@ npm run build
 ```
 
 Creates `dist/` folder with:
+
 - Optimized HTML/CSS/JS
 - Code splitting (vendor, redux, app)
 - Tree-shaking & minification
 - ~40% smaller than dev version
 
 Deploy `dist/` folder to:
+
 - Vercel
 - Netlify
 - AWS S3

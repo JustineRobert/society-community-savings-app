@@ -19,63 +19,72 @@ const migration = {
       const db = mongoose.connection;
 
       // Ensure User collection has proper indices
-      await db.collection('users').createIndexes([
-        { key: { email: 1 }, unique: true },
-        { key: { email: 1, isActive: 1 } },
-        { key: { isVerified: 1, createdAt: -1 } },
-        { key: { role: 1 } },
-        { key: { referralCode: 1 }, unique: true, sparse: true },
-        { key: { resetPasswordToken: 1 }, sparse: true },
-        { key: { verificationToken: 1 }, sparse: true },
-      ]);
+      await db
+        .collection('users')
+        .createIndexes([
+          { key: { email: 1 }, unique: true },
+          { key: { email: 1, isActive: 1 } },
+          { key: { isVerified: 1, createdAt: -1 } },
+          { key: { role: 1 } },
+          { key: { referralCode: 1 }, unique: true, sparse: true },
+          { key: { resetPasswordToken: 1 }, sparse: true },
+          { key: { verificationToken: 1 }, sparse: true },
+        ]);
 
       logger.info('[Migration] 20240101_000000 - User indices created');
 
       // Ensure RefreshToken collection
-      await db.collection('refreshtokens').createIndexes([
-        { key: { userId: 1 } },
-        { key: { tokenHash: 1 }, unique: true },
-        { key: { expiresAt: 1 }, expireAfterSeconds: 0 },
-        { key: { revokedAt: 1 } },
-      ]);
+      await db
+        .collection('refreshtokens')
+        .createIndexes([
+          { key: { userId: 1 } },
+          { key: { tokenHash: 1 }, unique: true },
+          { key: { expiresAt: 1 }, expireAfterSeconds: 0 },
+          { key: { revokedAt: 1 } },
+        ]);
 
       logger.info('[Migration] 20240101_000000 - RefreshToken indices created');
 
       // Ensure Group collection
-      await db.collection('groups').createIndexes([
-        { key: { creator: 1 } },
-        { key: { members: 1 } },
-        { key: { status: 1 } },
-        { key: { createdAt: -1 } },
-      ]);
+      await db
+        .collection('groups')
+        .createIndexes([
+          { key: { creator: 1 } },
+          { key: { members: 1 } },
+          { key: { status: 1 } },
+          { key: { createdAt: -1 } },
+        ]);
 
       logger.info('[Migration] 20240101_000000 - Group indices created');
 
       // Ensure Contribution collection
-      await db.collection('contributions').createIndexes([
-        { key: { user: 1, group: 1 } },
-        { key: { group: 1 } },
-        { key: { status: 1 } },
-        { key: { createdAt: -1 } },
-      ]);
+      await db
+        .collection('contributions')
+        .createIndexes([
+          { key: { user: 1, group: 1 } },
+          { key: { group: 1 } },
+          { key: { status: 1 } },
+          { key: { createdAt: -1 } },
+        ]);
 
       logger.info('[Migration] 20240101_000000 - Contribution indices created');
 
       // Ensure Loan collection
-      await db.collection('loans').createIndexes([
-        { key: { user: 1, group: 1 } },
-        { key: { group: 1 } },
-        { key: { status: 1 } },
-        { key: { createdAt: -1 } },
-      ]);
+      await db
+        .collection('loans')
+        .createIndexes([
+          { key: { user: 1, group: 1 } },
+          { key: { group: 1 } },
+          { key: { status: 1 } },
+          { key: { createdAt: -1 } },
+        ]);
 
       logger.info('[Migration] 20240101_000000 - Loan indices created');
 
       // Ensure Chat collection
-      await db.collection('chats').createIndexes([
-        { key: { group: 1, createdAt: -1 } },
-        { key: { sender: 1 } },
-      ]);
+      await db
+        .collection('chats')
+        .createIndexes([{ key: { group: 1, createdAt: -1 } }, { key: { sender: 1 } }]);
 
       logger.info('[Migration] 20240101_000000 - Chat indices created');
 

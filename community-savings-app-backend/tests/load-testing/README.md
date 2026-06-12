@@ -1,6 +1,7 @@
 # Load Testing with Artillery
 
 ## Overview
+
 This directory contains Artillery configuration for performance and load testing the Community Savings App API.
 
 ## Installation
@@ -15,16 +16,19 @@ npm install --save-dev artillery
 ### Running Load Tests
 
 #### Basic Test
+
 ```bash
 artillery run artillery-config.js --target http://localhost:5000
 ```
 
 #### Against Production
+
 ```bash
 artillery run artillery-config.js --target https://api.production.com
 ```
 
 #### With Custom Output
+
 ```bash
 artillery run artillery-config.js --target http://localhost:5000 -o results.json
 ```
@@ -104,15 +108,15 @@ All done. Summary report:
 
 ## Performance Targets
 
-| Endpoint | Target Response Time | Target RPS |
-|----------|---------------------|-----------|
-| Authentication | < 500ms | 100 |
-| Group Operations | < 300ms | 200 |
-| Contributions | < 400ms | 150 |
-| Payments | < 1000ms | 50 |
-| Loans | < 400ms | 150 |
-| Chat | < 300ms | 200 |
-| Analytics | < 2000ms | 50 |
+| Endpoint         | Target Response Time | Target RPS |
+| ---------------- | -------------------- | ---------- |
+| Authentication   | < 500ms              | 100        |
+| Group Operations | < 300ms              | 200        |
+| Contributions    | < 400ms              | 150        |
+| Payments         | < 1000ms             | 50         |
+| Loans            | < 400ms              | 150        |
+| Chat             | < 300ms              | 200        |
+| Analytics        | < 2000ms             | 50         |
 
 ## Best Practices
 
@@ -153,18 +157,21 @@ ARTILLERY_LOG_LEVEL=info
 ## Troubleshooting
 
 ### High Error Rates
+
 - Check server logs for errors
 - Verify database connectivity
 - Check rate limiting settings
 - Verify authentication token generation
 
 ### Slow Response Times
+
 - Check server resources (CPU, memory)
 - Analyze database queries
 - Check network latency
 - Review load balancer configuration
 
 ### Connection Timeouts
+
 - Increase connection timeout
 - Check firewall rules
 - Verify server availability
@@ -175,6 +182,7 @@ ARTILLERY_LOG_LEVEL=info
 ### Custom Hooks
 
 Edit `artillery-processor.js` to add:
+
 - Pre-request modifications
 - Response validation
 - Custom metrics
@@ -183,6 +191,7 @@ Edit `artillery-processor.js` to add:
 ### Using Plugins
 
 Add to config:
+
 ```javascript
 plugins: {
   expect: {},

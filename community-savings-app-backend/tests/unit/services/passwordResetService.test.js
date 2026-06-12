@@ -22,7 +22,7 @@ describe('Password Reset Service', () => {
       _id: '123456789',
       email: 'test@example.com',
       name: 'Test User',
-      password: 'hashed_password'
+      password: 'hashed_password',
     };
   });
 
@@ -34,7 +34,7 @@ describe('Password Reset Service', () => {
         _id: 'reset_token_123',
         user: mockUser._id,
         tokenHash: 'hashed_token',
-        expiresAt: new Date(Date.now() + 60 * 60 * 1000)
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
       });
 
       const result = await service.createResetToken(mockUser);
@@ -55,20 +55,16 @@ describe('Password Reset Service', () => {
         used: false,
         attempts: 0,
         expiresAt: new Date(Date.now() + 60 * 60 * 1000),
-        save: jest.fn().mockResolvedValue(true)
+        save: jest.fn().mockResolvedValue(true),
       };
 
       PasswordResetToken.findOne.mockResolvedValue(tokenRecord);
       User.findByIdAndUpdate.mockResolvedValue({
         ...mockUser,
-        password: 'new_hashed_password'
+        password: 'new_hashed_password',
       });
 
-      const result = await service.resetPassword(
-        mockUser._id,
-        'valid_token',
-        'NewPassword123!@#'
-      );
+      const result = await service.resetPassword(mockUser._id, 'valid_token', 'NewPassword123!@#');
 
       expect(result.success).toBe(true);
       expect(tokenRecord.used).toBe(true);
@@ -78,9 +74,7 @@ describe('Password Reset Service', () => {
     it('should reject weak passwords', async () => {
       const service = new passwordResetService.constructor();
 
-      await expect(
-        service.resetPassword(mockUser._id, 'token', 'weak')
-      ).rejects.toThrow();
+      await expect(service.resetPassword(mockUser._id, 'token', 'weak')).rejects.toThrow();
     });
 
     it('should throw error for invalid token', async () => {
@@ -97,7 +91,7 @@ describe('Password Reset Service', () => {
       const service = new passwordResetService.constructor();
 
       const expiredToken = {
-        expiresAt: new Date(Date.now() - 1000) // Expired
+        expiresAt: new Date(Date.now() - 1000), // Expired
       };
 
       PasswordResetToken.findOne.mockResolvedValue(expiredToken);

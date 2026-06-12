@@ -25,9 +25,9 @@ describe('Loan Workflow Service', () => {
     toObject: jest.fn().mockReturnValue({
       _id: 'loan_123',
       borrower: 'borrower_123',
-      status: 'pending_application'
+      status: 'pending_application',
     }),
-    save: jest.fn().mockResolvedValue(true)
+    save: jest.fn().mockResolvedValue(true),
   };
 
   beforeEach(() => {
@@ -46,7 +46,7 @@ describe('Loan Workflow Service', () => {
         amount: 10000,
         term: 12,
         description: 'Loan for business',
-        purpose: 'business'
+        purpose: 'business',
       });
 
       expect(result._id).toBe('loan_123');
@@ -59,7 +59,7 @@ describe('Loan Workflow Service', () => {
       await expect(
         service.createLoanApplication({
           borrowerId: 'borrower_123',
-          amount: -1000
+          amount: -1000,
         })
       ).rejects.toThrow('Invalid loan parameters');
     });
@@ -116,7 +116,7 @@ describe('Loan Workflow Service', () => {
       LoanRepaymentSchedule.create.mockResolvedValue({
         _id: 'schedule_123',
         loan: mockLoan._id,
-        installments: []
+        installments: [],
       });
 
       const result = await service.generateRepaymentSchedule(mockLoan);

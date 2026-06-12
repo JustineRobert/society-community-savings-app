@@ -420,11 +420,7 @@ describe('Chat Integration Tests', () => {
       testConversationId = res.body.data._id;
 
       // Send multiple messages
-      const messages = [
-        'Hello, how are you?',
-        'I am doing great!',
-        'Let me search for hello',
-      ];
+      const messages = ['Hello, how are you?', 'I am doing great!', 'Let me search for hello'];
 
       for (const msg of messages) {
         await request(app)

@@ -57,16 +57,15 @@ function FAQ() {
 
     // Filter by category
     if (selectedCategory !== 'all') {
-      filtered = filtered.filter(faq => faq.category === selectedCategory);
+      filtered = filtered.filter((faq) => faq.category === selectedCategory);
     }
 
     // Filter by search query
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(
-        faq =>
-          faq.question.toLowerCase().includes(query) ||
-          faq.answer.toLowerCase().includes(query)
+        (faq) =>
+          faq.question.toLowerCase().includes(query) || faq.answer.toLowerCase().includes(query)
       );
     }
 
@@ -83,7 +82,7 @@ function FAQ() {
 
   const handleToggleFaq = async (faqId) => {
     setExpandedFaqId(expandedFaqId === faqId ? null : faqId);
-    
+
     if (expandedFaqId !== faqId) {
       try {
         await faqService.incrementFAQViews(faqId);
@@ -102,15 +101,17 @@ function FAQ() {
       }
 
       // Update local state
-      setFaqs(faqs.map(faq => 
-        faq.id === faqId 
-          ? { 
-              ...faq, 
-              helpful_count: (faq.helpful_count || 0) + (helpful ? 1 : 0),
-              unhelpful_count: (faq.unhelpful_count || 0) + (!helpful ? 1 : 0)
-            }
-          : faq
-      ));
+      setFaqs(
+        faqs.map((faq) =>
+          faq.id === faqId
+            ? {
+                ...faq,
+                helpful_count: (faq.helpful_count || 0) + (helpful ? 1 : 0),
+                unhelpful_count: (faq.unhelpful_count || 0) + (!helpful ? 1 : 0),
+              }
+            : faq
+        )
+      );
     } catch (err) {
       console.error('Error marking FAQ:', err);
     }
@@ -200,7 +201,7 @@ function FAQ() {
           >
             All
           </button>
-          {categories.map(category => (
+          {categories.map((category) => (
             <button
               key={category.id || category.name}
               className={`faq-category-btn ${selectedCategory === (category.name || category) ? 'active' : ''}`}
@@ -214,11 +215,8 @@ function FAQ() {
         {/* FAQ Items */}
         {filteredFaqs.length > 0 ? (
           <ul className="faq-items">
-            {filteredFaqs.map(faq => (
-              <li 
-                key={faq.id} 
-                className={`faq-item ${expandedFaqId === faq.id ? 'open' : ''}`}
-              >
+            {filteredFaqs.map((faq) => (
+              <li key={faq.id} className={`faq-item ${expandedFaqId === faq.id ? 'open' : ''}`}>
                 <button
                   className="faq-question"
                   onClick={() => handleToggleFaq(faq.id)}
@@ -254,13 +252,8 @@ function FAQ() {
           <div className="faq-no-results">
             <div className="faq-no-results-icon">🔍</div>
             <h3>No FAQs Found</h3>
-            <p>
-              {searchQuery ? 'Try a different search term' : 'No FAQs in this category'}
-            </p>
-            <button 
-              className="faq-no-results-btn"
-              onClick={handleClearSearch}
-            >
+            <p>{searchQuery ? 'Try a different search term' : 'No FAQs in this category'}</p>
+            <button className="faq-no-results-btn" onClick={handleClearSearch}>
               Clear Filters
             </button>
           </div>

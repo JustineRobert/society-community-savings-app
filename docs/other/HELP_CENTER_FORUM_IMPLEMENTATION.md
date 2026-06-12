@@ -26,6 +26,7 @@ This document provides a comprehensive guide for the Help Center, FAQ, and Commu
 **Purpose:** Provides comprehensive help documentation with search and categorization.
 
 **Features:**
+
 - Search articles by keyword
 - Filter by category
 - View featured articles
@@ -35,9 +36,11 @@ This document provides a comprehensive guide for the Help Center, FAQ, and Commu
 - Loading states and error handling
 
 **Key Props:**
+
 - None (component manages its own state)
 
 **Example Usage:**
+
 ```jsx
 import HelpCenter from './components/HelpCenter';
 
@@ -53,6 +56,7 @@ function App() {
 **Purpose:** Displays frequently asked questions with accordion-style interface.
 
 **Features:**
+
 - Accordion-based question/answer display
 - Search functionality
 - Category filtering
@@ -62,9 +66,11 @@ function App() {
 - Keyboard navigation support
 
 **Key Props:**
+
 - None (component manages its own state)
 
 **Example Usage:**
+
 ```jsx
 import FAQ from './components/FAQ';
 
@@ -80,6 +86,7 @@ function App() {
 **Purpose:** Community discussion forum for peer-to-peer support.
 
 **Features:**
+
 - Create and discuss topics
 - Reply to topics
 - Category filtering
@@ -93,9 +100,11 @@ function App() {
 - Recent and popular sidebar
 
 **Key Props:**
+
 - None (component manages its own state)
 
 **Example Usage:**
+
 ```jsx
 import Forum from './components/Forum';
 
@@ -249,6 +258,7 @@ In your main CSS file or component:
 ### Help Service (helpService.js)
 
 #### getArticles(page, limit)
+
 Fetch all help articles with pagination.
 
 ```javascript
@@ -258,12 +268,14 @@ const articles = await helpService.getArticles(1, 10);
 ```
 
 **Parameters:**
+
 - `page` (number): Page number (default: 1)
 - `limit` (number): Items per page (default: 10)
 
 **Returns:** Array of article objects
 
 #### searchArticles(query)
+
 Search articles by keyword.
 
 ```javascript
@@ -271,11 +283,13 @@ const results = await helpService.searchArticles('payment');
 ```
 
 **Parameters:**
+
 - `query` (string): Search query
 
 **Returns:** Array of matching article objects
 
 #### getArticlesByCategory(category, page, limit)
+
 Fetch articles by category.
 
 ```javascript
@@ -283,6 +297,7 @@ const articles = await helpService.getArticlesByCategory('account', 1, 10);
 ```
 
 **Parameters:**
+
 - `category` (string): Category name
 - `page` (number): Page number
 - `limit` (number): Items per page
@@ -290,6 +305,7 @@ const articles = await helpService.getArticlesByCategory('account', 1, 10);
 **Returns:** Array of article objects
 
 #### markArticleHelpful(articleId)
+
 Mark an article as helpful.
 
 ```javascript
@@ -297,6 +313,7 @@ await helpService.markArticleHelpful(1);
 ```
 
 **Parameters:**
+
 - `articleId` (number): Article ID
 
 **Returns:** Success response
@@ -304,6 +321,7 @@ await helpService.markArticleHelpful(1);
 ### FAQ Service (faqService.js)
 
 #### getFAQItems(page, limit)
+
 Fetch all FAQ items with pagination.
 
 ```javascript
@@ -313,12 +331,14 @@ const faqs = await faqService.getFAQItems(1, 20);
 ```
 
 **Parameters:**
+
 - `page` (number): Page number
 - `limit` (number): Items per page
 
 **Returns:** Array of FAQ objects
 
 #### searchFAQ(query)
+
 Search FAQ items by keyword.
 
 ```javascript
@@ -326,11 +346,13 @@ const results = await faqService.searchFAQ('password');
 ```
 
 **Parameters:**
+
 - `query` (string): Search query
 
 **Returns:** Array of matching FAQ objects
 
 #### getFAQsByCategory(category, page, limit)
+
 Fetch FAQ items by category.
 
 ```javascript
@@ -338,6 +360,7 @@ const faqs = await faqService.getFAQsByCategory('account', 1, 20);
 ```
 
 **Parameters:**
+
 - `category` (string): Category name
 - `page` (number): Page number
 - `limit` (number): Items per page
@@ -345,6 +368,7 @@ const faqs = await faqService.getFAQsByCategory('account', 1, 20);
 **Returns:** Array of FAQ objects
 
 #### markFAQHelpful(faqId)
+
 Mark an FAQ as helpful.
 
 ```javascript
@@ -352,6 +376,7 @@ await faqService.markFAQHelpful(1);
 ```
 
 **Parameters:**
+
 - `faqId` (number): FAQ ID
 
 **Returns:** Success response
@@ -359,6 +384,7 @@ await faqService.markFAQHelpful(1);
 ### Forum Service (forumService.js)
 
 #### getTopics(options)
+
 Fetch forum topics with various filters.
 
 ```javascript
@@ -369,11 +395,12 @@ const topics = await forumService.getTopics({
   limit: 20,
   sort: 'newest',
   category: 'general',
-  filter: 'all'
+  filter: 'all',
 });
 ```
 
 **Parameters:**
+
 - `options` (object):
   - `page` (number): Page number
   - `limit` (number): Items per page
@@ -384,6 +411,7 @@ const topics = await forumService.getTopics({
 **Returns:** Array of topic objects
 
 #### createTopic(topicData)
+
 Create a new forum topic.
 
 ```javascript
@@ -391,11 +419,12 @@ const topic = await forumService.createTopic({
   title: 'How to transfer money?',
   content: 'I want to know...',
   category: 'general',
-  tags: ['transfer', 'help']
+  tags: ['transfer', 'help'],
 });
 ```
 
 **Parameters:**
+
 - `topicData` (object):
   - `title` (string): Topic title
   - `content` (string): Topic content
@@ -405,6 +434,7 @@ const topic = await forumService.createTopic({
 **Returns:** Created topic object
 
 #### getTopic(topicId)
+
 Fetch specific topic with replies.
 
 ```javascript
@@ -412,20 +442,23 @@ const topic = await forumService.getTopic(1);
 ```
 
 **Parameters:**
+
 - `topicId` (number): Topic ID
 
 **Returns:** Topic object with replies
 
 #### createReply(topicId, replyData)
+
 Create a reply to a topic.
 
 ```javascript
 const reply = await forumService.createReply(1, {
-  content: 'Here is the solution...'
+  content: 'Here is the solution...',
 });
 ```
 
 **Parameters:**
+
 - `topicId` (number): Topic ID
 - `replyData` (object):
   - `content` (string): Reply content
@@ -433,6 +466,7 @@ const reply = await forumService.createReply(1, {
 **Returns:** Created reply object
 
 #### getTopicReplies(topicId, page, limit)
+
 Fetch replies for a topic.
 
 ```javascript
@@ -440,6 +474,7 @@ const replies = await forumService.getTopicReplies(1, 1, 20);
 ```
 
 **Parameters:**
+
 - `topicId` (number): Topic ID
 - `page` (number): Page number
 - `limit` (number): Items per page
@@ -447,6 +482,7 @@ const replies = await forumService.getTopicReplies(1, 1, 20);
 **Returns:** Array of reply objects
 
 #### markSolution(topicId, replyId)
+
 Mark a reply as the solution.
 
 ```javascript
@@ -454,12 +490,14 @@ await forumService.markSolution(1, 5);
 ```
 
 **Parameters:**
+
 - `topicId` (number): Topic ID
 - `replyId` (number): Reply ID
 
 **Returns:** Success response
 
 #### getForumStats()
+
 Fetch forum statistics.
 
 ```javascript
@@ -507,6 +545,7 @@ Database
 ### State Management
 
 Each component manages its own state for:
+
 - Loading states
 - Filtered/searched data
 - Current view (list vs. detail)
@@ -608,9 +647,15 @@ try {
 Show appropriate feedback to users:
 
 ```jsx
-{loading && <LoadingSpinner />}
-{error && <ErrorMessage error={error} onRetry={handleRetry} />}
-{!loading && !error && <Content />}
+{
+  loading && <LoadingSpinner />;
+}
+{
+  error && <ErrorMessage error={error} onRetry={handleRetry} />;
+}
+{
+  !loading && !error && <Content />;
+}
 ```
 
 ### 5. User Experience
@@ -631,6 +676,7 @@ Show appropriate feedback to users:
 **Problem:** Components show error message
 
 **Solution:**
+
 - Check `REACT_APP_API_URL` environment variable
 - Verify backend server is running
 - Check network tab in browser DevTools
@@ -641,6 +687,7 @@ Show appropriate feedback to users:
 **Problem:** Components show without styling
 
 **Solution:**
+
 - Import CSS files in the correct order
 - Check for CSS file path errors
 - Clear browser cache (Ctrl+Shift+Delete)
@@ -651,6 +698,7 @@ Show appropriate feedback to users:
 **Problem:** Empty content appears
 
 **Solution:**
+
 - Check API endpoints are correct
 - Verify backend is returning data
 - Check browser console for errors
@@ -661,6 +709,7 @@ Show appropriate feedback to users:
 **Problem:** Search query doesn't filter results
 
 **Solution:**
+
 - Verify search API endpoint is working
 - Check search query parameters
 - Clear session state
@@ -703,6 +752,7 @@ npm test
 ### Test Coverage
 
 Test files included for:
+
 - Component rendering
 - User interactions
 - API calls
@@ -752,6 +802,7 @@ npm run build
 ## Support & Contributing
 
 For issues or feature requests:
+
 1. Check existing issues
 2. Provide detailed description
 3. Include error messages and screenshots
@@ -768,6 +819,7 @@ For issues or feature requests:
 ## Changelog
 
 ### Version 1.0.0 (Current)
+
 - Initial implementation of Help Center, FAQ, and Forum components
 - Full CRUD operations for content management
 - User interaction tracking and feedback

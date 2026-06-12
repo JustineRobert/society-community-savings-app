@@ -3,18 +3,21 @@
 ## 🚀 Start All Services (Recommended)
 
 ### Windows
+
 ```cmd
 cd C:\Projects\TITech\community-savings-app-main
 start-docker-dev.bat
 ```
 
 ### macOS / Linux
+
 ```bash
 cd ~/Projects/TITech/community-savings-app-main
 bash start-docker-dev.sh
 ```
 
 This will start:
+
 - ✅ MongoDB
 - ✅ Redis (with exponential backoff)
 - ✅ Backend API
@@ -32,7 +35,7 @@ docker-compose ps
 # Expected output:
 # NAME              STATUS
 # mongodb           Up (healthy)
-# redis             Up (healthy)  
+# redis             Up (healthy)
 # backend           Up (healthy)
 # frontend          Up (healthy)
 ```
@@ -78,29 +81,32 @@ docker-compose down -v
 
 ## 📡 Access Your Services
 
-| Service | URL |
-|---------|-----|
-| Frontend | http://localhost:3000 |
-| Backend | http://localhost:5000 |
-| Prometheus | http://localhost:9090 |
-| Grafana | http://localhost:3001 (admin/admin) |
-| Redis Exporter | http://localhost:9121 |
+| Service        | URL                                 |
+| -------------- | ----------------------------------- |
+| Frontend       | http://localhost:3000               |
+| Backend        | http://localhost:5000               |
+| Prometheus     | http://localhost:9090               |
+| Grafana        | http://localhost:3001 (admin/admin) |
+| Redis Exporter | http://localhost:9121               |
 
 ---
 
 ## 🎯 What's Been Fixed
 
 ### ✅ Issue #1: Redis Error Spam
+
 **Before**: 50+ errors per second
 **After**: 2 errors per minute (throttled)
 **How**: Error logging is now throttled to once every 30 seconds
 
 ### ✅ Issue #2: Inefficient Reconnection
+
 **Before**: Constant immediate retry
 **After**: Exponential backoff (1s → 30s max)
 **How**: Intelligent retry strategy with jitter
 
 ### ✅ Issue #3: Manual Redis Setup
+
 **Before**: Had to install Redis manually
 **After**: Pre-configured Docker container
 **How**: Docker Compose handles everything
@@ -121,11 +127,11 @@ docker-compose down -v
 
 When Redis is unavailable:
 
-| Metric | Before | After | Improvement |
-|--------|--------|-------|-------------|
-| Log entries/min | ~3,000 | 2 | **1,500x less** |
-| CPU usage | High | Low | **~80% reduction** |
-| Network requests | Constant | Exponential | **~90% less** |
+| Metric           | Before   | After       | Improvement        |
+| ---------------- | -------- | ----------- | ------------------ |
+| Log entries/min  | ~3,000   | 2           | **1,500x less**    |
+| CPU usage        | High     | Low         | **~80% reduction** |
+| Network requests | Constant | Exponential | **~90% less**      |
 
 ---
 
@@ -143,6 +149,7 @@ When Redis is unavailable:
 See: [REDIS_CONFIGURATION_GUIDE.md](REDIS_CONFIGURATION_GUIDE.md)
 
 This guide contains:
+
 - Technical implementation details
 - Configuration options
 - Troubleshooting guide

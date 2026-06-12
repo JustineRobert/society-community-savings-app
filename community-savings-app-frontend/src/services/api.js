@@ -1,90 +1,187 @@
+/* global window */
 // services/api.js
 
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+import axios from 'axios';
+import { v4 as uuidv4 } from 'uuid';
 
-async function request(path, options = {}) {
-  const url = path.startsWith('http') ? path : `${API_BASE}${path.startsWith('/') ? '' : '/'}${path}`;
-  // Attach token header automatically when available
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-  const headers = Object.assign({}, options.headers || {});
-  if (token && !headers['x-auth-token'] && !headers['Authorization']) {
-    headers['x-auth-token'] = token;
+// =============================
+// ✅ BASE CONFIG
+// =============================
+const API_BASE =
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) ||
+  'https://api.titechcapital.com';
+
+// =============================
+// ✅ AXIOS INSTANCE
+// =============================
+const api = axios.create({
+  baseURL: API_BASE,
+  withCredentials: true,
+  timeout: 30000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// =============================
+// ✅ TENANT SUPPORT
+// =============================
+export const setTenant = (tenantId) => {
+  if (tenantId) {
+    api.defaults.headers['x-tenant-id'] = tenantId;
+  } else {
+    delete api.defaults.headers['x-tenant-id'];
   }
-
-  // prevent browser conditional GETs returning 304 by disabling cache for API calls
-  const opts = Object.assign({}, options, { headers, credentials: options.credentials || 'include', cache: 'no-store' });
-
-    // perform fetch, with optional retry on 304
-    let res = await fetch(url, opts);
-    // If we get a 304/204, try one forced-retry to get a fresh response
-    if ((res.status === 204 || res.status === 304) && !options._retried) {
-      try {
-        const forcedHeaders = Object.assign({}, headers, { 'Pragma': 'no-cache', 'Cache-Control': 'no-cache' });
-        const forcedOpts = Object.assign({}, opts, { headers: forcedHeaders, _retried: true });
-        res = await fetch(url, forcedOpts);
-      } catch (e) {
-        // ignore and fall through to original response handling
-      }
-  }
-
-  if (!res.ok) {
-    let errMsg = `Request failed: ${res.status}`;
-    try {
-      const errData = await res.json();
-      errMsg = errData.message || errMsg;
-    } catch (e) {
-      // ignore JSON parse errors
-    }
-    const error = new Error(errMsg);
-    error.status = res.status;
-    // If unauthorized, redirect to login page to re-authenticate
-    if (res.status === 401 && typeof window !== 'undefined') {
-      try {
-        // clear token to avoid redirect loops
-        localStorage.removeItem('token');
-      } catch (e) {}
-      window.location.href = '/login';
-    }
-    throw error;
-  }
-  // try to parse json, otherwise return text
-  const text = await res.text();
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text;
-  }
-}
-
-export const login = async (credentials) =>
-  request('/api/auth/login', {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(credentials),
-  });
-
-// Default export: small API helper with common methods
-const api = {
-  get: (path, opts = {}) =>
-    request(path, { method: 'GET', credentials: 'include', ...opts }),
-  post: (path, body, opts = {}) =>
-    request(path, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
-      body: JSON.stringify(body),
-      ...opts,
-    }),
-  put: (path, body, opts = {}) =>
-    request(path, {
-      method: 'PUT',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
-      body: JSON.stringify(body),
-      ...opts,
-    }),
-  delete: (path, opts = {}) => request(path, { method: 'DELETE', credentials: 'include', ...opts }),
 };
 
+// =============================
+// ✅ TOKEN HELPERS
+// =============================
+const getToken = () => {
+  try {
+    return window.localStorage.getItem('token');
+  } catch {
+    return null;
+  }
+};
+
+const setToken = (token) => {
+  try {
+    window.localStorage.setItem('token', token);
+  } catch {}
+};
+
+const clearToken = () => {
+  try {
+    window.localStorage.removeItem('token');
+  } catch {}
+};
+
+// =============================
+// ✅ REQUEST INTERCEPTOR
+// =============================
+api.interceptors.request.use((config) => {
+  const token = getToken();
+
+  if (token && !config.headers.Authorization) {
+    config.headers['x-auth-token'] = token;
+  }
+
+  // Prevent caching
+  config.headers['Cache-Control'] = 'no-cache';
+  config.headers['Pragma'] = 'no-cache';
+
+  // =============================
+  // ✅ IDEMPOTENCY + LEDGER CONTEXT
+  // =============================
+  const isFinancial =
+    config.url?.includes('/payments') ||
+    config.url?.includes('/momo') ||
+    config.url?.includes('/transactions') ||
+    config.url?.includes('/loans');
+
+  if (isFinancial && config.method !== 'get') {
+    config.headers['Idempotency-Key'] =
+      config.headers['Idempotency-Key'] || uuidv4();
+
+    // Ledger trace correlation
+    config.headers['x-transaction-id'] =
+      config.headers['x-transaction-id'] || uuidv4();
+  }
+
+  // ✅ AUDIT LOG
+  console.info('[API REQUEST]', {
+    method: config.method,
+    url: config.url,
+    tenant: config.headers['x-tenant-id'],
+    idempotencyKey: config.headers['Idempotency-Key'],
+    transactionId: config.headers['x-transaction-id'],
+    timestamp: new Date().toISOString(),
+  });
+
+  return config;
+});
+
+// =============================
+// ✅ TOKEN REFRESH + RETRY
+// =============================
+let isRefreshing = false;
+let subscribers = [];
+
+const subscribe = (cb) => subscribers.push(cb);
+const notify = (token) => {
+  subscribers.forEach((cb) => cb(token));
+  subscribers = [];
+};
+
+const MAX_RETRIES = 3;
+
+api.interceptors.response.use(
+  (res) => res.data,
+  async (error) => {
+    const original = error.config;
+    const status = error.response?.status;
+
+    // ✅ SAFE RETRY
+    if (
+      (!error.response || [500, 502, 503, 504].includes(status)) &&
+      (original._retryCount || 0) < MAX_RETRIES
+    ) {
+      original._retryCount = (original._retryCount || 0) + 1;
+      console.warn(`[RETRY] Attempt ${original._retryCount}`);
+      return api(original);
+    }
+
+    // ✅ TOKEN REFRESH
+    if (status === 401 && !original._retryAuth) {
+      if (isRefreshing) {
+        return new Promise((resolve) => {
+          subscribe((token) => {
+            original.headers['x-auth-token'] = token;
+            resolve(api(original));
+          });
+        });
+      }
+
+      original._retryAuth = true;
+      isRefreshing = true;
+
+      try {
+        const res = await axios.post(
+          `${API_BASE}/api/auth/refresh`,
+          {},
+          { withCredentials: true }
+        );
+
+        const newToken = res.data.token;
+        setToken(newToken);
+
+        notify(newToken);
+        isRefreshing = false;
+
+        return api(original);
+      } catch {
+        isRefreshing = false;
+        clearToken();
+        window.location.href = '/login';
+      }
+    }
+
+    console.error('[API ERROR]', {
+      url: original?.url,
+      status,
+      message: error.message,
+    });
+
+    return Promise.reject(error);
+  }
+);
+
+// =============================
+// ✅ AUTH API
+// =============================
+export const login = (credentials) =>
+  api.post('/api/auth/login', credentials);
+
+// =============================
 export default api;

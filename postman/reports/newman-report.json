@@ -9,14 +9,8 @@
         "name": "01 - Register",
         "request": {
           "url": {
-            "path": [
-              "api",
-              "auth",
-              "register"
-            ],
-            "host": [
-              "{{baseUrl}}"
-            ],
+            "path": ["api", "auth", "register"],
+            "host": ["{{baseUrl}}"],
             "query": [],
             "variable": []
           },
@@ -40,14 +34,8 @@
         "name": "02 - Login (capture token)",
         "request": {
           "url": {
-            "path": [
-              "api",
-              "auth",
-              "login"
-            ],
-            "host": [
-              "{{baseUrl}}"
-            ],
+            "path": ["api", "auth", "login"],
+            "host": ["{{baseUrl}}"],
             "query": [],
             "variable": []
           },
@@ -85,14 +73,8 @@
         "name": "03 - Me (uses token)",
         "request": {
           "url": {
-            "path": [
-              "api",
-              "auth",
-              "me"
-            ],
-            "host": [
-              "{{baseUrl}}"
-            ],
+            "path": ["api", "auth", "me"],
+            "host": ["{{baseUrl}}"],
             "query": [],
             "variable": []
           },
@@ -112,14 +94,8 @@
         "name": "04 - List My Sessions",
         "request": {
           "url": {
-            "path": [
-              "api",
-              "auth",
-              "sessions"
-            ],
-            "host": [
-              "{{baseUrl}}"
-            ],
+            "path": ["api", "auth", "sessions"],
+            "host": ["{{baseUrl}}"],
             "query": [],
             "variable": []
           },
@@ -139,15 +115,8 @@
         "name": "05 - Admin: List All Sessions (requires admin token)",
         "request": {
           "url": {
-            "path": [
-              "api",
-              "auth",
-              "admin",
-              "sessions"
-            ],
-            "host": [
-              "{{baseUrl}}"
-            ],
+            "path": ["api", "auth", "admin", "sessions"],
+            "host": ["{{baseUrl}}"],
             "query": [],
             "variable": []
           },
@@ -167,16 +136,8 @@
         "name": "06 - Admin: Revoke Session (replace :id)",
         "request": {
           "url": {
-            "path": [
-              "api",
-              "auth",
-              "admin",
-              "sessions",
-              ":id"
-            ],
-            "host": [
-              "{{baseUrl}}"
-            ],
+            "path": ["api", "auth", "admin", "sessions", ":id"],
+            "host": ["{{baseUrl}}"],
             "query": [],
             "variable": []
           },
@@ -196,15 +157,8 @@
         "name": "07 - Revoke My Session (delete by id)",
         "request": {
           "url": {
-            "path": [
-              "api",
-              "auth",
-              "sessions",
-              ":id"
-            ],
-            "host": [
-              "{{baseUrl}}"
-            ],
+            "path": ["api", "auth", "sessions", ":id"],
+            "host": ["{{baseUrl}}"],
             "query": [],
             "variable": []
           },
@@ -224,14 +178,8 @@
         "name": "08 - Refresh (use cookie or send refresh token in body)",
         "request": {
           "url": {
-            "path": [
-              "api",
-              "auth",
-              "refresh"
-            ],
-            "host": [
-              "{{baseUrl}}"
-            ],
+            "path": ["api", "auth", "refresh"],
+            "host": ["{{baseUrl}}"],
             "query": [],
             "variable": []
           },
@@ -255,14 +203,8 @@
         "name": "09 - Logout",
         "request": {
           "url": {
-            "path": [
-              "api",
-              "auth",
-              "logout"
-            ],
-            "host": [
-              "{{baseUrl}}"
-            ],
+            "path": ["api", "auth", "logout"],
+            "host": ["{{baseUrl}}"],
             "query": [],
             "variable": []
           },
@@ -418,14 +360,8 @@
           "name": "01 - Register",
           "request": {
             "url": {
-              "path": [
-                "api",
-                "auth",
-                "register"
-              ],
-              "host": [
-                "{{baseUrl}}"
-              ],
+              "path": ["api", "auth", "register"],
+              "host": ["{{baseUrl}}"],
               "query": [],
               "variable": []
             },
@@ -448,14 +384,8 @@
           "url": {
             "protocol": "http",
             "port": "5000",
-            "path": [
-              "api",
-              "auth",
-              "register"
-            ],
-            "host": [
-              "localhost"
-            ],
+            "path": ["api", "auth", "register"],
+            "host": ["localhost"],
             "query": [],
             "variable": []
           },
@@ -525,14 +455,8 @@
           "name": "02 - Login (capture token)",
           "request": {
             "url": {
-              "path": [
-                "api",
-                "auth",
-                "login"
-              ],
-              "host": [
-                "{{baseUrl}}"
-              ],
+              "path": ["api", "auth", "login"],
+              "host": ["{{baseUrl}}"],
               "query": [],
               "variable": []
             },
@@ -569,14 +493,8 @@
           "url": {
             "protocol": "http",
             "port": "5000",
-            "path": [
-              "api",
-              "auth",
-              "login"
-            ],
-            "host": [
-              "localhost"
-            ],
+            "path": ["api", "auth", "login"],
+            "host": ["localhost"],
             "query": [],
             "variable": []
           },
@@ -659,14 +577,8 @@
           "name": "03 - Me (uses token)",
           "request": {
             "url": {
-              "path": [
-                "api",
-                "auth",
-                "me"
-              ],
-              "host": [
-                "{{baseUrl}}"
-              ],
+              "path": ["api", "auth", "me"],
+              "host": ["{{baseUrl}}"],
               "query": [],
               "variable": []
             },
@@ -685,14 +597,8 @@
           "url": {
             "protocol": "http",
             "port": "5000",
-            "path": [
-              "api",
-              "auth",
-              "me"
-            ],
-            "host": [
-              "localhost"
-            ],
+            "path": ["api", "auth", "me"],
+            "host": ["localhost"],
             "query": [],
             "variable": []
           },
@@ -758,14 +664,8 @@
           "name": "04 - List My Sessions",
           "request": {
             "url": {
-              "path": [
-                "api",
-                "auth",
-                "sessions"
-              ],
-              "host": [
-                "{{baseUrl}}"
-              ],
+              "path": ["api", "auth", "sessions"],
+              "host": ["{{baseUrl}}"],
               "query": [],
               "variable": []
             },
@@ -784,14 +684,8 @@
           "url": {
             "protocol": "http",
             "port": "5000",
-            "path": [
-              "api",
-              "auth",
-              "sessions"
-            ],
-            "host": [
-              "localhost"
-            ],
+            "path": ["api", "auth", "sessions"],
+            "host": ["localhost"],
             "query": [],
             "variable": []
           },
@@ -857,15 +751,8 @@
           "name": "05 - Admin: List All Sessions (requires admin token)",
           "request": {
             "url": {
-              "path": [
-                "api",
-                "auth",
-                "admin",
-                "sessions"
-              ],
-              "host": [
-                "{{baseUrl}}"
-              ],
+              "path": ["api", "auth", "admin", "sessions"],
+              "host": ["{{baseUrl}}"],
               "query": [],
               "variable": []
             },
@@ -884,15 +771,8 @@
           "url": {
             "protocol": "http",
             "port": "5000",
-            "path": [
-              "api",
-              "auth",
-              "admin",
-              "sessions"
-            ],
-            "host": [
-              "localhost"
-            ],
+            "path": ["api", "auth", "admin", "sessions"],
+            "host": ["localhost"],
             "query": [],
             "variable": []
           },
@@ -958,16 +838,8 @@
           "name": "06 - Admin: Revoke Session (replace :id)",
           "request": {
             "url": {
-              "path": [
-                "api",
-                "auth",
-                "admin",
-                "sessions",
-                ":id"
-              ],
-              "host": [
-                "{{baseUrl}}"
-              ],
+              "path": ["api", "auth", "admin", "sessions", ":id"],
+              "host": ["{{baseUrl}}"],
               "query": [],
               "variable": []
             },
@@ -986,16 +858,8 @@
           "url": {
             "protocol": "http",
             "port": "5000",
-            "path": [
-              "api",
-              "auth",
-              "admin",
-              "sessions",
-              ":id"
-            ],
-            "host": [
-              "localhost"
-            ],
+            "path": ["api", "auth", "admin", "sessions", ":id"],
+            "host": ["localhost"],
             "query": [],
             "variable": [
               {
@@ -1066,15 +930,8 @@
           "name": "07 - Revoke My Session (delete by id)",
           "request": {
             "url": {
-              "path": [
-                "api",
-                "auth",
-                "sessions",
-                ":id"
-              ],
-              "host": [
-                "{{baseUrl}}"
-              ],
+              "path": ["api", "auth", "sessions", ":id"],
+              "host": ["{{baseUrl}}"],
               "query": [],
               "variable": []
             },
@@ -1093,15 +950,8 @@
           "url": {
             "protocol": "http",
             "port": "5000",
-            "path": [
-              "api",
-              "auth",
-              "sessions",
-              ":id"
-            ],
-            "host": [
-              "localhost"
-            ],
+            "path": ["api", "auth", "sessions", ":id"],
+            "host": ["localhost"],
             "query": [],
             "variable": [
               {
@@ -1172,14 +1022,8 @@
           "name": "08 - Refresh (use cookie or send refresh token in body)",
           "request": {
             "url": {
-              "path": [
-                "api",
-                "auth",
-                "refresh"
-              ],
-              "host": [
-                "{{baseUrl}}"
-              ],
+              "path": ["api", "auth", "refresh"],
+              "host": ["{{baseUrl}}"],
               "query": [],
               "variable": []
             },
@@ -1202,14 +1046,8 @@
           "url": {
             "protocol": "http",
             "port": "5000",
-            "path": [
-              "api",
-              "auth",
-              "refresh"
-            ],
-            "host": [
-              "localhost"
-            ],
+            "path": ["api", "auth", "refresh"],
+            "host": ["localhost"],
             "query": [],
             "variable": []
           },
@@ -1279,14 +1117,8 @@
           "name": "09 - Logout",
           "request": {
             "url": {
-              "path": [
-                "api",
-                "auth",
-                "logout"
-              ],
-              "host": [
-                "{{baseUrl}}"
-              ],
+              "path": ["api", "auth", "logout"],
+              "host": ["{{baseUrl}}"],
               "query": [],
               "variable": []
             },
@@ -1309,14 +1141,8 @@
           "url": {
             "protocol": "http",
             "port": "5000",
-            "path": [
-              "api",
-              "auth",
-              "logout"
-            ],
-            "host": [
-              "localhost"
-            ],
+            "path": ["api", "auth", "logout"],
+            "host": ["localhost"],
             "query": [],
             "variable": []
           },
@@ -1467,14 +1293,8 @@
           "name": "01 - Register",
           "request": {
             "url": {
-              "path": [
-                "api",
-                "auth",
-                "register"
-              ],
-              "host": [
-                "{{baseUrl}}"
-              ],
+              "path": ["api", "auth", "register"],
+              "host": ["{{baseUrl}}"],
               "query": [],
               "variable": []
             },
@@ -1503,14 +1323,8 @@
               "name": "01 - Register",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "register"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "register"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -1534,14 +1348,8 @@
               "name": "02 - Login (capture token)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "login"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "login"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -1579,14 +1387,8 @@
               "name": "03 - Me (uses token)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "me"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "me"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -1606,14 +1408,8 @@
               "name": "04 - List My Sessions",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "sessions"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "sessions"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -1633,15 +1429,8 @@
               "name": "05 - Admin: List All Sessions (requires admin token)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "admin",
-                    "sessions"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "admin", "sessions"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -1661,16 +1450,8 @@
               "name": "06 - Admin: Revoke Session (replace :id)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "admin",
-                    "sessions",
-                    ":id"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "admin", "sessions", ":id"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -1690,15 +1471,8 @@
               "name": "07 - Revoke My Session (delete by id)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "sessions",
-                    ":id"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "sessions", ":id"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -1718,14 +1492,8 @@
               "name": "08 - Refresh (use cookie or send refresh token in body)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "refresh"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "refresh"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -1749,14 +1517,8 @@
               "name": "09 - Logout",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "logout"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "logout"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -1907,14 +1669,8 @@
           "name": "02 - Login (capture token)",
           "request": {
             "url": {
-              "path": [
-                "api",
-                "auth",
-                "login"
-              ],
-              "host": [
-                "{{baseUrl}}"
-              ],
+              "path": ["api", "auth", "login"],
+              "host": ["{{baseUrl}}"],
               "query": [],
               "variable": []
             },
@@ -1957,14 +1713,8 @@
               "name": "01 - Register",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "register"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "register"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -1988,14 +1738,8 @@
               "name": "02 - Login (capture token)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "login"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "login"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -2033,14 +1777,8 @@
               "name": "03 - Me (uses token)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "me"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "me"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -2060,14 +1798,8 @@
               "name": "04 - List My Sessions",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "sessions"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "sessions"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -2087,15 +1819,8 @@
               "name": "05 - Admin: List All Sessions (requires admin token)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "admin",
-                    "sessions"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "admin", "sessions"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -2115,16 +1840,8 @@
               "name": "06 - Admin: Revoke Session (replace :id)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "admin",
-                    "sessions",
-                    ":id"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "admin", "sessions", ":id"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -2144,15 +1861,8 @@
               "name": "07 - Revoke My Session (delete by id)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "sessions",
-                    ":id"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "sessions", ":id"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -2172,14 +1882,8 @@
               "name": "08 - Refresh (use cookie or send refresh token in body)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "refresh"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "refresh"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -2203,14 +1907,8 @@
               "name": "09 - Logout",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "logout"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "logout"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -2283,14 +1981,8 @@
           "name": "02 - Login (capture token)",
           "request": {
             "url": {
-              "path": [
-                "api",
-                "auth",
-                "login"
-              ],
-              "host": [
-                "{{baseUrl}}"
-              ],
+              "path": ["api", "auth", "login"],
+              "host": ["{{baseUrl}}"],
               "query": [],
               "variable": []
             },
@@ -2333,14 +2025,8 @@
               "name": "01 - Register",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "register"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "register"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -2364,14 +2050,8 @@
               "name": "02 - Login (capture token)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "login"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "login"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -2409,14 +2089,8 @@
               "name": "03 - Me (uses token)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "me"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "me"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -2436,14 +2110,8 @@
               "name": "04 - List My Sessions",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "sessions"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "sessions"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -2463,15 +2131,8 @@
               "name": "05 - Admin: List All Sessions (requires admin token)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "admin",
-                    "sessions"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "admin", "sessions"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -2491,16 +2152,8 @@
               "name": "06 - Admin: Revoke Session (replace :id)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "admin",
-                    "sessions",
-                    ":id"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "admin", "sessions", ":id"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -2520,15 +2173,8 @@
               "name": "07 - Revoke My Session (delete by id)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "sessions",
-                    ":id"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "sessions", ":id"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -2548,14 +2194,8 @@
               "name": "08 - Refresh (use cookie or send refresh token in body)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "refresh"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "refresh"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -2579,14 +2219,8 @@
               "name": "09 - Logout",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "logout"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "logout"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -2734,14 +2368,8 @@
           "name": "03 - Me (uses token)",
           "request": {
             "url": {
-              "path": [
-                "api",
-                "auth",
-                "me"
-              ],
-              "host": [
-                "{{baseUrl}}"
-              ],
+              "path": ["api", "auth", "me"],
+              "host": ["{{baseUrl}}"],
               "query": [],
               "variable": []
             },
@@ -2766,14 +2394,8 @@
               "name": "01 - Register",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "register"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "register"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -2797,14 +2419,8 @@
               "name": "02 - Login (capture token)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "login"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "login"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -2842,14 +2458,8 @@
               "name": "03 - Me (uses token)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "me"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "me"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -2869,14 +2479,8 @@
               "name": "04 - List My Sessions",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "sessions"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "sessions"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -2896,15 +2500,8 @@
               "name": "05 - Admin: List All Sessions (requires admin token)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "admin",
-                    "sessions"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "admin", "sessions"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -2924,16 +2521,8 @@
               "name": "06 - Admin: Revoke Session (replace :id)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "admin",
-                    "sessions",
-                    ":id"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "admin", "sessions", ":id"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -2953,15 +2542,8 @@
               "name": "07 - Revoke My Session (delete by id)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "sessions",
-                    ":id"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "sessions", ":id"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -2981,14 +2563,8 @@
               "name": "08 - Refresh (use cookie or send refresh token in body)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "refresh"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "refresh"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -3012,14 +2588,8 @@
               "name": "09 - Logout",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "logout"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "logout"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -3166,14 +2736,8 @@
           "name": "04 - List My Sessions",
           "request": {
             "url": {
-              "path": [
-                "api",
-                "auth",
-                "sessions"
-              ],
-              "host": [
-                "{{baseUrl}}"
-              ],
+              "path": ["api", "auth", "sessions"],
+              "host": ["{{baseUrl}}"],
               "query": [],
               "variable": []
             },
@@ -3198,14 +2762,8 @@
               "name": "01 - Register",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "register"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "register"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -3229,14 +2787,8 @@
               "name": "02 - Login (capture token)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "login"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "login"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -3274,14 +2826,8 @@
               "name": "03 - Me (uses token)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "me"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "me"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -3301,14 +2847,8 @@
               "name": "04 - List My Sessions",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "sessions"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "sessions"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -3328,15 +2868,8 @@
               "name": "05 - Admin: List All Sessions (requires admin token)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "admin",
-                    "sessions"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "admin", "sessions"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -3356,16 +2889,8 @@
               "name": "06 - Admin: Revoke Session (replace :id)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "admin",
-                    "sessions",
-                    ":id"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "admin", "sessions", ":id"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -3385,15 +2910,8 @@
               "name": "07 - Revoke My Session (delete by id)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "sessions",
-                    ":id"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "sessions", ":id"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -3413,14 +2931,8 @@
               "name": "08 - Refresh (use cookie or send refresh token in body)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "refresh"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "refresh"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -3444,14 +2956,8 @@
               "name": "09 - Logout",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "logout"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "logout"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -3598,15 +3104,8 @@
           "name": "05 - Admin: List All Sessions (requires admin token)",
           "request": {
             "url": {
-              "path": [
-                "api",
-                "auth",
-                "admin",
-                "sessions"
-              ],
-              "host": [
-                "{{baseUrl}}"
-              ],
+              "path": ["api", "auth", "admin", "sessions"],
+              "host": ["{{baseUrl}}"],
               "query": [],
               "variable": []
             },
@@ -3631,14 +3130,8 @@
               "name": "01 - Register",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "register"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "register"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -3662,14 +3155,8 @@
               "name": "02 - Login (capture token)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "login"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "login"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -3707,14 +3194,8 @@
               "name": "03 - Me (uses token)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "me"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "me"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -3734,14 +3215,8 @@
               "name": "04 - List My Sessions",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "sessions"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "sessions"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -3761,15 +3236,8 @@
               "name": "05 - Admin: List All Sessions (requires admin token)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "admin",
-                    "sessions"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "admin", "sessions"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -3789,16 +3257,8 @@
               "name": "06 - Admin: Revoke Session (replace :id)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "admin",
-                    "sessions",
-                    ":id"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "admin", "sessions", ":id"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -3818,15 +3278,8 @@
               "name": "07 - Revoke My Session (delete by id)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "sessions",
-                    ":id"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "sessions", ":id"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -3846,14 +3299,8 @@
               "name": "08 - Refresh (use cookie or send refresh token in body)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "refresh"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "refresh"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -3877,14 +3324,8 @@
               "name": "09 - Logout",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "logout"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "logout"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -4031,16 +3472,8 @@
           "name": "06 - Admin: Revoke Session (replace :id)",
           "request": {
             "url": {
-              "path": [
-                "api",
-                "auth",
-                "admin",
-                "sessions",
-                ":id"
-              ],
-              "host": [
-                "{{baseUrl}}"
-              ],
+              "path": ["api", "auth", "admin", "sessions", ":id"],
+              "host": ["{{baseUrl}}"],
               "query": [],
               "variable": []
             },
@@ -4065,14 +3498,8 @@
               "name": "01 - Register",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "register"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "register"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -4096,14 +3523,8 @@
               "name": "02 - Login (capture token)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "login"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "login"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -4141,14 +3562,8 @@
               "name": "03 - Me (uses token)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "me"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "me"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -4168,14 +3583,8 @@
               "name": "04 - List My Sessions",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "sessions"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "sessions"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -4195,15 +3604,8 @@
               "name": "05 - Admin: List All Sessions (requires admin token)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "admin",
-                    "sessions"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "admin", "sessions"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -4223,16 +3625,8 @@
               "name": "06 - Admin: Revoke Session (replace :id)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "admin",
-                    "sessions",
-                    ":id"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "admin", "sessions", ":id"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -4252,15 +3646,8 @@
               "name": "07 - Revoke My Session (delete by id)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "sessions",
-                    ":id"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "sessions", ":id"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -4280,14 +3667,8 @@
               "name": "08 - Refresh (use cookie or send refresh token in body)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "refresh"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "refresh"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -4311,14 +3692,8 @@
               "name": "09 - Logout",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "logout"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "logout"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -4465,15 +3840,8 @@
           "name": "07 - Revoke My Session (delete by id)",
           "request": {
             "url": {
-              "path": [
-                "api",
-                "auth",
-                "sessions",
-                ":id"
-              ],
-              "host": [
-                "{{baseUrl}}"
-              ],
+              "path": ["api", "auth", "sessions", ":id"],
+              "host": ["{{baseUrl}}"],
               "query": [],
               "variable": []
             },
@@ -4498,14 +3866,8 @@
               "name": "01 - Register",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "register"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "register"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -4529,14 +3891,8 @@
               "name": "02 - Login (capture token)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "login"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "login"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -4574,14 +3930,8 @@
               "name": "03 - Me (uses token)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "me"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "me"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -4601,14 +3951,8 @@
               "name": "04 - List My Sessions",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "sessions"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "sessions"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -4628,15 +3972,8 @@
               "name": "05 - Admin: List All Sessions (requires admin token)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "admin",
-                    "sessions"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "admin", "sessions"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -4656,16 +3993,8 @@
               "name": "06 - Admin: Revoke Session (replace :id)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "admin",
-                    "sessions",
-                    ":id"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "admin", "sessions", ":id"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -4685,15 +4014,8 @@
               "name": "07 - Revoke My Session (delete by id)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "sessions",
-                    ":id"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "sessions", ":id"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -4713,14 +4035,8 @@
               "name": "08 - Refresh (use cookie or send refresh token in body)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "refresh"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "refresh"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -4744,14 +4060,8 @@
               "name": "09 - Logout",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "logout"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "logout"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -4898,14 +4208,8 @@
           "name": "08 - Refresh (use cookie or send refresh token in body)",
           "request": {
             "url": {
-              "path": [
-                "api",
-                "auth",
-                "refresh"
-              ],
-              "host": [
-                "{{baseUrl}}"
-              ],
+              "path": ["api", "auth", "refresh"],
+              "host": ["{{baseUrl}}"],
               "query": [],
               "variable": []
             },
@@ -4934,14 +4238,8 @@
               "name": "01 - Register",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "register"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "register"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -4965,14 +4263,8 @@
               "name": "02 - Login (capture token)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "login"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "login"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -5010,14 +4302,8 @@
               "name": "03 - Me (uses token)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "me"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "me"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -5037,14 +4323,8 @@
               "name": "04 - List My Sessions",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "sessions"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "sessions"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -5064,15 +4344,8 @@
               "name": "05 - Admin: List All Sessions (requires admin token)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "admin",
-                    "sessions"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "admin", "sessions"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -5092,16 +4365,8 @@
               "name": "06 - Admin: Revoke Session (replace :id)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "admin",
-                    "sessions",
-                    ":id"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "admin", "sessions", ":id"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -5121,15 +4386,8 @@
               "name": "07 - Revoke My Session (delete by id)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "sessions",
-                    ":id"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "sessions", ":id"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -5149,14 +4407,8 @@
               "name": "08 - Refresh (use cookie or send refresh token in body)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "refresh"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "refresh"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -5180,14 +4432,8 @@
               "name": "09 - Logout",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "logout"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "logout"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -5334,14 +4580,8 @@
           "name": "09 - Logout",
           "request": {
             "url": {
-              "path": [
-                "api",
-                "auth",
-                "logout"
-              ],
-              "host": [
-                "{{baseUrl}}"
-              ],
+              "path": ["api", "auth", "logout"],
+              "host": ["{{baseUrl}}"],
               "query": [],
               "variable": []
             },
@@ -5370,14 +4610,8 @@
               "name": "01 - Register",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "register"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "register"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -5401,14 +4635,8 @@
               "name": "02 - Login (capture token)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "login"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "login"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -5446,14 +4674,8 @@
               "name": "03 - Me (uses token)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "me"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "me"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -5473,14 +4695,8 @@
               "name": "04 - List My Sessions",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "sessions"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "sessions"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -5500,15 +4716,8 @@
               "name": "05 - Admin: List All Sessions (requires admin token)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "admin",
-                    "sessions"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "admin", "sessions"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -5528,16 +4737,8 @@
               "name": "06 - Admin: Revoke Session (replace :id)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "admin",
-                    "sessions",
-                    ":id"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "admin", "sessions", ":id"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -5557,15 +4758,8 @@
               "name": "07 - Revoke My Session (delete by id)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "sessions",
-                    ":id"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "sessions", ":id"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -5585,14 +4779,8 @@
               "name": "08 - Refresh (use cookie or send refresh token in body)",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "refresh"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "refresh"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },
@@ -5616,14 +4804,8 @@
               "name": "09 - Logout",
               "request": {
                 "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "logout"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "path": ["api", "auth", "logout"],
+                  "host": ["{{baseUrl}}"],
                   "query": [],
                   "variable": []
                 },

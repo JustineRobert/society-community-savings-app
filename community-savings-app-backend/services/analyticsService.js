@@ -45,7 +45,7 @@ const EVENT_TYPES = {
   // Referral events
   REFERRAL_GENERATED: 'referral.generated',
   REFERRAL_USED: 'referral.used',
-  REFERRAL_BONUS_AWARDED: 'referral.bonus_awarded'
+  REFERRAL_BONUS_AWARDED: 'referral.bonus_awarded',
 };
 
 class AnalyticsService extends EventEmitter {
@@ -55,7 +55,7 @@ class AnalyticsService extends EventEmitter {
     this.maxEvents = config.maxEvents || 10000;
     this.eventRetentionMs = config.eventRetentionMs || 24 * 60 * 60 * 1000; // 24 hours
     this.flushInterval = config.flushInterval || 5 * 60 * 1000; // 5 minutes
-    
+
     // Start auto-cleanup
     this.startAutoCleanup();
   }
@@ -73,9 +73,9 @@ class AnalyticsService extends EventEmitter {
         ...metadata,
         timestamp: new Date(),
         ip: metadata.ip,
-        userAgent: metadata.userAgent
+        userAgent: metadata.userAgent,
       },
-      createdAt: new Date()
+      createdAt: new Date(),
     };
 
     this.events.push(event);
@@ -85,7 +85,7 @@ class AnalyticsService extends EventEmitter {
       eventId: event.id,
       userId,
       type: eventType,
-      dataKeys: Object.keys(data)
+      dataKeys: Object.keys(data),
     });
 
     // Emit event for real-time listeners
@@ -108,7 +108,7 @@ class AnalyticsService extends EventEmitter {
       const Transaction = require('../models/Transaction');
 
       const matchConditions = {
-        createdAt: { $gte: from, $lte: to }
+        createdAt: { $gte: from, $lte: to },
       };
 
       if (groupId) {
@@ -121,12 +121,12 @@ class AnalyticsService extends EventEmitter {
           $group: {
             _id: {
               status: '$status',
-              method: '$method'
+              method: '$method',
             },
             count: { $sum: 1 },
             totalAmount: { $sum: '$amount' },
-            avgAmount: { $avg: '$amount' }
-          }
+            avgAmount: { $avg: '$amount' },
+          },
         },
         {
           $group: {
@@ -137,13 +137,13 @@ class AnalyticsService extends EventEmitter {
                 method: '$_id.method',
                 count: '$count',
                 totalAmount: '$totalAmount',
-                avgAmount: '$avgAmount'
-              }
+                avgAmount: '$avgAmount',
+              },
             },
             totalCount: { $sum: '$count' },
-            totalRevenue: { $sum: '$totalAmount' }
-          }
-        }
+            totalRevenue: { $sum: '$totalAmount' },
+          },
+        },
       ]);
     } catch (error) {
       logger.error('[Analytics] Error getting payment metrics', { error: error.message });
@@ -166,16 +166,16 @@ class AnalyticsService extends EventEmitter {
             _id: null,
             totalNew: { $sum: 1 },
             totalVerified: {
-              $sum: { $cond: ['$emailVerified', 1, 0] }
+              $sum: { $cond: ['$emailVerified', 1, 0] },
             },
             totalActive: {
-              $sum: { $cond: [{ $gte: ['$lastLoginAt', from] }, 1, 0] }
+              $sum: { $cond: [{ $gte: ['$lastLoginAt', from] }, 1, 0] },
             },
             verificationRate: {
-              $avg: { $cond: ['$emailVerified', 1, 0] }
-            }
-          }
-        }
+              $avg: { $cond: ['$emailVerified', 1, 0] },
+            },
+          },
+        },
       ]);
     } catch (error) {
       logger.error('[Analytics] Error getting user metrics', { error: error.message });
@@ -198,9 +198,9 @@ class AnalyticsService extends EventEmitter {
             totalAmount: { $sum: '$amount' },
             avgAmount: { $avg: '$amount' },
             activeLoans: {
-              $sum: { $cond: [{ $eq: ['$status', 'active'] }, 1, 0] }
-            }
-          }
+              $sum: { $cond: [{ $eq: ['$status', 'active'] }, 1, 0] },
+            },
+          },
         },
         {
           $group: {
@@ -210,14 +210,14 @@ class AnalyticsService extends EventEmitter {
                 status: '$_id',
                 count: '$count',
                 totalAmount: '$totalAmount',
-                avgAmount: '$avgAmount'
-              }
+                avgAmount: '$avgAmount',
+              },
             },
             totalCount: { $sum: '$count' },
             totalLent: { $sum: '$totalAmount' },
-            activeCount: { $sum: '$activeLoans' }
-          }
-        }
+            activeCount: { $sum: '$activeLoans' },
+          },
+        },
       ]);
     } catch (error) {
       logger.error('[Analytics] Error getting loan metrics', { error: error.message });
@@ -240,9 +240,9 @@ class AnalyticsService extends EventEmitter {
             redeemed: { $sum: { $cond: ['$redeemed', 1, 0] } },
             bonusAwarded: { $sum: { $cond: ['$bonusAwarded', 1, 0] } },
             conversionRate: { $avg: { $cond: ['$redeemed', 1, 0] } },
-            totalRewardsDistributed: { $sum: '$totalRewardsEarned' }
-          }
-        }
+            totalRewardsDistributed: { $sum: '$totalRewardsEarned' },
+          },
+        },
       ]);
     } catch (error) {
       logger.error('[Analytics] Error getting referral metrics', { error: error.message });
@@ -268,12 +268,12 @@ class AnalyticsService extends EventEmitter {
           $group: {
             _id: {
               group: '$group',
-              status: '$status'
+              status: '$status',
             },
             count: { $sum: 1 },
             totalAmount: { $sum: '$amount' },
-            avgAmount: { $avg: '$amount' }
-          }
+            avgAmount: { $avg: '$amount' },
+          },
         },
         {
           $group: {
@@ -283,13 +283,13 @@ class AnalyticsService extends EventEmitter {
                 status: '$_id.status',
                 count: '$count',
                 totalAmount: '$totalAmount',
-                avgAmount: '$avgAmount'
-              }
+                avgAmount: '$avgAmount',
+              },
             },
             totalCount: { $sum: '$count' },
-            totalContribution: { $sum: '$totalAmount' }
-          }
-        }
+            totalContribution: { $sum: '$totalAmount' },
+          },
+        },
       ]);
     } catch (error) {
       logger.error('[Analytics] Error getting contribution metrics', { error: error.message });
@@ -305,19 +305,14 @@ class AnalyticsService extends EventEmitter {
       const from = this.getFromDate(timeframe);
       const to = new Date();
 
-      const [
-        paymentMetrics,
-        userMetrics,
-        loanMetrics,
-        referralMetrics,
-        contributionMetrics
-      ] = await Promise.all([
-        this.getPaymentMetrics(from, to),
-        this.getUserMetrics(this.getDateDays(timeframe)),
-        this.getLoanMetrics(),
-        this.getReferralMetrics(),
-        this.getContributionMetrics()
-      ]);
+      const [paymentMetrics, userMetrics, loanMetrics, referralMetrics, contributionMetrics] =
+        await Promise.all([
+          this.getPaymentMetrics(from, to),
+          this.getUserMetrics(this.getDateDays(timeframe)),
+          this.getLoanMetrics(),
+          this.getReferralMetrics(),
+          this.getContributionMetrics(),
+        ]);
 
       return {
         timeframe,
@@ -328,7 +323,7 @@ class AnalyticsService extends EventEmitter {
         loans: loanMetrics,
         referrals: referralMetrics,
         contributions: contributionMetrics,
-        generatedAt: new Date()
+        generatedAt: new Date(),
       };
     } catch (error) {
       logger.error('[Analytics] Error getting dashboard metrics', { error: error.message });
@@ -360,9 +355,7 @@ class AnalyticsService extends EventEmitter {
    * Get recent events
    */
   getRecentEvents(limit = 100) {
-    return this.events
-      .sort((a, b) => b.createdAt - a.createdAt)
-      .slice(0, limit);
+    return this.events.sort((a, b) => b.createdAt - a.createdAt).slice(0, limit);
   }
 
   /**
@@ -409,9 +402,9 @@ class AnalyticsService extends EventEmitter {
     setInterval(() => {
       const cutoff = Date.now() - this.eventRetentionMs;
       const beforeCount = this.events.length;
-      
+
       this.events = this.events.filter((e) => e.createdAt.getTime() > cutoff);
-      
+
       const removed = beforeCount - this.events.length;
       if (removed > 0) {
         logger.debug(`[Analytics] Cleaned up ${removed} old events`);

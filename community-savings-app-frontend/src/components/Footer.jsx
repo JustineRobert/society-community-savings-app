@@ -21,7 +21,7 @@ const Footer = () => {
         <div className="footer-main">
           {/* Company Info */}
           <div className="footer-section">
-            <h3 className="footer-title">Community Savings</h3>
+            <h3 className="footer-title">TITech Community Savings</h3>
             <p className="footer-description">
               Empowering communities through digital savings and lending solutions.
             </p>
@@ -29,7 +29,11 @@ const Footer = () => {
               <a href="tel:+256782397907" className="social-link" aria-label="Call us">
                 <Phone size={20} />
               </a>
-              <a href="mailto:info@communitysavings.app" className="social-link" aria-label="Email us">
+              <a
+                href="mailto:info@communitysavings.app"
+                className="social-link"
+                aria-label="Email us"
+              >
                 <Mail size={20} />
               </a>
               <a href="#" className="social-link" aria-label="Visit us">
@@ -84,9 +88,9 @@ const Footer = () => {
                 <a href="mailto:info@communitysavings.app">info@communitysavings.app</a>
               </li>
               <li>
-                <a href="tel:+256XXX">+256 (782) 397907</a>
+                <a href="tel:+256782397907">+256 (394) 324760</a>
               </li>
-              <li>Kampala, Uganda</li>
+              <li>Plot 69-71 Jinja Road, Kampala, Uganda</li>
             </ul>
           </div>
         </div>
@@ -95,14 +99,20 @@ const Footer = () => {
         <div className="footer-bottom">
           <div className="footer-bottom-content">
             <p className="copyright">
-              &copy; {currentYear} Community Savings App. All rights reserved.
+              &copy; {currentYear} TITech Community Capital LTD. All rights reserved.
             </p>
             <div className="footer-legal-bottom">
-              <Link to="/legal" className="footer-link-small">Legal</Link>
+              <Link to="/legal" className="footer-link-small">
+                Legal
+              </Link>
               <span className="divider">•</span>
-              <Link to="/terms" className="footer-link-small">Terms</Link>
+              <Link to="/terms" className="footer-link-small">
+                Terms
+              </Link>
               <span className="divider">•</span>
-              <Link to="/privacy" className="footer-link-small">Privacy</Link>
+              <Link to="/privacy" className="footer-link-small">
+                Privacy
+              </Link>
             </div>
           </div>
         </div>

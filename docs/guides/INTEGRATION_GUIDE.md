@@ -109,15 +109,15 @@ function SupportPage() {
   return (
     <div className="support-page">
       <h1>Community Support Center</h1>
-      
+
       <section className="help-section">
         <HelpCenter />
       </section>
-      
+
       <section className="faq-section">
         <FAQ />
       </section>
-      
+
       <section className="forum-section">
         <Forum />
       </section>
@@ -187,19 +187,19 @@ function SupportTabs() {
   return (
     <div className="support-tabs">
       <div className="tabs-header">
-        <button 
+        <button
           className={`tab-btn ${activeTab === 'help' ? 'active' : ''}`}
           onClick={() => setActiveTab('help')}
         >
           Help Center
         </button>
-        <button 
+        <button
           className={`tab-btn ${activeTab === 'faq' ? 'active' : ''}`}
           onClick={() => setActiveTab('faq')}
         >
           FAQ
         </button>
-        <button 
+        <button
           className={`tab-btn ${activeTab === 'forum' ? 'active' : ''}`}
           onClick={() => setActiveTab('forum')}
         >
@@ -315,14 +315,10 @@ export function UserProvider({ children }) {
     id: 1,
     name: 'John Doe',
     email: 'john@example.com',
-    role: 'user'
+    role: 'user',
   };
 
-  return (
-    <UserContext.Provider value={user}>
-      {children}
-    </UserContext.Provider>
-  );
+  return <UserContext.Provider value={user}>{children}</UserContext.Provider>;
 }
 
 // App.jsx
@@ -349,13 +345,13 @@ import { createSlice } from '@reduxjs/toolkit';
 export const supportSlice = createSlice({
   name: 'support',
   initialState: {
-    activeTab: 'help'
+    activeTab: 'help',
   },
   reducers: {
     setActiveTab: (state, action) => {
       state.activeTab = action.payload;
-    }
-  }
+    },
+  },
 });
 
 export const { setActiveTab } = supportSlice.actions;
@@ -367,10 +363,10 @@ import { setActiveTab } from '../slices/supportSlice';
 
 function SupportTabs() {
   const dispatch = useDispatch();
-  const activeTab = useSelector(state => state.support.activeTab);
+  const activeTab = useSelector((state) => state.support.activeTab);
 
   return (
-    <button 
+    <button
       onClick={() => dispatch(setActiveTab('help'))}
       className={activeTab === 'help' ? 'active' : ''}
     >
@@ -491,6 +487,7 @@ docker run -p 80:3000 support-app
 **Problem:** Components display but styling is missing
 
 **Solution:**
+
 ```jsx
 // Make sure to import CSS
 import '../components/HelpCenter.css';
@@ -506,6 +503,7 @@ import './components/HelpCenter.css';
 **Problem:** Components show error message
 
 **Solution:**
+
 ```bash
 # Check API server is running
 curl http://localhost:3001/api/help/articles
@@ -522,6 +520,7 @@ echo $REACT_APP_API_URL
 **Problem:** Blank page or error
 
 **Solution:**
+
 ```jsx
 // Check component is imported correctly
 import HelpCenter from './components/HelpCenter';
@@ -540,6 +539,7 @@ import HelpCenter from './components/HelpCenter';
 **Problem:** `npm test` shows red errors
 
 **Solution:**
+
 ```bash
 # Clear Jest cache
 npm test -- --clearCache
@@ -556,6 +556,7 @@ npm test -- -u
 **Problem:** Slow load times
 
 **Solution:**
+
 ```jsx
 // Implement code splitting
 const HelpCenter = lazy(() => import('./components/HelpCenter'));
@@ -565,7 +566,7 @@ const Forum = lazy(() => import('./components/Forum'));
 // Use with Suspense
 <Suspense fallback={<LoadingSpinner />}>
   <HelpCenter />
-</Suspense>
+</Suspense>;
 ```
 
 ---
@@ -573,6 +574,7 @@ const Forum = lazy(() => import('./components/Forum'));
 ## Performance Tips
 
 1. **Lazy Load Components**
+
    ```jsx
    const HelpCenter = lazy(() => import('./components/HelpCenter'));
    ```

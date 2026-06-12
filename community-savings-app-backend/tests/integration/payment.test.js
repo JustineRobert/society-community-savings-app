@@ -94,12 +94,10 @@ describe('Payment Integration Tests', () => {
     });
 
     test('should reject unauthenticated request', async () => {
-      const res = await request(app)
-        .post('/api/payments/intents')
-        .send({
-          amount: 5000,
-          currency: 'USD',
-        });
+      const res = await request(app).post('/api/payments/intents').send({
+        amount: 5000,
+        currency: 'USD',
+      });
 
       expect(res.status).toBe(401);
     });

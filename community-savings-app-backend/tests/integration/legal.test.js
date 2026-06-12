@@ -13,19 +13,17 @@ const termsAndPrivacy = require('../services/termsAndPrivacy');
 const mockUser = {
   _id: new mongoose.Types.ObjectId(),
   email: 'testuser@test.com',
-  password: 'hashedPassword123'
+  password: 'hashedPassword123',
 };
 
 // Mock JWT token (would normally come from auth)
-const mockToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjEyMzQ1Njc4OTAiLCJuYW1lIjoiSm9obiIsImlhdCI6MTUxNjIzOTAyMn0.TJVA95OrM7E2cBab30RMHrHDcEfxjoYZgeFONFh7HgQ';
+const mockToken =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjEyMzQ1Njc4OTAiLCJuYW1lIjoiSm9obiIsImlhdCI6MTUxNjIzOTAyMn0.TJVA95OrM7E2cBab30RMHrHDcEfxjoYZgeFONFh7HgQ';
 
 describe('Legal Documents API', () => {
-  
   describe('GET /api/legal/terms-of-service', () => {
     it('should return Terms of Service document without authentication', async () => {
-      const response = await request(app)
-        .get('/api/legal/terms-of-service')
-        .expect(200);
+      const response = await request(app).get('/api/legal/terms-of-service').expect(200);
 
       expect(response.body).toHaveProperty('success', true);
       expect(response.body.data).toHaveProperty('title');
@@ -35,9 +33,7 @@ describe('Legal Documents API', () => {
     });
 
     it('should include document metadata', async () => {
-      const response = await request(app)
-        .get('/api/legal/terms-of-service')
-        .expect(200);
+      const response = await request(app).get('/api/legal/terms-of-service').expect(200);
 
       expect(response.body.data).toHaveProperty('effectiveDate');
       expect(response.body.data).toHaveProperty('lastUpdated');
@@ -45,9 +41,7 @@ describe('Legal Documents API', () => {
     });
 
     it('should include all required sections', async () => {
-      const response = await request(app)
-        .get('/api/legal/terms-of-service')
-        .expect(200);
+      const response = await request(app).get('/api/legal/terms-of-service').expect(200);
 
       const content = response.body.data.content;
       const requiredSections = [
@@ -57,10 +51,10 @@ describe('Legal Documents API', () => {
         'Limitations of Liability',
         'Financial Transactions',
         'Loan Agreements',
-        'Governing Law'
+        'Governing Law',
       ];
 
-      requiredSections.forEach(section => {
+      requiredSections.forEach((section) => {
         expect(content).toContain(section);
       });
     });
@@ -68,9 +62,7 @@ describe('Legal Documents API', () => {
 
   describe('GET /api/legal/privacy-policy', () => {
     it('should return Privacy Policy document without authentication', async () => {
-      const response = await request(app)
-        .get('/api/legal/privacy-policy')
-        .expect(200);
+      const response = await request(app).get('/api/legal/privacy-policy').expect(200);
 
       expect(response.body).toHaveProperty('success', true);
       expect(response.body.data).toHaveProperty('title');
@@ -80,9 +72,7 @@ describe('Legal Documents API', () => {
     });
 
     it('should cover GDPR compliance', async () => {
-      const response = await request(app)
-        .get('/api/legal/privacy-policy')
-        .expect(200);
+      const response = await request(app).get('/api/legal/privacy-policy').expect(200);
 
       const content = response.body.data.content;
       expect(content).toContain('GDPR');
@@ -90,9 +80,7 @@ describe('Legal Documents API', () => {
     });
 
     it('should cover CCPA compliance', async () => {
-      const response = await request(app)
-        .get('/api/legal/privacy-policy')
-        .expect(200);
+      const response = await request(app).get('/api/legal/privacy-policy').expect(200);
 
       const content = response.body.data.content;
       expect(content).toContain('CCPA');
@@ -100,9 +88,7 @@ describe('Legal Documents API', () => {
     });
 
     it('should include data types collected', async () => {
-      const response = await request(app)
-        .get('/api/legal/privacy-policy')
-        .expect(200);
+      const response = await request(app).get('/api/legal/privacy-policy').expect(200);
 
       const content = response.body.data.content;
       const dataTypes = [
@@ -111,10 +97,10 @@ describe('Legal Documents API', () => {
         'Device Information',
         'Usage Information',
         'Communication Data',
-        'Location Data'
+        'Location Data',
       ];
 
-      dataTypes.forEach(type => {
+      dataTypes.forEach((type) => {
         expect(content).toContain(type);
       });
     });
@@ -122,18 +108,14 @@ describe('Legal Documents API', () => {
 
   describe('GET /api/legal/changelog', () => {
     it('should return changelog without authentication', async () => {
-      const response = await request(app)
-        .get('/api/legal/changelog')
-        .expect(200);
+      const response = await request(app).get('/api/legal/changelog').expect(200);
 
       expect(response.body).toHaveProperty('success', true);
       expect(Array.isArray(response.body.data)).toBe(true);
     });
 
     it('should include version information', async () => {
-      const response = await request(app)
-        .get('/api/legal/changelog')
-        .expect(200);
+      const response = await request(app).get('/api/legal/changelog').expect(200);
 
       expect(response.body.data[0]).toHaveProperty('version');
       expect(response.body.data[0]).toHaveProperty('date');
@@ -141,9 +123,7 @@ describe('Legal Documents API', () => {
     });
 
     it('should track document updates', async () => {
-      const response = await request(app)
-        .get('/api/legal/changelog')
-        .expect(200);
+      const response = await request(app).get('/api/legal/changelog').expect(200);
 
       const changelog = response.body.data[0];
       expect(changelog.changes).toBeInstanceOf(Array);
@@ -153,10 +133,7 @@ describe('Legal Documents API', () => {
 
   describe('POST /api/legal/accept-terms', () => {
     it('should require authentication', async () => {
-      const response = await request(app)
-        .post('/api/legal/accept-terms')
-        .send({})
-        .expect(401);
+      const response = await request(app).post('/api/legal/accept-terms').send({}).expect(401);
 
       expect(response.body).toHaveProperty('success', false);
       expect(response.body).toHaveProperty('message');
@@ -190,9 +167,7 @@ describe('Legal Documents API', () => {
 
   describe('GET /api/legal/acceptance-status', () => {
     it('should require authentication', async () => {
-      const response = await request(app)
-        .get('/api/legal/acceptance-status')
-        .expect(401);
+      const response = await request(app).get('/api/legal/acceptance-status').expect(401);
 
       expect(response.body).toHaveProperty('success', false);
     });
@@ -221,11 +196,10 @@ describe('Legal Documents API', () => {
   });
 
   describe('Service Layer Tests', () => {
-    
     describe('getTermsOfService()', () => {
       it('should return object with required properties', () => {
         const terms = termsAndPrivacy.getTermsOfService();
-        
+
         expect(terms).toHaveProperty('title');
         expect(terms).toHaveProperty('version');
         expect(terms).toHaveProperty('effectiveDate');
@@ -235,14 +209,14 @@ describe('Legal Documents API', () => {
 
       it('should have non-empty content', () => {
         const terms = termsAndPrivacy.getTermsOfService();
-        
+
         expect(terms.content).toBeTruthy();
         expect(terms.content.length).toBeGreaterThan(1000);
       });
 
       it('should have valid version format', () => {
         const terms = termsAndPrivacy.getTermsOfService();
-        
+
         expect(terms.version).toMatch(/^\d+\.\d+\.\d+$/);
       });
     });
@@ -250,7 +224,7 @@ describe('Legal Documents API', () => {
     describe('getPrivacyPolicy()', () => {
       it('should return object with required properties', () => {
         const policy = termsAndPrivacy.getPrivacyPolicy();
-        
+
         expect(policy).toHaveProperty('title');
         expect(policy).toHaveProperty('version');
         expect(policy).toHaveProperty('content');
@@ -258,9 +232,9 @@ describe('Legal Documents API', () => {
 
       it('should cover data protection rights', () => {
         const policy = termsAndPrivacy.getPrivacyPolicy();
-        
+
         const rights = ['Access', 'Rectification', 'Erasure', 'Restrict', 'Portability'];
-        rights.forEach(right => {
+        rights.forEach((right) => {
           expect(policy.content).toContain(right);
         });
       });
@@ -269,19 +243,19 @@ describe('Legal Documents API', () => {
     describe('getVersion()', () => {
       it('should return version for terms', () => {
         const version = termsAndPrivacy.getVersion('terms');
-        
+
         expect(version).toBe('1.0.0');
       });
 
       it('should return version for privacy', () => {
         const version = termsAndPrivacy.getVersion('privacy');
-        
+
         expect(version).toBe('1.0.0');
       });
 
       it('should return default for unknown type', () => {
         const version = termsAndPrivacy.getVersion('unknown');
-        
+
         expect(version).toBe('1.0.0');
       });
     });
@@ -289,13 +263,13 @@ describe('Legal Documents API', () => {
     describe('getLastUpdated()', () => {
       it('should return date for terms', () => {
         const date = termsAndPrivacy.getLastUpdated('terms');
-        
+
         expect(date).toBeInstanceOf(Date);
       });
 
       it('should return date for privacy', () => {
         const date = termsAndPrivacy.getLastUpdated('privacy');
-        
+
         expect(date).toBeInstanceOf(Date);
       });
     });
@@ -303,7 +277,7 @@ describe('Legal Documents API', () => {
     describe('getChangelog()', () => {
       it('should return array of changes', () => {
         const changelog = termsAndPrivacy.getChangelog();
-        
+
         expect(Array.isArray(changelog)).toBe(true);
         expect(changelog.length).toBeGreaterThan(0);
       });
@@ -311,7 +285,7 @@ describe('Legal Documents API', () => {
       it('should include required changelog properties', () => {
         const changelog = termsAndPrivacy.getChangelog();
         const firstEntry = changelog[0];
-        
+
         expect(firstEntry).toHaveProperty('version');
         expect(firstEntry).toHaveProperty('date');
         expect(firstEntry).toHaveProperty('document');
@@ -321,19 +295,12 @@ describe('Legal Documents API', () => {
   });
 
   describe('Content Validation', () => {
-    
     it('should have complete business terms', () => {
       const terms = termsAndPrivacy.getTermsOfService();
-      const requiredContent = [
-        'Kenya',
-        'arbitration',
-        'governing law',
-        'payment',
-        'loan'
-      ];
-      
+      const requiredContent = ['Kenya', 'arbitration', 'governing law', 'payment', 'loan'];
+
       const contentLower = terms.content.toLowerCase();
-      requiredContent.forEach(item => {
+      requiredContent.forEach((item) => {
         expect(contentLower).toContain(item);
       });
     });
@@ -341,7 +308,7 @@ describe('Legal Documents API', () => {
     it('should comply with data protection regulations', () => {
       const policy = termsAndPrivacy.getPrivacyPolicy();
       const contentLower = policy.content.toLowerCase();
-      
+
       expect(contentLower).toContain('gdpr');
       expect(contentLower).toContain('ccpa');
       expect(contentLower).toContain('kenya');
@@ -350,39 +317,26 @@ describe('Legal Documents API', () => {
 
     it('should include security commitments', () => {
       const policy = termsAndPrivacy.getPrivacyPolicy();
-      const securityContent = [
-        'encryption',
-        'tls',
-        'secure',
-        'protection',
-        'hashed'
-      ];
-      
+      const securityContent = ['encryption', 'tls', 'secure', 'protection', 'hashed'];
+
       const contentLower = policy.content.toLowerCase();
-      securityContent.forEach(item => {
+      securityContent.forEach((item) => {
         expect(contentLower).toContain(item);
       });
     });
 
     it('should define user rights clearly', () => {
       const policy = termsAndPrivacy.getPrivacyPolicy();
-      const userRights = [
-        'right to',
-        'can',
-        'may',
-        'withdraw',
-        'object'
-      ];
-      
+      const userRights = ['right to', 'can', 'may', 'withdraw', 'object'];
+
       const contentLower = policy.content.toLowerCase();
-      userRights.forEach(right => {
+      userRights.forEach((right) => {
         expect(contentLower).toContain(right);
       });
     });
   });
 
   describe('Error Handling', () => {
-    
     it('should handle invalid token gracefully', async () => {
       const response = await request(app)
         .get('/api/legal/acceptance-status')
@@ -393,19 +347,14 @@ describe('Legal Documents API', () => {
     });
 
     it('should handle missing authorization header', async () => {
-      const response = await request(app)
-        .post('/api/legal/accept-terms')
-        .send({})
-        .expect(401);
+      const response = await request(app).post('/api/legal/accept-terms').send({}).expect(401);
 
       expect(response.body).toHaveProperty('success', false);
       expect(response.body).toHaveProperty('message');
     });
 
     it('should provide helpful error messages', async () => {
-      const response = await request(app)
-        .post('/api/legal/accept-terms')
-        .expect(401);
+      const response = await request(app).post('/api/legal/accept-terms').expect(401);
 
       expect(response.body.message).toBeTruthy();
       expect(typeof response.body.message).toBe('string');
@@ -416,5 +365,5 @@ describe('Legal Documents API', () => {
 // Export for use in other test suites
 module.exports = {
   mockUser,
-  mockToken
+  mockToken,
 };

@@ -1,4 +1,3 @@
-
 // middleware/errorHandler.js
 // ============================================================================
 // Global Error Handler for Community Savings App
@@ -224,10 +223,7 @@ const errorHandler = (err, req, res, next) => {
   return sendError(res, {
     errorId,
     statusCode,
-    message:
-      statusCode >= 500
-        ? 'Internal server error'
-        : normalized.message || 'Request failed',
+    message: statusCode >= 500 ? 'Internal server error' : normalized.message || 'Request failed',
     type: normalized.type || (statusCode >= 500 ? 'InternalError' : 'Error'),
     meta: normalized,
   });

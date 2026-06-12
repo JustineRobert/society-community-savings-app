@@ -1,6 +1,7 @@
 # Production Deployment Guide - Community Savings App
 
 ## Table of Contents
+
 1. [Pre-Deployment Checklist](#pre-deployment-checklist)
 2. [Environment Configuration](#environment-configuration)
 3. [Database Setup](#database-setup)
@@ -14,6 +15,7 @@
 ## Pre-Deployment Checklist
 
 ### Code Quality
+
 - [ ] All tests passing (`npm run test:ci`)
 - [ ] No console.log statements in production code
 - [ ] Code review completed
@@ -22,6 +24,7 @@
 - [ ] Performance profiling completed
 
 ### Documentation
+
 - [ ] API documentation generated (Swagger)
 - [ ] Architecture documentation updated
 - [ ] Deployment runbooks prepared
@@ -29,6 +32,7 @@
 - [ ] Database migration scripts tested
 
 ### Infrastructure
+
 - [ ] SSL/TLS certificates ready
 - [ ] Backup systems configured
 - [ ] Monitoring alerts set up
@@ -134,12 +138,10 @@ async function startApp() {
 
 ```javascript
 // Verify all indexes created successfully
-db.collection.getIndexes()
+db.collection.getIndexes();
 
 // Monitor index performance
-db.collection.aggregate([
-  { $indexStats: {} }
-])
+db.collection.aggregate([{ $indexStats: {} }]);
 ```
 
 ## Security Hardening
@@ -165,15 +167,17 @@ https.createServer(options, app).listen(443);
 // Helmet.js configuration (already implemented)
 const helmet = require('helmet');
 
-app.use(helmet({
-  hsts: { maxAge: 31536000, preload: true },
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'"],
+app.use(
+  helmet({
+    hsts: { maxAge: 31536000, preload: true },
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+      },
     },
-  },
-}));
+  })
+);
 ```
 
 ### Rate Limiting
@@ -226,9 +230,7 @@ pm2 start server.js -i max --name "community-savings"
 // Use aggregation pipeline for analytics
 
 // Example optimized query
-await User.findById(userId)
-  .select('name email phone role')
-  .lean() // Return plain JS object, not Mongoose document
+await User.findById(userId).select('name email phone role').lean(); // Return plain JS object, not Mongoose document
 ```
 
 ### Caching Strategy
@@ -473,27 +475,27 @@ mongorestore --uri="..." /backups/full-20240204
 
 Monitor these key metrics:
 
-| Metric | Target | Warning | Critical |
-|--------|--------|---------|----------|
-| Error Rate | < 0.1% | > 0.5% | > 1% |
-| Response Time (p95) | < 200ms | > 500ms | > 1000ms |
-| CPU Usage | < 60% | > 75% | > 85% |
-| Memory Usage | < 70% | > 80% | > 90% |
-| Disk Usage | < 60% | > 75% | > 85% |
-| DB Connection Pool | < 70% | > 80% | > 90% |
-| Loan Default Rate | < 2% | > 3% | > 5% |
-| Payment Collection Rate | > 95% | < 90% | < 80% |
+| Metric                  | Target  | Warning | Critical |
+| ----------------------- | ------- | ------- | -------- |
+| Error Rate              | < 0.1%  | > 0.5%  | > 1%     |
+| Response Time (p95)     | < 200ms | > 500ms | > 1000ms |
+| CPU Usage               | < 60%   | > 75%   | > 85%    |
+| Memory Usage            | < 70%   | > 80%   | > 90%    |
+| Disk Usage              | < 60%   | > 75%   | > 85%    |
+| DB Connection Pool      | < 70%   | > 80%   | > 90%    |
+| Loan Default Rate       | < 2%    | > 3%    | > 5%     |
+| Payment Collection Rate | > 95%   | < 90%   | < 80%    |
 
 ## Support & Escalation
 
 ### Escalation Matrix
 
-| Issue | Owner | Response Time | Resolution Time |
-|-------|-------|----------------|-----------------|
-| P1 (Down) | On-call + Manager | 5 min | 15 min |
-| P2 (Degraded) | On-call | 15 min | 1 hour |
-| P3 (Bug) | Team Lead | 1 hour | 4 hours |
-| P4 (Feature) | Product Owner | 1 day | 2 weeks |
+| Issue         | Owner             | Response Time | Resolution Time |
+| ------------- | ----------------- | ------------- | --------------- |
+| P1 (Down)     | On-call + Manager | 5 min         | 15 min          |
+| P2 (Degraded) | On-call           | 15 min        | 1 hour          |
+| P3 (Bug)      | Team Lead         | 1 hour        | 4 hours         |
+| P4 (Feature)  | Product Owner     | 1 day         | 2 weeks         |
 
 ### Contact Information
 

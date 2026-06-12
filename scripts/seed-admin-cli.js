@@ -75,7 +75,9 @@ async function connectWithRetry(uri, source, maxAttempts = 10) {
 async function main() {
   const args = parseArgs(process.argv);
   if (args.help || args.h) {
-    console.log('Usage: node scripts/seed-admin-cli.js --email <email> --pass <password> [--name <name>] [--force] [--mongo <mongoUri>]');
+    console.log(
+      'Usage: node scripts/seed-admin-cli.js --email <email> --pass <password> [--name <name>] [--force] [--mongo <mongoUri>]'
+    );
     process.exit(0);
   }
 
@@ -116,15 +118,25 @@ async function main() {
   } catch (err) {
     console.error('🛑 MongoDB connection failed after retries.');
     if (source === 'MONGO_URI_FALLBACK' && atlasUri) {
-      console.error('   Local MongoDB appears unavailable. If you have a valid Atlas URI, set MONGO_URI and try again.');
+      console.error(
+        '   Local MongoDB appears unavailable. If you have a valid Atlas URI, set MONGO_URI and try again.'
+      );
     }
     if (source === 'default local fallback' && atlasUri) {
-      console.error('   No explicit MongoDB URI was configured. You can set MONGO_URI to use Atlas instead.');
+      console.error(
+        '   No explicit MongoDB URI was configured. You can set MONGO_URI to use Atlas instead.'
+      );
     }
     process.exit(1);
   }
 
-  const seedPath = path.join(__dirname, '..', 'community-savings-app-backend', 'scripts', 'seed-admin.js');
+  const seedPath = path.join(
+    __dirname,
+    '..',
+    'community-savings-app-backend',
+    'scripts',
+    'seed-admin.js'
+  );
   let runSeed;
   try {
     runSeed = require(seedPath);

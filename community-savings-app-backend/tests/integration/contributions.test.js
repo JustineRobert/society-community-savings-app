@@ -13,6 +13,8 @@ describe('Contributions (GET/POST /api/contributions)', () => {
   let userId;
   let groupId;
   let contributionId;
+  let confirmContributionId; // ✅ ADD HERE (global scope)
+``
 
   beforeAll(async () => {
     // Ensure MongoDB connection
@@ -25,12 +27,10 @@ describe('Contributions (GET/POST /api/contributions)', () => {
       email: `contribution-test-${Date.now()}@example.com`,
       password: 'SecurePassword123!',
       fullName: 'Contribution Test User',
-      phoneNumber: '+254712345678'
+      phoneNumber: '+254712345678',
     };
 
-    const registerRes = await request(app)
-      .post('/api/auth/register')
-      .send(userData);
+    const registerRes = await request(app).post('/api/auth/register').send(userData);
 
     userToken = registerRes.body.token;
     userId = registerRes.body.user._id;
@@ -40,7 +40,7 @@ describe('Contributions (GET/POST /api/contributions)', () => {
       name: `Test Group ${Date.now()}`,
       description: 'Test group for contributions',
       targetAmount: 10000,
-      cycle: 'monthly'
+      cycle: 'monthly',
     };
 
     const groupRes = await request(app)
@@ -57,7 +57,7 @@ describe('Contributions (GET/POST /api/contributions)', () => {
         groupId,
         amount: 1000,
         paymentMethod: 'mobile_money',
-        phone: '+254712345678'
+        phone: '+254712345678',
       };
 
       request(app)
@@ -80,7 +80,7 @@ describe('Contributions (GET/POST /api/contributions)', () => {
       const contributionData = {
         groupId,
         // missing amount
-        paymentMethod: 'mobile_money'
+        paymentMethod: 'mobile_money',
       };
 
       request(app)
@@ -99,7 +99,7 @@ describe('Contributions (GET/POST /api/contributions)', () => {
       const contributionData = {
         groupId,
         amount: 0,
-        paymentMethod: 'mobile_money'
+        paymentMethod: 'mobile_money',
       };
 
       request(app)
@@ -117,7 +117,7 @@ describe('Contributions (GET/POST /api/contributions)', () => {
     it('should require authentication', (done) => {
       const contributionData = {
         groupId,
-        amount: 1000
+        amount: 1000,
       };
 
       request(app)
@@ -156,7 +156,7 @@ describe('Contributions (GET/POST /api/contributions)', () => {
 
           expect(res.body).toHaveProperty('contributions');
           if (res.body.contributions.length > 0) {
-            res.body.contributions.forEach(contrib => {
+            res.body.contributions.forEach((contrib) => {
               expect(contrib.groupId).toBe(groupId);
             });
           }
@@ -174,7 +174,7 @@ describe('Contributions (GET/POST /api/contributions)', () => {
 
           expect(res.body).toHaveProperty('contributions');
           if (res.body.contributions.length > 0) {
-            res.body.contributions.forEach(contrib => {
+            res.body.contributions.forEach((contrib) => {
               expect(contrib.status).toBe('pending');
             });
           }
@@ -235,7 +235,7 @@ describe('Contributions (GET/POST /api/contributions)', () => {
         .get('/api/contributions/invalid-id')
         .set('Authorization', `Bearer ${userToken}`)
         .expect(404)
-        .end((err, res) => {
+        .end((err, _res) => {
           if (err) return done(err);
           done();
         });
@@ -285,7 +285,7 @@ describe('Contributions (GET/POST /api/contributions)', () => {
         groupId,
         amount: 500,
         paymentMethod: 'mobile_money',
-        phone: '+254712345678'
+        phone: '+254712345678',
       };
 
       const res = await request(app)
@@ -319,7 +319,7 @@ describe('Contributions (GET/POST /api/contributions)', () => {
       const contributionData = {
         groupId,
         amount: 250,
-        paymentMethod: 'mobile_money'
+        paymentMethod: 'mobile_money',
       };
 
       const res = await request(app)

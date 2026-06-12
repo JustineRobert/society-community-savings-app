@@ -200,7 +200,12 @@ loanRepaymentScheduleSchema.methods.calculatePenalties = function () {
 /**
  * Record payment for an installment
  */
-loanRepaymentScheduleSchema.methods.recordPayment = function (installmentNumber, amount, paymentMethod, reference) {
+loanRepaymentScheduleSchema.methods.recordPayment = function (
+  installmentNumber,
+  amount,
+  paymentMethod,
+  reference
+) {
   const installment = this.installments.find((i) => i.number === installmentNumber);
 
   if (!installment) {
@@ -250,7 +255,8 @@ loanRepaymentScheduleSchema.methods.getNextDueInstallment = function () {
 loanRepaymentScheduleSchema.methods.getUpcomingInstallments = function (days = 30) {
   const endDate = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
   return this.installments.filter(
-    (i) => !['paid', 'forgiven'].includes(i.status) && i.dueDate > new Date() && i.dueDate <= endDate
+    (i) =>
+      !['paid', 'forgiven'].includes(i.status) && i.dueDate > new Date() && i.dueDate <= endDate
   );
 };
 

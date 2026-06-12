@@ -24,6 +24,7 @@ This guide covers deploying the enhanced Community Savings App to production wit
 ## Pre-Deployment Checklist
 
 ### Code Quality
+
 - [ ] All linting errors resolved
 - [ ] Unit tests passing (>80% coverage)
 - [ ] Integration tests passing
@@ -34,6 +35,7 @@ This guide covers deploying the enhanced Community Savings App to production wit
 - [ ] Error messages don't expose sensitive information
 
 ### Database
+
 - [ ] MongoDB Atlas cluster created
 - [ ] Backup enabled and tested
 - [ ] Indexes created for all queries
@@ -42,6 +44,7 @@ This guide covers deploying the enhanced Community Savings App to production wit
 - [ ] Network access whitelist configured
 
 ### Environment Variables
+
 - [ ] `.env.production` created with all required variables
 - [ ] API keys rotated from development
 - [ ] JWT secrets generated securely
@@ -50,12 +53,14 @@ This guide covers deploying the enhanced Community Savings App to production wit
 - [ ] CORS origins configured for production domain
 
 ### Certificates & Keys
+
 - [ ] SSL/TLS certificates obtained (Let's Encrypt recommended)
 - [ ] Private keys secured and backed up
 - [ ] Certificate renewal automation configured
 - [ ] Certificate pinning implemented (optional but recommended)
 
 ### Domain & DNS
+
 - [ ] Custom domain purchased
 - [ ] DNS records configured (A, CNAME, MX)
 - [ ] SSL certificate matches domain
@@ -126,6 +131,7 @@ sudo ufw enable
    - Create database user with strong password
 
 3. **Create Database**
+
    ```javascript
    Database: community_savings_prod
    Collections: users, groups, payments, loans, etc.
@@ -176,7 +182,7 @@ server {
 
     ssl_certificate /path/to/cert.pem;
     ssl_certificate_key /path/to/key.pem;
-    
+
     # SSL configuration
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;
@@ -202,7 +208,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_cache_bypass $http_upgrade;
-        
+
         # Timeouts
         proxy_connect_timeout 60s;
         proxy_send_timeout 60s;
@@ -302,6 +308,7 @@ netlify deploy --prod --dir=build
 ### Frontend Environment Configuration
 
 Create `.env.production`:
+
 ```env
 REACT_APP_API_URL=https://api.your-domain.com
 REACT_APP_ENV=production
@@ -314,6 +321,7 @@ REACT_APP_ENV=production
 ### MTN Mobile Money Production Setup
 
 1. **Switch from Sandbox to Production**
+
    ```env
    MTN_MOMO_BASE_URL=https://api.mtn.cm/mocserver/3.0.0
    MTN_TARGET_ENV=production
@@ -333,6 +341,7 @@ REACT_APP_ENV=production
 ### Airtel Money Production Setup
 
 1. **Switch URLs**
+
    ```env
    AIRTEL_MONEY_BASE_URL=https://openapi.airtel.africa/merchant/v1
    ```
@@ -352,13 +361,13 @@ REACT_APP_ENV=production
 ```javascript
 // Queue payment processing for reliability
 const paymentQueue = new Queue('payments', {
-  redis: { host: 'localhost', port: 6379 }
+  redis: { host: 'localhost', port: 6379 },
 });
 
 // Retry failed payments
 paymentQueue.process(async (job) => {
   const { transactionId } = job.data;
-  
+
   // Retry with exponential backoff
   try {
     await processPayment(transactionId);
@@ -367,10 +376,7 @@ paymentQueue.process(async (job) => {
       throw error; // Retry
     }
     // Log failure after all retries
-    await Payment.findOneAndUpdate(
-      { transactionId },
-      { status: 'FAILED', error: error.message }
-    );
+    await Payment.findOneAndUpdate({ transactionId }, { status: 'FAILED', error: error.message });
   }
 });
 ```
@@ -425,23 +431,20 @@ app.use('/api/', userLimiter);
 
 ```javascript
 // Use short-lived access tokens
-ACCESS_TOKEN_EXP = '15m'
+ACCESS_TOKEN_EXP = '15m';
 
 // Long-lived refresh tokens stored securely in httpOnly cookies
-REFRESH_TOKEN_DAYS = 30
-COOKIE_SECURE = true
-COOKIE_HTTP_ONLY = true
-COOKIE_SAME_SITE = 'Strict'
+REFRESH_TOKEN_DAYS = 30;
+COOKIE_SECURE = true;
+COOKIE_HTTP_ONLY = true;
+COOKIE_SAME_SITE = 'Strict';
 ```
 
 ### 5. CORS Configuration
 
 ```javascript
 const corsOptions = {
-  origin: [
-    'https://app.your-domain.com',
-    'https://www.your-domain.com',
-  ],
+  origin: ['https://app.your-domain.com', 'https://www.your-domain.com'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization'],
@@ -462,7 +465,7 @@ app.use(cors(corsOptions));
 require('newrelic');
 
 // Sentry error tracking
-const Sentry = require("@sentry/node");
+const Sentry = require('@sentry/node');
 
 Sentry.init({
   dsn: process.env.SENTRY_DSN,
@@ -558,17 +561,17 @@ const client = redis.createClient({
 // Cache frequently accessed data
 app.get('/api/groups/:id', async (req, res) => {
   const cacheKey = `group:${req.params.id}`;
-  
+
   // Check cache
   const cached = await client.get(cacheKey);
   if (cached) return res.json(JSON.parse(cached));
 
   // Get from DB
   const group = await Group.findById(req.params.id);
-  
+
   // Cache for 1 hour
   await client.setex(cacheKey, 3600, JSON.stringify(group));
-  
+
   res.json(group);
 });
 ```
@@ -600,7 +603,7 @@ const stats = await Payment.aggregate([
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
 
 // Image optimization
-<img src="image.webp" alt="..." loading="lazy" />
+<img src="image.webp" alt="..." loading="lazy" />;
 
 // Service worker for offline support
 if ('serviceWorker' in navigator) {
@@ -614,13 +617,13 @@ if ('serviceWorker' in navigator) {
 
 ### Common Issues
 
-| Issue | Cause | Solution |
-|-------|-------|----------|
-| High API latency | Slow database queries | Optimize indexes, use caching |
+| Issue            | Cause                 | Solution                                 |
+| ---------------- | --------------------- | ---------------------------------------- |
+| High API latency | Slow database queries | Optimize indexes, use caching            |
 | Payment failures | Provider connectivity | Implement retry logic, check credentials |
-| 502 Bad Gateway | Backend down | Check PM2, review logs, restart service |
-| Memory leaks | Unclosed connections | Review code, update dependencies |
-| CORS errors | Origin mismatch | Update CORS_ORIGINS, check domain |
+| 502 Bad Gateway  | Backend down          | Check PM2, review logs, restart service  |
+| Memory leaks     | Unclosed connections  | Review code, update dependencies         |
+| CORS errors      | Origin mismatch       | Update CORS_ORIGINS, check domain        |
 
 ### Debug Commands
 

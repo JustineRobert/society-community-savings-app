@@ -27,28 +27,28 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Setup Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
-      
+
       - name: Install dependencies
         run: npm run install-all
-      
+
       - name: Lint backend code
         run: npm run lint:backend
         continue-on-error: false
-      
+
       - name: Lint frontend code
         run: npm run lint:frontend
         continue-on-error: false
-      
+
       - name: Check code formatting
         run: npm run format:check
         continue-on-error: false
-      
+
       - name: Report linting results
         if: always()
         run: echo "✅ Code quality checks completed"
@@ -86,47 +86,47 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Setup Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
-      
+
       - name: Install dependencies
         run: npm run install-all
-      
+
       - name: Run backend unit tests
         run: npm run test:unit --prefix community-savings-app-backend
         env:
           MONGODB_URI: mongodb://localhost:27017/test
           REDIS_URL: redis://localhost:6379
           NODE_ENV: test
-      
+
       - name: Run backend integration tests
         run: npm run test:integration --prefix community-savings-app-backend
         env:
           MONGODB_URI: mongodb://localhost:27017/test
           REDIS_URL: redis://localhost:6379
           NODE_ENV: test
-      
+
       - name: Run backend tests with coverage
         run: npm run test:ci --prefix community-savings-app-backend
         env:
           MONGODB_URI: mongodb://localhost:27017/test
           REDIS_URL: redis://localhost:6379
           NODE_ENV: test
-      
+
       - name: Upload backend coverage
         uses: codecov/codecov-action@v4
         with:
           files: ./community-savings-app-backend/coverage/coverage-final.json
           flags: backend
           fail_ci_if_error: false
-      
+
       - name: Run frontend tests
         run: npm run test --prefix community-savings-app-frontend
-      
+
       - name: Report test results
         if: always()
         run: echo "✅ Test suite completed"
@@ -144,25 +144,25 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Setup Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
-      
+
       - name: Install dependencies
         run: npm run install-all
-      
+
       - name: Build backend
         run: npm run build --prefix community-savings-app-backend || true
-      
+
       - name: Build frontend
         run: npm run build --prefix community-savings-app-frontend
-      
+
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v4
-      
+
       - name: Build backend Docker image
         uses: docker/build-push-action@v5
         with:
@@ -171,7 +171,7 @@ jobs:
           tags: community-savings-backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      
+
       - name: Build frontend Docker image
         uses: docker/build-push-action@v5
         with:
@@ -180,7 +180,7 @@ jobs:
           tags: community-savings-frontend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      
+
       - name: Report build status
         if: always()
         run: echo "✅ Build completed successfully"
@@ -195,11 +195,11 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Run npm audit
         run: npm audit --audit-level=moderate
         continue-on-error: true
-      
+
       - name: Report security status
         if: always()
         run: echo "⚠️ Security scanning completed (non-blocking)"

@@ -1,4 +1,3 @@
-
 // controllers/authController.js
 // ============================================================================
 // Authentication Controller
@@ -96,7 +95,7 @@ async function createRefreshToken(userId, deviceInfo = {}) {
 /**
  * POST /api/auth/register
  */
-async function register(req, res, next) {
+async function register(req, res) {
   try {
     const { email, password, name, deviceInfo } = req.body;
 
@@ -129,7 +128,7 @@ async function register(req, res, next) {
 /**
  * POST /api/auth/login
  */
-async function login(req, res, next) {
+async function login(req, res) {
   try {
     const { email, password, deviceInfo } = req.body;
 
@@ -170,7 +169,7 @@ async function login(req, res, next) {
  * - If expired: 401.
  * - Else: rotate (revoke old, issue new), update cookie, return new access token.
  */
-async function refresh(req, res, next) {
+async function refresh(req, res) {
   try {
     const presented = req.cookies?.[REFRESH_COOKIE_NAME] || req.body?.refreshToken;
     if (!presented) return res.status(401).json({ message: 'Missing refresh token' });
@@ -225,7 +224,7 @@ async function refresh(req, res, next) {
  * POST /api/auth/logout
  * Revokes current refresh token, clears cookie.
  */
-async function logout(req, res, next) {
+async function logout(req, res) {
   try {
     const presented = req.cookies?.[REFRESH_COOKIE_NAME] || req.body?.refreshToken;
     if (presented) {
@@ -253,7 +252,7 @@ async function logout(req, res, next) {
  * POST /api/auth/logout-all
  * Revokes all refresh tokens for authenticated user.
  */
-async function logoutAll(req, res, next) {
+async function logoutAll(req, res) {
   try {
     if (!req.user?.id && !req.user?._id) {
       return res.status(401).json({ message: 'Not authenticated' });
@@ -274,7 +273,7 @@ async function logoutAll(req, res, next) {
 /**
  * GET /api/auth/me
  */
-async function me(req, res, next) {
+async function me(req, res) {
   try {
     if (!req.user) return res.status(401).json({ message: 'Not authenticated' });
     const user = req.user;
@@ -295,7 +294,7 @@ async function me(req, res, next) {
  * GET /api/auth/sessions
  * Lists refresh token sessions for authenticated user (basic).
  */
-async function listSessions(req, res, next) {
+async function listSessions(req, res) {
   try {
     const userId = req.user._id?.toString?.() || req.user.id;
     const sessions = await RefreshToken.find({ userId })
@@ -314,7 +313,7 @@ async function listSessions(req, res, next) {
  * DELETE /api/auth/sessions/:id
  * Revokes a specific session belonging to the authenticated user.
  */
-async function revokeSession(req, res, next) {
+async function revokeSession(req, res) {
   try {
     const userId = req.user._id?.toString?.() || req.user.id;
     const { id } = req.params;
@@ -322,7 +321,7 @@ async function revokeSession(req, res, next) {
     const token = await RefreshToken.findOne({ id });
     if (!token) return res.status(404).json({ message: 'Session not found' });
     if (String(token.userId) !== String(userId)) {
-      return res.status(403).json({ message: 'Cannot revoke another user\'s session' });
+      return res.status(403).json({ message: "Cannot revoke another user's session" });
     }
     if (!token.revokedAt) {
       token.revokedAt = new Date();
@@ -345,7 +344,7 @@ async function revokeSession(req, res, next) {
  * GET /api/auth/admin/sessions
  * Lists all sessions (admin).
  */
-async function adminListSessions(req, res, next) {
+async function adminListSessions(req, res) {
   try {
     const sessions = await RefreshToken.find({})
       .select('id userId createdAt lastUsedAt expiresAt revokedAt revokedReason deviceInfo replacedBy')
@@ -355,15 +354,16 @@ async function adminListSessions(req, res, next) {
     return res.status(200).json({ sessions });
   } catch (err) {
     console.error('[AuthController] adminListSessions error', err);
-    return res.status(500).json({ message: 'Failed to list sessions (admin)' });
+    return res.status(500).json({ message: 'Failed to list sessions' });
   }
 }
+
 
 /**
  * DELETE /api/auth/admin/sessions/:id
  * Revokes a session by ID (admin).
  */
-async function adminRevokeSession(req, res, next) {
+async function adminRevokeSession(req, res) {
   try {
     const { id } = req.params;
     const token = await RefreshToken.findOne({ id });
@@ -411,10 +411,7 @@ module.exports = {
   adminListSessions,
   adminRevokeSession,
 
-  // helpers for router-level usage (optional)
+  // helpers
   findUserByEmail,
   getUserById,
 };
-
-
-

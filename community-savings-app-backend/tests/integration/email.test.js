@@ -144,21 +144,13 @@ describe('Email Services Integration Tests', () => {
 
       // Weak password (no special char)
       const weakPassword = 'WeakPass123';
-      const result1 = await passwordResetService.resetPassword(
-        testUser._id,
-        token,
-        weakPassword
-      );
+      const result1 = await passwordResetService.resetPassword(testUser._id, token, weakPassword);
       expect(result1.success).toBe(false);
       expect(result1.error).toContain('strong');
 
       // Strong password
       const strongPassword = 'StrongPass123!@#';
-      const result2 = await passwordResetService.resetPassword(
-        testUser._id,
-        token,
-        strongPassword
-      );
+      const result2 = await passwordResetService.resetPassword(testUser._id, token, strongPassword);
       expect(result2.success).toBe(true);
     });
 
@@ -252,12 +244,10 @@ describe('Email Services Integration Tests', () => {
       const result = await passwordResetService.createResetToken(testUser._id);
       const token = result.token;
 
-      const res = await request(app)
-        .post('/api/auth/reset-password')
-        .send({
-          token,
-          newPassword: 'NewSecurePass123!@#',
-        });
+      const res = await request(app).post('/api/auth/reset-password').send({
+        token,
+        newPassword: 'NewSecurePass123!@#',
+      });
 
       expect(res.status).toBe(200);
     });
@@ -266,12 +256,10 @@ describe('Email Services Integration Tests', () => {
       const result = await passwordResetService.createResetToken(testUser._id);
       const token = result.token;
 
-      const res = await request(app)
-        .post('/api/auth/reset-password')
-        .send({
-          token,
-          newPassword: 'weak', // Too weak
-        });
+      const res = await request(app).post('/api/auth/reset-password').send({
+        token,
+        newPassword: 'weak', // Too weak
+      });
 
       expect(res.status).toBe(400);
     });

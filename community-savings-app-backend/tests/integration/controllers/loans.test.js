@@ -1,6 +1,6 @@
 /**
  * loans.test.js
- * 
+ *
  * Comprehensive integration tests for loan management system
  * Tests: eligibility scoring, loan workflow, repayment, error handling
  */
@@ -43,11 +43,15 @@ describe('Loan Management Integration Tests', () => {
 
     // Import routes after models are loaded
     const loanRoutes = require('../../../routes/loans');
-    app.use('/api/loans', (req, res, next) => {
-      req.user = { _id: req.body.userId || req.query.userId };
-      req.user.role = req.body.role || 'user';
-      next();
-    }, loanRoutes);
+    app.use(
+      '/api/loans',
+      (req, res, next) => {
+        req.user = { _id: req.body.userId || req.query.userId };
+        req.user.role = req.body.role || 'user';
+        next();
+      },
+      loanRoutes
+    );
   });
 
   afterAll(async () => {
@@ -267,7 +271,12 @@ describe('Loan Management Integration Tests', () => {
     });
 
     it('should allow admin override of eligibility', async () => {
-      const eligibility = await assessEligibility(regularUser._id, testGroup._id, adminUser._id, true);
+      const eligibility = await assessEligibility(
+        regularUser._id,
+        testGroup._id,
+        adminUser._id,
+        true
+      );
 
       expect(eligibility.isEligible).toBe(true);
       expect(eligibility.maxLoanAmount).toBeGreaterThan(0);
@@ -281,7 +290,12 @@ describe('Loan Management Integration Tests', () => {
         status: 'completed',
       });
 
-      const eligibility = await assessEligibility(regularUser._id, testGroup._id, adminUser._id, false);
+      const eligibility = await assessEligibility(
+        regularUser._id,
+        testGroup._id,
+        adminUser._id,
+        false
+      );
 
       expect(eligibility.isEligible).toBe(false);
       expect(eligibility.rejectionReason).toBe('admin_override');
@@ -302,7 +316,7 @@ describe('Loan Management Integration Tests', () => {
       const createdAt1 = assessment1.createdAt;
 
       // Wait a bit
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Get cached assessment
       const assessment2 = await getEligibility(regularUser._id, testGroup._id, adminUser._id);
@@ -343,9 +357,7 @@ describe('Loan Management Integration Tests', () => {
         role: 'user',
       };
 
-      const res = await request(app)
-        .post('/api/loans')
-        .send(loanData);
+      const res = await request(app).post('/api/loans').send(loanData);
 
       // Note: This would work with proper auth middleware
       expect(res.status).toBeLessThanOrEqual(201);
@@ -416,10 +428,10 @@ describe('Loan Management Integration Tests', () => {
 
     it('should validate loan amount against eligibility maximum', async () => {
       const eligibility = await assessEligibility(regularUser._id, testGroup._id, adminUser._id);
-      
+
       // Try to request amount exceeding max
       const excessiveAmount = eligibility.maxLoanAmount + 1000;
-      
+
       expect(excessiveAmount).toBeGreaterThan(eligibility.maxLoanAmount);
     });
   });
@@ -493,7 +505,7 @@ describe('Loan Management Integration Tests', () => {
 
       // Try to approve again
       expect(pendingLoan.status).toBe('approved');
-      
+
       // Controller would reject this operation
     });
 
@@ -593,11 +605,11 @@ describe('Loan Management Integration Tests', () => {
 
     it('should record partial repayment', async () => {
       const paymentAmount = 2000;
-      
+
       // Record payment manually
       const paid = [];
       const remaining = [...schedule.installments];
-      
+
       // Pay first installment partially
       if (remaining[0]) {
         remaining[0].paid = true;
@@ -768,9 +780,7 @@ describe('Loan Management Integration Tests', () => {
     });
 
     it('should retrieve user loans paginated', async () => {
-      const userLoans = await Loan.find({ user: regularUser._id })
-        .limit(2)
-        .skip(0);
+      const userLoans = await Loan.find({ user: regularUser._id }).limit(2).skip(0);
 
       expect(userLoans.length).toBeLessThanOrEqual(2);
       expect(userLoans[0].user.toString()).toBe(regularUser._id.toString());
@@ -792,7 +802,7 @@ describe('Loan Management Integration Tests', () => {
         .populate('approvedBy', 'name');
 
       expect(groupLoans.length).toBe(3);
-      groupLoans.forEach(loan => {
+      groupLoans.forEach((loan) => {
         expect(loan.group.toString()).toBe(testGroup._id.toString());
       });
     });

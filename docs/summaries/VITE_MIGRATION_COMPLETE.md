@@ -9,13 +9,15 @@ The Community Savings App frontend has been successfully migrated from Create Re
 ## What Was Done
 
 ### 1. ✅ Vite Setup
+
 - **Created**: `vite.config.js` - Complete Vite configuration with React plugin, API proxy, build optimization
 - **Created**: `vitest.config.js` - Test runner configuration (Vitest replaces Jest)
 - **Created**: `src/main.jsx` - New application entry point
 
 ### 2. ✅ Dependency Migration
+
 - **Removed**: `react-scripts` (completely eliminated)
-- **Added**: 
+- **Added**:
   - `vite` (^5.0.0) - Build tool
   - `@vitejs/plugin-react` (^4.2.0) - React integration
   - `vitest` (^1.0.0) - Test runner
@@ -24,6 +26,7 @@ The Community Savings App frontend has been successfully migrated from Create Re
   - `@vitest/ui` - Visual test dashboard
 
 ### 3. ✅ Scripts & Commands Updated
+
 ```json
 "start": "vite"              // Dev server
 "dev": "vite"                // Dev server (alternative)
@@ -33,16 +36,19 @@ The Community Savings App frontend has been successfully migrated from Create Re
 ```
 
 ### 4. ✅ HTML & Entry Point
+
 - **Updated**: `public/index.html`
   - Added favicon: `<link rel="icon" href="/images/Designer.png" />`
   - Added Apple touch icon: `<link rel="apple-touch-icon" href="/images/Designer.png" />`
   - Added Vite module entry: `<script type="module" src="/src/main.jsx"></script>`
 
 ### 5. ✅ Environment Variables
+
 - **Updated**: `.env.example` - Changed prefix from `REACT_APP_*` to `VITE_*`
 - **Created**: `.env` - Development configuration ready to use
 
 **Variable Updates:**
+
 ```
 REACT_APP_API_URL          → VITE_API_URL
 REACT_APP_APP_NAME         → VITE_APP_NAME
@@ -54,12 +60,14 @@ REACT_APP_ENABLE_OFFLINE_MODE → VITE_ENABLE_OFFLINE_MODE
 ```
 
 ### 6. ✅ Test Configuration
+
 - **Updated**: `src/setupTests.js`
   - Converted from Jest to Vitest syntax
   - Changed `jest.mock()` → `vi.mock()`
   - Maintains all existing test setup
 
 ### 7. ✅ Designer Logo Integration
+
 - **Updated**: `src/components/Navbar.jsx`
   - Added Designer logo image (32x32px) to navbar
   - Logo displays next to "Community Savings" branding
@@ -104,31 +112,37 @@ REACT_APP_ENABLE_OFFLINE_MODE → VITE_ENABLE_OFFLINE_MODE
 ## How to Use
 
 ### Installation
+
 ```bash
 cd community-savings-app-frontend
 npm install
 ```
 
 ### Development
+
 ```bash
 npm start
 # or
 npm run dev
 ```
+
 Server starts at `http://localhost:3000`
 
 ### Production Build
+
 ```bash
 npm run build
 # Output: dist/
 ```
 
 ### Preview Production Build
+
 ```bash
 npm run preview
 ```
 
 ### Run Tests
+
 ```bash
 npm test
 # or with watch mode
@@ -144,12 +158,14 @@ npm test -- --ui
 If your code references old environment variables, update:
 
 **Before (CRA):**
+
 ```javascript
 const apiUrl = process.env.REACT_APP_API_URL;
 const appName = process.env.REACT_APP_APP_NAME;
 ```
 
 **After (Vite):**
+
 ```javascript
 const apiUrl = import.meta.env.VITE_API_URL;
 const appName = import.meta.env.VITE_APP_NAME;
@@ -159,30 +175,33 @@ const appName = import.meta.env.VITE_APP_NAME;
 
 ## Performance Improvements
 
-| Metric | Before (CRA) | After (Vite) | Improvement |
-|--------|-------------|-------------|------------|
-| Dev Server Startup | ~10-15s | ~2-3s | **75-80% faster** |
-| HMR Update | ~5-8s | ~100-500ms | **90% faster** |
-| Production Build | ~20-30s | ~5-10s | **60-75% faster** |
-| Bundle Size | Baseline | ↓ 20-30% | **20-30% smaller** |
+| Metric             | Before (CRA) | After (Vite) | Improvement        |
+| ------------------ | ------------ | ------------ | ------------------ |
+| Dev Server Startup | ~10-15s      | ~2-3s        | **75-80% faster**  |
+| HMR Update         | ~5-8s        | ~100-500ms   | **90% faster**     |
+| Production Build   | ~20-30s      | ~5-10s       | **60-75% faster**  |
+| Bundle Size        | Baseline     | ↓ 20-30%     | **20-30% smaller** |
 
 ---
 
 ## Vite Configuration Features
 
 ### Development Server
+
 - Port: 3000 (configurable)
 - API Proxy: `/api` routes to `VITE_API_URL`
 - Fast Refresh (HMR)
 - Source maps for debugging
 
 ### Production Build
+
 - Minification enabled (terser)
 - Code splitting (vendor, Redux, app)
 - Target: ES2020
 - Output directory: `dist/`
 
 ### Path Aliases
+
 ```javascript
 @ → src/  // Available for imports
 ```
@@ -192,11 +211,13 @@ const appName = import.meta.env.VITE_APP_NAME;
 ## Logo Usage
 
 **Designer Logo Images Available:**
+
 - `public/images/Designer.png` - Primary logo (favicon & navbar)
 - `public/images/Refined Logo.png` - Alternative
 - `public/images/Savings Logo.png` - Alternative
 
 **Current Integration:**
+
 - ✅ Favicon: `<link rel="icon" href="/images/Designer.png" />`
 - ✅ Apple Touch Icon: For iOS home screen
 - ✅ Navbar Logo: Displayed in navigation bar (32x32px)
@@ -206,6 +227,7 @@ const appName = import.meta.env.VITE_APP_NAME;
 ## Testing Framework: Vitest
 
 Vitest provides:
+
 - ✅ Jest-compatible API (familiar syntax)
 - ✅ Faster execution
 - ✅ ESM support out-of-the-box
@@ -219,7 +241,9 @@ No changes needed to your test files - they work as-is!
 ## Deployment
 
 ### Docker Build
+
 If using Docker, ensure `Dockerfile` references the correct commands:
+
 ```dockerfile
 # Install
 RUN npm install
@@ -231,6 +255,7 @@ RUN npm run build
 ```
 
 ### Environment Variables
+
 Update CI/CD pipelines to use `VITE_*` prefix instead of `REACT_APP_*`
 
 ---
@@ -238,18 +263,23 @@ Update CI/CD pipelines to use `VITE_*` prefix instead of `REACT_APP_*`
 ## Troubleshooting
 
 ### Issue: "Cannot find module" errors
+
 **Solution**: Restart dev server with `npm start`
 
 ### Issue: Environment variables not working
-**Solution**: 
+
+**Solution**:
+
 1. Variables must start with `VITE_`
 2. Restart dev server after adding new variables
 3. Use `import.meta.env.VITE_*` to access
 
 ### Issue: HMR (Hot Module Replacement) not working
+
 **Solution**: Ensure dev server is running with `npm start`
 
 ### Issue: Build errors
+
 **Solution**: Check `vite.config.js` and ensure all plugins are installed
 
 ---
@@ -257,6 +287,7 @@ Update CI/CD pipelines to use `VITE_*` prefix instead of `REACT_APP_*`
 ## Documentation
 
 For detailed information, see:
+
 - **VITE_MIGRATION_GUIDE.md** - Complete migration guide
 - **vite.config.js** - Configuration options
 - **package.json** - Installed dependencies
@@ -292,6 +323,6 @@ For detailed information, see:
 
 ---
 
-*Migration completed: May 4, 2026*
-*Vite Version: 5.0.0+*
-*React Version: 18.3.1*
+_Migration completed: May 4, 2026_
+_Vite Version: 5.0.0+_
+_React Version: 18.3.1_

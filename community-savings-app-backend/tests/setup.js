@@ -11,7 +11,8 @@ require('dotenv').config({ path: path.resolve(__dirname, '../.env.test') });
 // Set test environment
 process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-key';
-process.env.MONGO_URI = process.env.MONGO_URI_TEST || 'mongodb://localhost:27017/community-savings-test';
+process.env.MONGO_URI =
+  process.env.MONGO_URI_TEST || 'mongodb://localhost:27017/community-savings-test';
 
 // Suppress console output during tests (can be overridden)
 if (process.env.DEBUG !== 'true') {

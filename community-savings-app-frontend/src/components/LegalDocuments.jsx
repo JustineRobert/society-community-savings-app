@@ -25,8 +25,8 @@ const LegalDocuments = () => {
         fetch('/api/legal/terms-of-service'),
         fetch('/api/legal/privacy-policy'),
         fetch('/api/legal/acceptance-status', {
-          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-        })
+          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        }),
       ]);
 
       if (!termsRes.ok || !privacyRes.ok) {
@@ -57,9 +57,9 @@ const LegalDocuments = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
         },
-        body: JSON.stringify({})
+        body: JSON.stringify({}),
       });
 
       if (!response.ok) {
@@ -72,7 +72,7 @@ const LegalDocuments = () => {
         hasAccepted: true,
         acceptedTerms: true,
         acceptedPrivacy: true,
-        acceptedAt: result.data.acceptedAt
+        acceptedAt: result.data.acceptedAt,
       });
       setShowTermsModal(false);
       setShowPrivacyModal(false);
@@ -113,16 +113,10 @@ const LegalDocuments = () => {
       )}
 
       <div className="legal-links">
-        <button 
-          className="legal-link-btn"
-          onClick={() => setShowTermsModal(true)}
-        >
+        <button className="legal-link-btn" onClick={() => setShowTermsModal(true)}>
           Terms of Service
         </button>
-        <button 
-          className="legal-link-btn"
-          onClick={() => setShowPrivacyModal(true)}
-        >
+        <button className="legal-link-btn" onClick={() => setShowPrivacyModal(true)}>
           Privacy Policy
         </button>
       </div>
@@ -136,10 +130,7 @@ const LegalDocuments = () => {
               <p className="legal-modal-date">
                 Effective: {termsData.effectiveDate} | Version: {termsData.version}
               </p>
-              <button 
-                className="legal-modal-close"
-                onClick={() => setShowTermsModal(false)}
-              >
+              <button className="legal-modal-close" onClick={() => setShowTermsModal(false)}>
                 ×
               </button>
             </div>
@@ -155,14 +146,11 @@ const LegalDocuments = () => {
             </div>
 
             <div className="legal-modal-footer">
-              <button 
-                className="legal-btn-secondary"
-                onClick={() => setShowTermsModal(false)}
-              >
+              <button className="legal-btn-secondary" onClick={() => setShowTermsModal(false)}>
                 Close
               </button>
               {!acceptanceStatus?.acceptedTerms && (
-                <button 
+                <button
                   className="legal-btn-primary"
                   onClick={handleAcceptTerms}
                   disabled={accepting}
@@ -184,10 +172,7 @@ const LegalDocuments = () => {
               <p className="legal-modal-date">
                 Effective: {privacyData.effectiveDate} | Version: {privacyData.version}
               </p>
-              <button 
-                className="legal-modal-close"
-                onClick={() => setShowPrivacyModal(false)}
-              >
+              <button className="legal-modal-close" onClick={() => setShowPrivacyModal(false)}>
                 ×
               </button>
             </div>
@@ -203,14 +188,11 @@ const LegalDocuments = () => {
             </div>
 
             <div className="legal-modal-footer">
-              <button 
-                className="legal-btn-secondary"
-                onClick={() => setShowPrivacyModal(false)}
-              >
+              <button className="legal-btn-secondary" onClick={() => setShowPrivacyModal(false)}>
                 Close
               </button>
               {!acceptanceStatus?.acceptedPrivacy && (
-                <button 
+                <button
                   className="legal-btn-primary"
                   onClick={handleAcceptTerms}
                   disabled={accepting}

@@ -68,7 +68,9 @@ describe('FAQ Component', () => {
     it('should render FAQ header', async () => {
       render(<FAQ />);
       await waitFor(() => {
-        expect(screen.getByRole('heading', { name: /frequently asked questions/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('heading', { name: /frequently asked questions/i })
+        ).toBeInTheDocument();
       });
     });
 
@@ -85,7 +87,9 @@ describe('FAQ Component', () => {
       render(<FAQ />);
       await waitFor(() => {
         mockCategories.forEach((category) => {
-          expect(screen.getByRole('button', { name: new RegExp(category, 'i') })).toBeInTheDocument();
+          expect(
+            screen.getByRole('button', { name: new RegExp(category, 'i') })
+          ).toBeInTheDocument();
         });
       });
     });
@@ -108,7 +112,7 @@ describe('FAQ Component', () => {
   describe('Accordion Functionality', () => {
     it('should toggle FAQ item on click', async () => {
       render(<FAQ />);
-      
+
       const question = await screen.findByText(mockFAQItems[0].question);
       const faqItem = question.closest('.faq-item');
 
@@ -121,7 +125,7 @@ describe('FAQ Component', () => {
 
     it('should show answer when expanded', async () => {
       render(<FAQ />);
-      
+
       const question = await screen.findByText(mockFAQItems[0].question);
       fireEvent.click(question);
 
@@ -132,7 +136,7 @@ describe('FAQ Component', () => {
 
     it('should hide answer when collapsed', async () => {
       render(<FAQ />);
-      
+
       const question = await screen.findByText(mockFAQItems[0].question);
       fireEvent.click(question);
 
@@ -149,7 +153,7 @@ describe('FAQ Component', () => {
 
     it('should allow only one item open at a time (if single expansion)', async () => {
       render(<FAQ />);
-      
+
       const question1 = await screen.findByText(mockFAQItems[0].question);
       const question2 = screen.getByText(mockFAQItems[1].question);
 
@@ -173,7 +177,7 @@ describe('FAQ Component', () => {
       faqService.searchFAQ.mockResolvedValue([mockFAQItems[0]]);
 
       render(<FAQ />);
-      
+
       const searchInput = await screen.findByPlaceholderText(/search faqs/i);
       await userEvent.type(searchInput, 'account');
 
@@ -186,7 +190,7 @@ describe('FAQ Component', () => {
       faqService.searchFAQ.mockResolvedValue([]);
 
       render(<FAQ />);
-      
+
       const searchInput = await screen.findByPlaceholderText(/search faqs/i);
       await userEvent.type(searchInput, 'nonexistent query');
 
@@ -197,7 +201,7 @@ describe('FAQ Component', () => {
 
     it('should clear search on input clear', async () => {
       render(<FAQ />);
-      
+
       const searchInput = await screen.findByPlaceholderText(/search faqs/i);
       await userEvent.type(searchInput, 'test');
       await userEvent.clear(searchInput);
@@ -216,7 +220,7 @@ describe('FAQ Component', () => {
       faqService.getFAQsByCategory.mockResolvedValue(accountFAQs);
 
       render(<FAQ />);
-      
+
       const categoryButton = await screen.findByRole('button', { name: /account/i });
       fireEvent.click(categoryButton);
 
@@ -227,7 +231,7 @@ describe('FAQ Component', () => {
 
     it('should highlight active category', async () => {
       render(<FAQ />);
-      
+
       const categoryButton = await screen.findByRole('button', { name: /account/i });
       fireEvent.click(categoryButton);
 
@@ -238,7 +242,7 @@ describe('FAQ Component', () => {
 
     it('should reset filter when all categories button is clicked', async () => {
       render(<FAQ />);
-      
+
       let categoryButton = await screen.findByRole('button', { name: /account/i });
       fireEvent.click(categoryButton);
 
@@ -260,7 +264,7 @@ describe('FAQ Component', () => {
       faqService.markFAQHelpful.mockResolvedValue({ success: true });
 
       render(<FAQ />);
-      
+
       const question = await screen.findByText(mockFAQItems[0].question);
       fireEvent.click(question);
 
@@ -276,7 +280,7 @@ describe('FAQ Component', () => {
       faqService.markFAQUnhelpful.mockResolvedValue({ success: true });
 
       render(<FAQ />);
-      
+
       const question = await screen.findByText(mockFAQItems[0].question);
       fireEvent.click(question);
 
@@ -290,7 +294,7 @@ describe('FAQ Component', () => {
 
     it('should highlight selected feedback option', async () => {
       render(<FAQ />);
-      
+
       const question = await screen.findByText(mockFAQItems[0].question);
       fireEvent.click(question);
 
@@ -313,7 +317,7 @@ describe('FAQ Component', () => {
 
     it('should display view count for each FAQ', async () => {
       render(<FAQ />);
-      
+
       const question = await screen.findByText(mockFAQItems[0].question);
       fireEvent.click(question);
 
@@ -352,7 +356,7 @@ describe('FAQ Component', () => {
   describe('Loading States', () => {
     it('should show loading indicator while fetching', () => {
       faqService.getFAQItems.mockImplementation(
-        () => new Promise(resolve => setTimeout(() => resolve(mockFAQItems), 1000))
+        () => new Promise((resolve) => setTimeout(() => resolve(mockFAQItems), 1000))
       );
 
       render(<FAQ />);
@@ -372,7 +376,7 @@ describe('FAQ Component', () => {
   describe('Accessibility', () => {
     it('should have proper ARIA attributes for accordion', async () => {
       render(<FAQ />);
-      
+
       const question = await screen.findByText(mockFAQItems[0].question);
       expect(question).toHaveAttribute('aria-expanded', 'false');
 
@@ -385,7 +389,7 @@ describe('FAQ Component', () => {
 
     it('should support keyboard navigation', async () => {
       render(<FAQ />);
-      
+
       const question = await screen.findByText(mockFAQItems[0].question);
       question.focus();
       expect(question).toHaveFocus();

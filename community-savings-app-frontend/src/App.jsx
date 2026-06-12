@@ -1,40 +1,40 @@
-
 // src/App.js
-import React, { Suspense, lazy } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { ToastContainer } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
+import React, { Suspense, lazy } from "react";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 
-import { AuthProvider, useAuth } from './context/AuthContext';
-import ProtectedRoute from './components/ProtectedRoute';
-import ProtectedRouteWithRole from './components/ProtectedRouteWithRole';
-import Navbar from './components/Navbar';
-import Footer from './components/Footer';
+import { AuthProvider, useAuth } from "./context/AuthContext";
+import ProtectedRoute from "./components/ProtectedRoute";
+import ProtectedRouteWithRole from "./components/ProtectedRouteWithRole";
+import Navbar from "./components/Navbar";
+import Footer from "./components/Footer";
 
-// ✅ NEW: import the ErrorBoundary and default fallback
-import { ErrorBoundary, ErrorFallback } from './components/ErrorBoundary';
+import { ErrorBoundary, ErrorFallback } from "./components/ErrorBoundary";
 
-const Dashboard = lazy(() => import('./pages/Dashboard'));
-const Login = lazy(() => import('./pages/Login'));
-const Register = lazy(() => import('./pages/Register'));
-const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
-const ResetPassword = lazy(() => import('./pages/ResetPassword'));
-const TermsOfService = lazy(() => import('./pages/TermsOfService'));
-const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
-const Legal = lazy(() => import('./pages/Legal'));
-const GroupList = lazy(() => import('./pages/GroupList'));
-const GroupDetails = lazy(() => import('./pages/GroupDetails'));
-const CreateGroup = lazy(() => import('./pages/CreateGroupV2')); // Enhanced version
-const NotFound = lazy(() => import('./pages/NotFound'));
+// Lazy-loaded pages
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Login = lazy(() => import("./pages/Login"));
+const Register = lazy(() => import("./pages/Register"));
+const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
+const ResetPassword = lazy(() => import("./pages/ResetPassword"));
+const TermsOfService = lazy(() => import("./pages/TermsOfService"));
+const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
+const Legal = lazy(() => import("./pages/Legal"));
+const GroupList = lazy(() => import("./pages/GroupList"));
+const GroupDetails = lazy(() => import("./pages/GroupDetails"));
+const CreateGroup = lazy(() => import("./pages/CreateGroupV2"));
+const NotFound = lazy(() => import("./pages/NotFound"));
 
-const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
-const AdminSettings = lazy(() => import('./pages/admin/AdminSettings'));
-const ManageUsers = lazy(() => import('./pages/admin/ManageUsers'));
-const AdminSessions = lazy(() => import('./pages/admin/AdminSessions'));
+// Admin
+const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
+const AdminSettings = lazy(() => import("./pages/admin/AdminSettings"));
+const ManageUsers = lazy(() => import("./pages/admin/ManageUsers"));
+const AdminSessions = lazy(() => import("./pages/admin/AdminSessions"));
 
 function RouteFallback() {
   return (
-    <div style={{ padding: '2rem', textAlign: 'center' }}>
+    <div style={{ padding: "2rem", textAlign: "center" }}>
       <p>Loading…</p>
     </div>
   );
@@ -43,69 +43,56 @@ function RouteFallback() {
 function ScrollToTop() {
   const { pathname } = useLocation();
   React.useEffect(() => {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }, [pathname]);
   return null;
 }
 
 function HomeRedirect() {
   const { user, loading } = useAuth();
-  if (loading) {
-    return <RouteFallback />;
-  }
+  if (loading) return <RouteFallback />;
   return user ? <Navigate to="/dashboard" replace /> : <Navigate to="/login" replace />;
 }
 
-/**
- * Centralized error reporting hook for ErrorBoundary.
- * Replace with Sentry/Datadog/etc. as needed.
- */
 function reportError(error, errorInfo) {
-  // Example: send to your logging service
-  // Sentry.captureException(error, { extra: errorInfo });
-  if (process.env.NODE_ENV !== 'production') {
-    // eslint-disable-next-line no-console
-    console.error('Reported UI error:', error, errorInfo);
+  if (process.env.NODE_ENV !== "production") {
+    console.error("Reported UI error:", error, errorInfo);
   }
 }
 
 function AppLayout({ children }) {
   const location = useLocation();
-  const hideNavbarOnPaths = ['/login', '/register', '/forgot-password', '/reset-password', '/terms', '/privacy', '/legal'];
-  const shouldHideNavbar = hideNavbarOnPaths.includes(location.pathname);
-  const hideFooeterOnPaths = ['/login', '/register'];
-  const shouldHideFooeter = hideFooeterOnPaths.includes(location.pathname);
+
+  const hideNavbarRoutes = [
+    "/login",
+    "/register",
+    "/forgot-password",
+    "/reset-password",
+    "/terms",
+    "/privacy",
+    "/legal",
+  ];
+
+  const hideFooterRoutes = ["/login", "/register"];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-      {!shouldHideNavbar && <Navbar />}
+    <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+      {!hideNavbarRoutes.includes(location.pathname) && <Navbar />}
       <ScrollToTop />
 
-      {/* ✅ Wrap Suspense with ErrorBoundary and reset on route change */}
       <div style={{ flex: 1 }}>
         <ErrorBoundary
           FallbackComponent={ErrorFallback}
-          fallbackProps={{ context: 'App layout' }}
           resetKeys={[location.pathname]}
           onError={reportError}
         >
-          <Suspense fallback={<RouteFallback />}>
-            {children}
-          </Suspense>
+          <Suspense fallback={<RouteFallback />}>{children}</Suspense>
         </ErrorBoundary>
       </div>
 
-      {!shouldHideFooeter && <Footer />}
+      {!hideFooterRoutes.includes(location.pathname) && <Footer />}
 
-      <ToastContainer
-        position="top-right"
-        autoClose={4000}
-        newestOnTop
-        closeOnClick
-        pauseOnHover
-        draggable
-        theme="colored"
-      />
+      <ToastContainer position="top-right" autoClose={4000} theme="colored" />
     </div>
   );
 }
@@ -114,17 +101,13 @@ function AdminLayout({ children }) {
   const location = useLocation();
 
   return (
-    <ProtectedRouteWithRole allowedRoles={['admin']}>
-      {/* ✅ Admin tree also protected by ErrorBoundary */}
+    <ProtectedRouteWithRole allowedRoles={["admin"]}>
       <ErrorBoundary
         FallbackComponent={ErrorFallback}
-        fallbackProps={{ context: 'Admin layout' }}
         resetKeys={[location.pathname]}
         onError={reportError}
       >
-        <Suspense fallback={<RouteFallback />}>
-          {children}
-        </Suspense>
+        <Suspense fallback={<RouteFallback />}>{children}</Suspense>
       </ErrorBoundary>
     </ProtectedRouteWithRole>
   );
@@ -133,91 +116,90 @@ function AdminLayout({ children }) {
 export default function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <AppLayout>
-          <Routes>
-            <Route path="/" element={<HomeRedirect />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-            <Route path="/forgot-password" element={<ForgotPassword />} />
-            <Route path="/reset-password" element={<ResetPassword />} />
-            <Route path="/terms" element={<TermsOfService />} />
-            <Route path="/privacy" element={<PrivacyPolicy />} />
-            <Route path="/legal" element={<Legal />} />
+      <AppLayout>
+        <Routes>
+          <Route path="/" element={<HomeRedirect />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/terms" element={<TermsOfService />} />
+          <Route path="/privacy" element={<PrivacyPolicy />} />
+          <Route path="/legal" element={<Legal />} />
 
-            <Route
-              path="/dashboard"
-              element={
-                <ProtectedRoute>
-                  <Dashboard />
-                </ProtectedRoute>
-              }
-            />
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <Dashboard />
+              </ProtectedRoute>
+            }
+          />
 
-            <Route
-              path="/groups"
-              element={
-                <ProtectedRoute>
-                  <GroupList />
-                </ProtectedRoute>
-              }
-            />
+          <Route
+            path="/groups"
+            element={
+              <ProtectedRoute>
+                <GroupList />
+              </ProtectedRoute>
+            }
+          />
 
-            <Route
-              path="/groups/:groupId"
-              element={
-                <ProtectedRoute>
-                  <GroupDetails />
-                </ProtectedRoute>
-              }
-            />
+          <Route
+            path="/groups/:groupId"
+            element={
+              <ProtectedRoute>
+                <GroupDetails />
+              </ProtectedRoute>
+            }
+          />
 
-            <Route
-              path="/create-group"
-              element={
-                <ProtectedRoute>
-                  <CreateGroup />
-                </ProtectedRoute>
-              }
-            />
+          <Route
+            path="/create-group"
+            element={
+              <ProtectedRoute>
+                <CreateGroup />
+              </ProtectedRoute>
+            }
+          />
 
-            <Route
-              path="/admin"
-              element={
-                <AdminLayout>
-                  <AdminDashboard />
-                </AdminLayout>
-              }
-            />
-            <Route
-              path="/admin/settings"
-              element={
-                <AdminLayout>
-                  <AdminSettings />
-                </AdminLayout>
-              }
-            />
-            <Route
-              path="/admin/users"
-              element={
-                <AdminLayout>
-                  <ManageUsers />
-                </AdminLayout>
-              }
-            />
-            <Route
-              path="/admin/sessions"
-              element={
-                <AdminLayout>
-                  <AdminSessions />
-                </AdminLayout>
-              }
-            />
+          {/* ✅ Admin Routes */}
+          <Route
+            path="/admin"
+            element={
+              <AdminLayout>
+                <AdminDashboard />
+              </AdminLayout>
+            }
+          />
+          <Route
+            path="/admin/settings"
+            element={
+              <AdminLayout>
+                <AdminSettings />
+              </AdminLayout>
+            }
+          />
+          <Route
+            path="/admin/users"
+            element={
+              <AdminLayout>
+                <ManageUsers />
+              </AdminLayout>
+            }
+          />
+          <Route
+            path="/admin/sessions"
+            element={
+              <AdminLayout>
+                <AdminSessions />
+              </AdminLayout>
+            }
+          />
 
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </AppLayout>
-      </BrowserRouter>
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </AppLayout>
     </AuthProvider>
   );
 }

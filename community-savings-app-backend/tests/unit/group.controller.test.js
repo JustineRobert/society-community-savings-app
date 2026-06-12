@@ -148,9 +148,7 @@ describe('groupController', () => {
           groupId: 'group-123',
         },
         body: {
-          members: [
-            { email: 'invalid-email', role: 'member' },
-          ],
+          members: [{ email: 'invalid-email', role: 'member' }],
         },
       };
       const res = {
@@ -174,9 +172,7 @@ describe('groupController', () => {
           groupId: 'group-123',
         },
         body: {
-          members: [
-            { email: 'existing@example.com', role: 'member' },
-          ],
+          members: [{ email: 'existing@example.com', role: 'member' }],
         },
       };
       const res = {

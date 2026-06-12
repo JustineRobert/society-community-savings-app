@@ -1,11 +1,6 @@
 // src/context/SettingsContext.js
 
-import React, {
-  createContext,
-  useEffect,
-  useContext,
-  useMemo,
-} from 'react';
+import React, { createContext, useEffect, useContext, useMemo } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchSettings } from '../redux/actions/settingsActions';
 import { toast } from 'react-toastify';
@@ -56,18 +51,17 @@ export const SettingsProvider = ({ children }) => {
   }, [dispatch, data]);
 
   // Memoize context value to avoid unnecessary re-renders
-  const contextValue = useMemo(() => ({
-    settings: data,
-    loading,
-    error,
-    dispatch,
-  }), [data, loading, error, dispatch]);
-
-  return (
-    <SettingsContext.Provider value={contextValue}>
-      {children}
-    </SettingsContext.Provider>
+  const contextValue = useMemo(
+    () => ({
+      settings: data,
+      loading,
+      error,
+      dispatch,
+    }),
+    [data, loading, error, dispatch]
   );
+
+  return <SettingsContext.Provider value={contextValue}>{children}</SettingsContext.Provider>;
 };
 
 /**

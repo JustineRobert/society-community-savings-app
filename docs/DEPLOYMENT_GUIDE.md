@@ -46,10 +46,13 @@ make docker-down
 ```
 
 ### docker-compose.yml Location
+
 File: `docker-compose.yml` in project root
 
 ### Environment Variables
+
 Copy from `.env.example` to `.env`:
+
 ```bash
 cp .env.example .env
 # Edit with your values
@@ -203,6 +206,7 @@ vercel --prod
 ### For Simple Full-Stack Deployment
 
 **Limitations:**
+
 - Free tier ending (use paid plans or alternatives)
 - Best for small apps
 - Single dyno = slower scaling
@@ -288,6 +292,7 @@ heroku logs --tail
 ### For Enterprise Deployment
 
 **Services Used:**
+
 - Elastic Container Registry (ECR) - Image storage
 - Elastic Container Service (ECS) - Orchestration
 - Relational Database Service (RDS) - MongoDB alternative
@@ -471,6 +476,7 @@ JWT_SECRET=[secure-random]
 ```
 
 Deploy with:
+
 ```bash
 doctl apps create --spec app.yaml
 ```
@@ -528,13 +534,13 @@ EMAIL_API_KEY=[your-sendgrid-key]
 
 ## 📊 Deployment Comparison
 
-| Platform | Cost | Setup Time | Scaling | Difficulty |
-|----------|------|-----------|---------|-----------|
-| Docker (Local) | Free | 5 min | Manual | Easy |
-| Vercel + Render | Free tier | 15 min | Good | Easy |
-| Heroku | Paid | 10 min | Limited | Easy |
-| AWS | Paid | 60 min | Excellent | Hard |
-| DigitalOcean | $12+ | 20 min | Good | Medium |
+| Platform        | Cost      | Setup Time | Scaling   | Difficulty |
+| --------------- | --------- | ---------- | --------- | ---------- |
+| Docker (Local)  | Free      | 5 min      | Manual    | Easy       |
+| Vercel + Render | Free tier | 15 min     | Good      | Easy       |
+| Heroku          | Paid      | 10 min     | Limited   | Easy       |
+| AWS             | Paid      | 60 min     | Excellent | Hard       |
+| DigitalOcean    | $12+      | 20 min     | Good      | Medium     |
 
 ---
 
@@ -569,6 +575,7 @@ heroku logs --tail
 ### Troubleshooting
 
 **Port already in use:**
+
 ```bash
 # Find process
 lsof -i :5000
@@ -577,6 +584,7 @@ kill -9 [PID]
 ```
 
 **Environment variables not loading:**
+
 ```bash
 # Verify .env exists and is readable
 cat .env
@@ -586,6 +594,7 @@ node -e "console.log(process.env.MONGODB_URI)"
 ```
 
 **Docker image too large:**
+
 ```bash
 # Clean up
 docker system prune -a
@@ -649,7 +658,7 @@ deploy:
   runs-on: ubuntu-latest
   steps:
     - uses: actions/checkout@v3
-    
+
     - name: Deploy to production
       run: |
         # Your deployment command
@@ -693,4 +702,3 @@ Choose your platform and deploy with confidence. The production-ready code is te
 **Last Updated:** January 15, 2026  
 **Version:** 2.0  
 **Author:** Development Team
-

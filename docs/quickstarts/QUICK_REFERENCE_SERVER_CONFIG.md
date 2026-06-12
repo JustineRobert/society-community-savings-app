@@ -3,11 +3,13 @@
 ## 🚀 Quick Start
 
 ### Local Development
+
 ```bash
 npm start  # Uses MongoDB and Redis defaults
 ```
 
 ### With Custom Services
+
 ```bash
 # MongoDB on Docker, Redis local
 MONGO_URI="mongodb://mongo-container:27017/community_savings" npm start
@@ -20,20 +22,22 @@ npm start
 
 ## 📍 Default Connection URIs
 
-| Service | Environment Variable | Default |
-|---------|----------------------|---------|
-| MongoDB | `MONGO_URI` | `mongodb://127.0.0.1:27017/community_savings` |
-| Redis | `REDIS_URI` | `redis://127.0.0.1:6379` |
+| Service | Environment Variable | Default                                       |
+| ------- | -------------------- | --------------------------------------------- |
+| MongoDB | `MONGO_URI`          | `mongodb://127.0.0.1:27017/community_savings` |
+| Redis   | `REDIS_URI`          | `redis://127.0.0.1:6379`                      |
 
 ## 🔄 Retry Behavior
 
 ### MongoDB
+
 - **Strategy**: Exponential backoff (2s → 4s → 8s → 16s)
 - **Max Retries**: 5
 - **On Failure**: Exit with descriptive error
 - **Config Errors**: Fail immediately
 
 ### Redis
+
 - **Strategy**: Exponential backoff (1s → 1.5s → 2.25s ...)
 - **Max Retries**: 10
 - **On Failure**: Fall back to memory store (app continues)
@@ -57,6 +61,7 @@ curl http://localhost:5000/metrics
 ## 🐛 Troubleshooting
 
 ### MongoDB Connection Issues
+
 ```
 ❌ MongoDB connection error: connect ECONNREFUSED
 
@@ -68,6 +73,7 @@ Solution:
 ```
 
 ### Redis Connection Issues
+
 ```
 ⚠️ Redis is not available - using memory store
 
@@ -79,6 +85,7 @@ To use Redis:
 ```
 
 ### Both Services Down
+
 ```
 MongoDB will exit the server (critical)
 Redis will degrade gracefully (non-critical)
@@ -87,6 +94,7 @@ Redis will degrade gracefully (non-critical)
 ## 🔍 Checking Connection Status
 
 ### Via API
+
 ```bash
 # Check if app is ready (all systems go)
 curl http://localhost:5000/readyz
@@ -96,6 +104,7 @@ curl http://localhost:5000/readyz
 ```
 
 ### Via Logs
+
 ```bash
 # Watch for these log messages:
 ✅ MongoDB connected successfully     # DB is up
@@ -107,12 +116,14 @@ curl http://localhost:5000/readyz
 ## 🚨 Critical Scenarios
 
 ### Scenario 1: MongoDB Down
+
 ```
 Server will: Exit immediately with error message
 Action Required: Start MongoDB or update MONGO_URI
 ```
 
 ### Scenario 2: Redis Down
+
 ```
 Server will: Continue running with memory-based rate limiting
 Action Required: Start Redis to restore distributed caching
@@ -120,6 +131,7 @@ Performance: Rate limiting will not work across multiple nodes
 ```
 
 ### Scenario 3: Both Down
+
 ```
 Server will: Exit immediately (MongoDB critical)
 Action Required: Start MongoDB first
@@ -128,6 +140,7 @@ Action Required: Start MongoDB first
 ## 📋 Environment Setup Examples
 
 ### Docker
+
 ```bash
 MONGO_URI="mongodb://mongo:27017/community_savings" \
 REDIS_URI="redis://redis:6379" \
@@ -135,6 +148,7 @@ docker run -p 5000:5000 backend:latest
 ```
 
 ### Kubernetes
+
 ```yaml
 env:
   - name: MONGO_URI
@@ -150,6 +164,7 @@ env:
 ```
 
 ### .env File
+
 ```env
 # .env file in project root
 MONGO_URI=mongodb://127.0.0.1:27017/community_savings
@@ -162,20 +177,23 @@ JWT_SECRET=your-secret-key-here
 ## 💡 Best Practices
 
 1. **Always set environment variables in production**
+
    ```bash
    MONGO_URI="..." REDIS_URI="..." npm start
    ```
 
 2. **Use Docker Compose for local multi-service setup**
+
    ```bash
    docker-compose up  # Starts MongoDB, Redis, and app
    ```
 
 3. **Monitor health endpoints in production**
+
    ```bash
    # Kubernetes liveness probe
    GET /healthz
-   
+
    # Kubernetes readiness probe
    GET /readyz
    ```

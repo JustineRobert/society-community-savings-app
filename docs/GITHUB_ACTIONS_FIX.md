@@ -20,15 +20,17 @@ GitHub Actions deprecated several action versions that no longer support modern 
 ### Issue 1: Deprecated Codecov Action
 
 **Problem:**
+
 ```yaml
 - name: Upload backend coverage
-  uses: codecov/codecov-action@v3  # ❌ DEPRECATED
+  uses: codecov/codecov-action@v3 # ❌ DEPRECATED
 ```
 
 **Solution:**
+
 ```yaml
 - name: Upload backend coverage
-  uses: codecov/codecov-action@v4  # ✅ FIXED
+  uses: codecov/codecov-action@v4 # ✅ FIXED
 ```
 
 **Change:** `codecov/codecov-action@v3` → `@v4`  
@@ -39,15 +41,17 @@ GitHub Actions deprecated several action versions that no longer support modern 
 ### Issue 2: Deprecated Docker Buildx Action
 
 **Problem:**
+
 ```yaml
 - name: Setup Docker Buildx
-  uses: docker/setup-buildx-action@v3  # ⚠️ OLD
+  uses: docker/setup-buildx-action@v3 # ⚠️ OLD
 ```
 
 **Solution:**
+
 ```yaml
 - name: Setup Docker Buildx
-  uses: docker/setup-buildx-action@v4  # ✅ UPDATED
+  uses: docker/setup-buildx-action@v4 # ✅ UPDATED
 ```
 
 **Change:** `docker/setup-buildx-action@v3` → `@v4`  
@@ -61,22 +65,22 @@ GitHub Actions deprecated several action versions that no longer support modern 
 
 ```yaml
 # ✅ Already correct in workflow:
-- uses: actions/checkout@v4          # Supports Node.js 24
-- uses: actions/setup-node@v4        # Supports Node.js 24
-- uses: docker/build-push-action@v5  # Current stable
+- uses: actions/checkout@v4 # Supports Node.js 24
+- uses: actions/setup-node@v4 # Supports Node.js 24
+- uses: docker/build-push-action@v5 # Current stable
 ```
 
 ---
 
 ## 📊 Action Versions Comparison
 
-| Action | Before | After | Node.js Support |
-|--------|--------|-------|-----------------|
-| checkout | v4 | v4 | ✅ 24 |
-| setup-node | v4 | v4 | ✅ 24 |
-| codecov/codecov-action | v3 | **v4** | ✅ 24 |
-| docker/setup-buildx-action | v3 | **v4** | ✅ 24 |
-| docker/build-push-action | v5 | v5 | ✅ 24 |
+| Action                     | Before | After  | Node.js Support |
+| -------------------------- | ------ | ------ | --------------- |
+| checkout                   | v4     | v4     | ✅ 24           |
+| setup-node                 | v4     | v4     | ✅ 24           |
+| codecov/codecov-action     | v3     | **v4** | ✅ 24           |
+| docker/setup-buildx-action | v3     | **v4** | ✅ 24           |
+| docker/build-push-action   | v5     | v5     | ✅ 24           |
 
 **Bold = Fixed in this update**
 
@@ -85,6 +89,7 @@ GitHub Actions deprecated several action versions that no longer support modern 
 ## 🚀 Impact on CI/CD Pipeline
 
 ### Before (Failing ❌)
+
 ```
 Quality Check → ❌ FAIL (warnings)
 Test Suite    → ❌ FAIL (deprecated actions)
@@ -92,6 +97,7 @@ Build & Docker → ❌ FAIL (deprecated actions)
 ```
 
 ### After (Passing ✅)
+
 ```
 Quality Check → ✅ PASS
 Test Suite    → ✅ PASS
@@ -133,6 +139,7 @@ Build & Docker → ✅ PASS
 ## 🔄 Next Steps
 
 ### 1. Commit Changes
+
 ```bash
 git add .github/workflows/ci-cd.yml
 git commit -m "chore(ci): update github actions to support node.js 24
@@ -145,11 +152,13 @@ git commit -m "chore(ci): update github actions to support node.js 24
 ```
 
 ### 2. Push to GitHub
+
 ```bash
 git push origin main
 ```
 
 ### 3. Verify in GitHub Actions
+
 ```
 Go to: https://github.com/[your-repo]/actions
 Check: All workflows pass without warnings ✅
@@ -165,32 +174,34 @@ Check: All workflows pass without warnings ✅
 ✅ Latest Codecov features  
 ✅ Automatic caching  
 ✅ Parallel job execution  
-✅ Service containers (MongoDB, Redis)  
+✅ Service containers (MongoDB, Redis)
 
 ---
 
 ## 🛡️ Production Readiness Status
 
-| Check | Status | Notes |
-|-------|--------|-------|
-| Code Quality | ✅ | ESLint + Prettier |
-| Testing | ✅ | 1,200+ lines |
-| CI/CD Actions | ✅ | Updated to latest |
-| Docker Support | ✅ | v4 with latest features |
-| Node.js 24 Ready | ✅ | Fully compatible |
-| No Breaking Changes | ✅ | Architecture preserved |
+| Check               | Status | Notes                   |
+| ------------------- | ------ | ----------------------- |
+| Code Quality        | ✅     | ESLint + Prettier       |
+| Testing             | ✅     | 1,200+ lines            |
+| CI/CD Actions       | ✅     | Updated to latest       |
+| Docker Support      | ✅     | v4 with latest features |
+| Node.js 24 Ready    | ✅     | Fully compatible        |
+| No Breaking Changes | ✅     | Architecture preserved  |
 
 ---
 
 ## 📚 References
 
 ### GitHub Changelogs
+
 - [actions/upload-artifact deprecation](https://github.blog/changelog/2024-04-16-deprecation-notice-v3-of-the-artifact-actions/)
 - [Node.js 20 deprecation](https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/)
 - [Codecov Action v4 release](https://github.com/codecov/codecov-action/releases/tag/v4.0.0)
 - [Docker Setup Buildx v4](https://github.com/docker/setup-buildx-action/releases)
 
 ### Action Documentation
+
 - [codecov/codecov-action](https://github.com/codecov/codecov-action)
 - [docker/setup-buildx-action](https://github.com/docker/setup-buildx-action)
 - [actions/checkout](https://github.com/actions/checkout)
@@ -256,10 +267,12 @@ Check: All workflows pass without warnings ✅
 **Issue:** GitHub Actions using deprecated versions (v3) that don't support Node.js 24
 
 **Solution:** Updated action versions to v4:
+
 - codecov/codecov-action: v3 → v4
 - docker/setup-buildx-action: v3 → v4
 
-**Result:** 
+**Result:**
+
 - ✅ CI/CD pipeline now passes
 - ✅ No deprecation warnings
 - ✅ Ready for Node.js 24 enforcement
@@ -273,7 +286,7 @@ Check: All workflows pass without warnings ✅
 ## ✨ Production Ready Status
 
 **Before:** ⚠️ CI/CD failing with deprecation errors  
-**After:** ✅ CI/CD passing with latest actions  
+**After:** ✅ CI/CD passing with latest actions
 
 **Status:** Production Ready & Contest Submission Ready  
 **Date:** June 1, 2026  
@@ -293,4 +306,3 @@ Check: All workflows pass without warnings ✅
 **All checks passing:** ✅  
 **Ready to merge:** ✅  
 **Production ready:** ✅
-

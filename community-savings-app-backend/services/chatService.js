@@ -31,7 +31,7 @@ class ChatService {
       }
 
       // Remove duplicates and sort for idempotency
-      const uniqueParticipants = [...new Set(participants.map(p => p.toString()))].sort();
+      const uniqueParticipants = [...new Set(participants.map((p) => p.toString()))].sort();
 
       if (type === 'dm' && uniqueParticipants.length !== 2) {
         throw new Error('Direct message must have exactly 2 participants');
@@ -144,7 +144,9 @@ class ChatService {
         throw new Error('Conversation not found');
       }
 
-      const isParticipant = conversation.participants.some(p => p.toString() === senderId.toString());
+      const isParticipant = conversation.participants.some(
+        (p) => p.toString() === senderId.toString()
+      );
       if (!isParticipant) {
         throw new Error('You are not a participant in this conversation');
       }
@@ -185,10 +187,7 @@ class ChatService {
       await message.populate('sender', 'name email avatar');
 
       // Update conversation's lastMessageAt
-      await Conversation.updateOne(
-        { _id: conversationId },
-        { lastMessageAt: new Date() }
-      );
+      await Conversation.updateOne({ _id: conversationId }, { lastMessageAt: new Date() });
 
       logger.info('[ChatService] Message added', {
         messageId: message._id,
@@ -412,7 +411,9 @@ class ChatService {
         throw new Error('Conversation not found');
       }
 
-      const isParticipant = conversation.participants.some(p => p.toString() === userId.toString());
+      const isParticipant = conversation.participants.some(
+        (p) => p.toString() === userId.toString()
+      );
       if (!isParticipant) {
         throw new Error('You are not a participant in this conversation');
       }

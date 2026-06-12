@@ -25,5 +25,3 @@ vi.mock('axios', () => ({
   patch: vi.fn(),
   request: vi.fn(),
 }));
-
-

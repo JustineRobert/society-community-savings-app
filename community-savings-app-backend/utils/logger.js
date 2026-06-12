@@ -1,33 +1,39 @@
 // utils/logger.js
-const { createLogger, format, transports } = require('winston');
-require('winston-daily-rotate-file');
+// Winston-based structured logger with environment-aware formatting.
 
-const logFormat = format.combine(
-  format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-  format.printf(({ timestamp, level, message }) => `${timestamp} [${level.toUpperCase()}]: ${message}`)
-);
+'use strict';
 
-const logger = createLogger({
-  level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
-  format: logFormat,
+const winston = require('winston');
+const config = require('../config');
+
+const isProd = config.env === 'production';
+
+const logger = winston.createLogger({
+  level: isProd ? 'info' : 'debug',
+  format: isProd
+    ? winston.format.combine(winston.format.timestamp(), winston.format.json())
+    : winston.format.combine(winston.format.colorize(), winston.format.timestamp(), winston.format.simple()),
   transports: [
-    new transports.Console({
-      format: format.combine(format.colorize(), logFormat),
-    }),
-    new transports.DailyRotateFile({
-      filename: 'logs/app-%DATE%.log',
-      datePattern: 'YYYY-MM-DD',
-      maxFiles: '14d',
-      zippedArchive: true,
-    }),
-    new transports.DailyRotateFile({
-      filename: 'logs/error-%DATE%.log',
-      datePattern: 'YYYY-MM-DD',
-      level: 'error',
-      maxFiles: '30d',
-      zippedArchive: true,
+    new winston.transports.Console({
+      handleExceptions: true,
     }),
   ],
+  exitOnError: false,
 });
 
-module.exports = logger;
+// Helper wrappers for consistent structured logs
+const wrap = (level) => (message, meta = {}) => {
+  if (typeof message === 'object') {
+    logger.log(level, '', message);
+  } else {
+    logger.log(level, message, meta);
+  }
+};
+
+module.exports = {
+  logger,
+  debug: wrap('debug'),
+  info: wrap('info'),
+  warn: wrap('warn'),
+  error: wrap('error'),
+};

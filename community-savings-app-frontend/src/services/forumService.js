@@ -1,11 +1,15 @@
+/* global console */
+
 /**
  * forumService.js
  * Service for managing community forum functionality
  */
 
-const axios = require('axios');
+import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
+const API_BASE_URL =
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) ||
+  'http://localhost:3001/api';
 
 const forumService = {
   /**
@@ -15,10 +19,10 @@ const forumService = {
     try {
       const { page = 1, limit = 20, sort = 'newest', category, filter } = options;
       const params = { page, limit, sort };
-      
+
       if (category) params.category = category;
       if (filter) params.filter = filter;
-      
+
       const response = await axios.get(`${API_BASE_URL}/forum/topics`, { params });
       return response.data.topics;
     } catch (error) {
@@ -45,9 +49,10 @@ const forumService = {
    */
   getTopicsByCategory: async (category, page = 1, limit = 20) => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/forum/topics/category/${category}`, {
-        params: { page, limit },
-      });
+      const response = await axios.get(
+        `${API_BASE_URL}/forum/topics/category/${category}`,
+        { params: { page, limit } }
+      );
       return response.data.topics;
     } catch (error) {
       console.error('Error fetching topics by category:', error);
@@ -133,9 +138,10 @@ const forumService = {
    */
   getTopicReplies: async (topicId, page = 1, limit = 20) => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/forum/topics/${topicId}/replies`, {
-        params: { page, limit },
-      });
+      const response = await axios.get(
+        `${API_BASE_URL}/forum/topics/${topicId}/replies`,
+        { params: { page, limit } }
+      );
       return response.data.replies;
     } catch (error) {
       console.error('Error fetching replies:', error);
@@ -175,21 +181,6 @@ const forumService = {
   },
 
   /**
-   * Mark reply as solution
-   */
-  markAsolution: async (topicId, replyId) => {
-    try {
-      const response = await axios.post(
-        `${API_BASE_URL}/forum/topics/${topicId}/replies/${replyId}/mark-solution`
-      );
-      return response.data;
-    } catch (error) {
-      console.error('Error marking solution:', error);
-      throw error;
-    }
-  },
-
-  /**
    * Get forum categories
    */
   getCategories: async () => {
@@ -216,162 +207,14 @@ const forumService = {
   },
 
   /**
-   * Get recent topics
-   */
-  getRecentTopics: async (limit = 5) => {
-    try {
-      const response = await axios.get(`${API_BASE_URL}/forum/topics/recent`, {
-        params: { limit },
-      });
-      return response.data.topics;
-    } catch (error) {
-      console.error('Error fetching recent topics:', error);
-      throw error;
-    }
-  },
-
-  /**
-   * Get popular topics
-   */
-  getPopularTopics: async (limit = 5) => {
-    try {
-      const response = await axios.get(`${API_BASE_URL}/forum/topics/popular`, {
-        params: { limit },
-      });
-      return response.data.topics;
-    } catch (error) {
-      console.error('Error fetching popular topics:', error);
-      throw error;
-    }
-  },
-
-  /**
-   * Increment topic view count
-   */
-  incrementTopicViews: async (topicId) => {
-    try {
-      const response = await axios.post(
-        `${API_BASE_URL}/forum/topics/${topicId}/views`
-      );
-      return response.data;
-    } catch (error) {
-      console.error('Error incrementing topic views:', error);
-      throw error;
-    }
-  },
-
-  /**
-   * Like/vote on reply
-   */
-  voteReply: async (topicId, replyId, voteType = 'up') => {
-    try {
-      const response = await axios.post(
-        `${API_BASE_URL}/forum/topics/${topicId}/replies/${replyId}/vote`,
-        { voteType }
-      );
-      return response.data;
-    } catch (error) {
-      console.error('Error voting on reply:', error);
-      throw error;
-    }
-  },
-
-  /**
-   * Mark topic as sticky (admin only)
-   */
-  markSticky: async (topicId) => {
-    try {
-      const response = await axios.post(
-        `${API_BASE_URL}/forum/topics/${topicId}/sticky`
-      );
-      return response.data;
-    } catch (error) {
-      console.error('Error marking sticky:', error);
-      throw error;
-    }
-  },
-
-  /**
-   * Lock topic (admin only)
-   */
-  lockTopic: async (topicId) => {
-    try {
-      const response = await axios.post(
-        `${API_BASE_URL}/forum/topics/${topicId}/lock`
-      );
-      return response.data;
-    } catch (error) {
-      console.error('Error locking topic:', error);
-      throw error;
-    }
-  },
-
-  /**
-   * Get followers of topic
-   */
-  getTopicFollowers: async (topicId) => {
-    try {
-      const response = await axios.get(`${API_BASE_URL}/forum/topics/${topicId}/followers`);
-      return response.data.followers;
-    } catch (error) {
-      console.error('Error fetching followers:', error);
-      throw error;
-    }
-  },
-
-  /**
-   * Follow/unfollow topic
-   */
-  toggleFollowTopic: async (topicId) => {
-    try {
-      const response = await axios.post(
-        `${API_BASE_URL}/forum/topics/${topicId}/follow`
-      );
-      return response.data;
-    } catch (error) {
-      console.error('Error toggling follow:', error);
-      throw error;
-    }
-  },
-
-  /**
-   * Report inappropriate content
-   */
-  reportContent: async (contentType, contentId, reason) => {
-    try {
-      const response = await axios.post(`${API_BASE_URL}/forum/report`, {
-        contentType,
-        contentId,
-        reason,
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error reporting content:', error);
-      throw error;
-    }
-  },
-
-  /**
-   * Get user's forum activity
-   */
-  getUserActivity: async (userId) => {
-    try {
-      const response = await axios.get(`${API_BASE_URL}/forum/users/${userId}/activity`);
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching user activity:', error);
-      throw error;
-    }
-  },
-
-  /**
    * Get trending topics
    */
   getTrendingTopics: async (limit = 10, timeframe = 'week') => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/forum/topics/trending`, {
-        params: { limit, timeframe },
-      });
+      const response = await axios.get(
+        `${API_BASE_URL}/forum/topics/trending`,
+        { params: { limit, timeframe } }
+      );
       return response.data.topics;
     } catch (error) {
       console.error('Error fetching trending topics:', error);
@@ -380,4 +223,5 @@ const forumService = {
   },
 };
 
-module.exports = forumService;
+// ✅ FIX: Replace CommonJS export
+export default forumService;

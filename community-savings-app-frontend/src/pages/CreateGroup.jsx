@@ -7,8 +7,16 @@ import './CreateGroup.css';
 
 const GROUP_TYPES = [
   { value: 'savings', label: 'Savings Group', description: 'Traditional community savings pool' },
-  { value: 'investment', label: 'Investment Group', description: 'Focus on investment opportunities' },
-  { value: 'community', label: 'Community Support', description: 'General community support and welfare' },
+  {
+    value: 'investment',
+    label: 'Investment Group',
+    description: 'Focus on investment opportunities',
+  },
+  {
+    value: 'community',
+    label: 'Community Support',
+    description: 'General community support and welfare',
+  },
 ];
 
 const CreateGroup = () => {
@@ -25,45 +33,48 @@ const CreateGroup = () => {
 
   const validateEmails = useCallback((emails) => {
     const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-    return emails.filter(email => email.trim() && !emailRegex.test(email.trim()));
+    return emails.filter((email) => email.trim() && !emailRegex.test(email.trim()));
   }, []);
 
-  const parseCSV = useCallback((file) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const text = e.target.result;
-        const lines = text.split('\n').filter(line => line.trim());
-        const emails = [];
-        const errors = [];
+  const parseCSV = useCallback(
+    (file) => {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const text = e.target.result;
+          const lines = text.split('\n').filter((line) => line.trim());
+          const emails = [];
+          const errors = [];
 
-        lines.forEach((line, index) => {
-          const parts = line.split(',').map(p => p.trim());
-          if (parts.length >= 1) {
-            const email = parts[0];
-            if (email) {
-              emails.push(email);
-            } else {
-              errors.push(`Line ${index + 1}: Empty email`);
+          lines.forEach((line, index) => {
+            const parts = line.split(',').map((p) => p.trim());
+            if (parts.length >= 1) {
+              const email = parts[0];
+              if (email) {
+                emails.push(email);
+              } else {
+                errors.push(`Line ${index + 1}: Empty email`);
+              }
             }
+          });
+
+          const invalidEmails = validateEmails(emails);
+          if (invalidEmails.length > 0) {
+            errors.push(`Invalid emails: ${invalidEmails.join(', ')}`);
           }
-        });
 
-        const invalidEmails = validateEmails(emails);
-        if (invalidEmails.length > 0) {
-          errors.push(`Invalid emails: ${invalidEmails.join(', ')}`);
-        }
-
-        if (errors.length > 0) {
-          reject(errors);
-        } else {
-          resolve(emails);
-        }
-      };
-      reader.onerror = () => reject(['Failed to read file']);
-      reader.readAsText(file);
-    });
-  }, [validateEmails]);
+          if (errors.length > 0) {
+            reject(errors);
+          } else {
+            resolve(emails);
+          }
+        };
+        reader.onerror = () => reject(['Failed to read file']);
+        reader.readAsText(file);
+      });
+    },
+    [validateEmails]
+  );
 
   const handleCsvUpload = async (e) => {
     const file = e.target.files[0];
@@ -97,12 +108,12 @@ const CreateGroup = () => {
       return;
     }
     if (step === 2) {
-      const invalid = validateEmails(memberEmails.filter(e => e.trim()));
+      const invalid = validateEmails(memberEmails.filter((e) => e.trim()));
       if (invalid.length > 0) {
         setError(`Invalid emails: ${invalid.join(', ')}`);
         return;
       }
-      if (memberEmails.filter(e => e.trim()).length === 0) {
+      if (memberEmails.filter((e) => e.trim()).length === 0) {
         setError('Please add at least one member');
         return;
       }
@@ -121,7 +132,7 @@ const CreateGroup = () => {
     setProgress({ current: 0, total: memberEmails.length, message: 'Creating group...' });
 
     try {
-      const members = memberEmails.filter(email => email.trim());
+      const members = memberEmails.filter((email) => email.trim());
       setProgress({ current: 1, total: members.length, message: 'Sending invitations...' });
 
       await api.post('/groups', {
@@ -130,7 +141,11 @@ const CreateGroup = () => {
         members,
       });
 
-      setProgress({ current: members.length, total: members.length, message: 'Group created successfully!' });
+      setProgress({
+        current: members.length,
+        total: members.length,
+        message: 'Group created successfully!',
+      });
       toast.success('Group created successfully!');
       navigate('/');
     } catch (err) {
@@ -165,7 +180,7 @@ const CreateGroup = () => {
           onChange={(e) => setGroupType(e.target.value)}
           className="input-field"
         >
-          {GROUP_TYPES.map(type => (
+          {GROUP_TYPES.map((type) => (
             <option key={type.value} value={type.value}>
               {type.label} - {type.description}
             </option>
@@ -180,15 +195,14 @@ const CreateGroup = () => {
       <h3>Add Members</h3>
       <div className="form-group">
         <label>Upload CSV (optional)</label>
-        <input
-          type="file"
-          accept=".csv"
-          onChange={handleCsvUpload}
-          className="input-field"
-        />
+        <input type="file" accept=".csv" onChange={handleCsvUpload} className="input-field" />
         {csvErrors.length > 0 && (
           <div className="error-list">
-            {csvErrors.map((err, i) => <p key={i} className="error-message">{err}</p>)}
+            {csvErrors.map((err, i) => (
+              <p key={i} className="error-message">
+                {err}
+              </p>
+            ))}
           </div>
         )}
       </div>
@@ -212,18 +226,26 @@ const CreateGroup = () => {
   );
 
   const renderStep3 = () => {
-    const validMembers = memberEmails.filter(e => e.trim() && validateEmails([e]).length === 0);
+    const validMembers = memberEmails.filter((e) => e.trim() && validateEmails([e]).length === 0);
     return (
       <div className="step-content">
         <h3>Preview & Confirm</h3>
         <div className="preview-summary">
           <h4>Group Details</h4>
-          <p><strong>Name:</strong> {groupName}</p>
-          <p><strong>Type:</strong> {GROUP_TYPES.find(t => t.value === groupType)?.label}</p>
-          <p><strong>Members:</strong> {validMembers.length}</p>
+          <p>
+            <strong>Name:</strong> {groupName}
+          </p>
+          <p>
+            <strong>Type:</strong> {GROUP_TYPES.find((t) => t.value === groupType)?.label}
+          </p>
+          <p>
+            <strong>Members:</strong> {validMembers.length}
+          </p>
           <h4>Member List</h4>
           <ul>
-            {validMembers.map((email, i) => <li key={i}>{email}</li>)}
+            {validMembers.map((email, i) => (
+              <li key={i}>{email}</li>
+            ))}
           </ul>
         </div>
       </div>
@@ -275,7 +297,11 @@ const CreateGroup = () => {
             </button>
           )}
           {step === 3 && (
-            <button type="submit" disabled={loading} className={`submit-btn ${loading ? 'loading' : ''}`}>
+            <button
+              type="submit"
+              disabled={loading}
+              className={`submit-btn ${loading ? 'loading' : ''}`}
+            >
               {loading ? 'Creating...' : 'Create Group'}
             </button>
           )}

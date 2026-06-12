@@ -118,7 +118,7 @@ async function run({ skipConnect = false } = {}) {
       description: groupDescription,
       type: groupType,
       admin: adminUser._id,
-      createdBy: adminUser._id,   // required by schema
+      createdBy: adminUser._id, // required by schema
       createdAt: new Date(),
       isActive: true,
     });

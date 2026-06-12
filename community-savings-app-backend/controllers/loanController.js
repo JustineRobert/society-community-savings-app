@@ -20,6 +20,18 @@
 const logger = require('../utils/logger');
 const asyncHandler = require('../utils/asyncHandler');
 
+// ✅ REQUIRED IMPORTS (Fixes ALL no-undef errors)
+
+const mongoose = require('mongoose');
+
+const Loan = require('../models/Loan');
+const LoanAudit = require('../models/LoanAudit');
+const LoanRepaymentSchedule = require('../models/LoanRepaymentSchedule');
+const Group = require('../models/Group');
+
+const { assessEligibility } = require('../services/loanScoringService'); // adjust if path differs
+``
+
 /**
  * Helper: Ensure user is authenticated
  */
@@ -83,10 +95,10 @@ exports.createLoanApplication = async (req, res, next) => {
       return res.status(500).json({ error: 'Loan service not initialized' });
     }
 
-    // Validate
     if (!amount || amount <= 0) {
       throw httpError(400, 'amount must be positive number');
     }
+
     if (!duration || duration < 1 || duration > 360) {
       throw httpError(400, 'duration must be between 1 and 360 months');
     }
@@ -100,13 +112,6 @@ exports.createLoanApplication = async (req, res, next) => {
     };
 
     const result = await loanService.createLoanApplication(userId, loanData);
-
-    logger.info('Loan application created', {
-      loanId: result._id,
-      amount,
-      duration,
-      userId,
-    });
 
     res.status(201).json({
       message: 'Loan application created successfully',
@@ -128,7 +133,7 @@ exports.listLoans = async (req, res, next) => {
   try {
     const userId = ensureAuth(req);
     const loanService = req.app.locals.loanWorkflowService;
-    const Loan = require('../models/Loan');
+    //const Loan = require('../models/Loan'); //Remove ALL duplicates.
 
     if (!loanService) {
       return res.status(500).json({ error: 'Loan service not initialized' });
@@ -1072,7 +1077,7 @@ exports.getLoanSchedule = asyncHandler(async (req, res) => {
   // Calculate summary
   const totalPaid = schedule.totalPaid || 0;
   const outstandingAmount = schedule.totalAmount - totalPaid;
-  const paidInstallments = (schedule.installments || []).filter(i => i.paid).length;
+  const paidInstallments = (schedule.installments || []).filter((i) => i.paid).length;
   const totalInstallments = schedule.installments?.length || 0;
 
   res.json({
@@ -1100,8 +1105,7 @@ exports.getLoanSchedule = asyncHandler(async (req, res) => {
       summary: {
         percentagePaid: totalInstallments > 0 ? (paidInstallments / totalInstallments) * 100 : 0,
         remainingInstallments: totalInstallments - paidInstallments,
-        nextDueDate: (schedule.installments || [])
-          .find(i => !i.paid)?.dueDate || null,
+        nextDueDate: (schedule.installments || []).find((i) => !i.paid)?.dueDate || null,
       },
     },
   });
@@ -1306,11 +1310,7 @@ exports.updateLoansInBatch = asyncHandler(async (req, res) => {
       updates.rejectionReason = reason || 'Rejected in batch operation';
     }
 
-    const result = await Loan.updateMany(
-      { _id: { $in: loanIds } },
-      updates,
-      { session }
-    );
+    const result = await Loan.updateMany({ _id: { $in: loanIds } }, updates, { session });
 
     // Audit batch update
     await LoanAudit.logAction({
@@ -1378,7 +1378,7 @@ exports.getGroupLoanStatistics = asyncHandler(async (req, res) => {
   const totalLoans = allLoans.length;
   const totalLoanAmount = allLoans.reduce((sum, l) => sum + l.amount, 0);
   const totalRepaid = allLoans
-    .filter(l => l.status === 'repaid')
+    .filter((l) => l.status === 'repaid')
     .reduce((sum, l) => sum + l.amount, 0);
 
   // Get default rate

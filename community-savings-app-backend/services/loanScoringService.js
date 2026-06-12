@@ -1,6 +1,6 @@
 /**
  * loanScoringService.js
- * 
+ *
  * Production-grade loan eligibility scoring engine
  * Configurable weights, thresholds, and risk assessment
  * Audit-friendly with transparent component scoring
@@ -8,7 +8,7 @@
 
 const Contribution = require('../models/Contribution');
 const Loan = require('../models/Loan');
-const LoanRepaymentSchedule = require('../models/LoanRepaymentSchedule');
+//const LoanRepaymentSchedule = require('../models/LoanRepaymentSchedule');
 const LoanEligibility = require('../models/LoanEligibility');
 const LoanAudit = require('../models/LoanAudit');
 const User = require('../models/User');
@@ -21,10 +21,10 @@ const Group = require('../models/Group');
 const SCORING_CONFIG = {
   // Weights for each component (sum = 100)
   weights: {
-    contribution: 0.40, // 40%
-    participation: 0.30, // 30%
-    repayment: 0.20, // 20%
-    risk: 0.10, // 10%
+    contribution: 0.4, // 40%
+    participation: 0.3, // 30%
+    repayment: 0.2, // 20%
+    risk: 0.1, // 10%
   },
 
   // Contribution score thresholds (max 40 points)
@@ -83,12 +83,12 @@ const SCORING_CONFIG = {
 
   // Max loan calculation
   maxLoanMultiplier: 2.5, // Can borrow 2.5x total contributed
-    minLoanAmount: 1000,
-    maxLoanAmount: 500000,
+  minLoanAmount: 1000,
+  maxLoanAmount: 500000,
 
   // Assessment validity
   assessmentValidityDays: 30, // Re-assess every 30 days
-  
+
   // Appeal period (days after rejection during which user can appeal)
   appealPeriodDays: 14,
 };
@@ -199,7 +199,7 @@ async function calculateParticipationScore(userId, groupId) {
       contributionCount: contributions.length,
       averageContribution: average,
       coefficientOfVariation: coefficientOfVariation.toFixed(2),
-      consistency: 'high' ? coefficientOfVariation < 0.3 : 'low',
+      consistency: coefficientOfVariation < 0.3 ? 'high' : 'low',
     },
   };
 }
@@ -248,7 +248,8 @@ async function calculateRepaymentScore(userId, groupId) {
   }
 
   // Award points for completed loans
-  score += Math.min(completedLoans, SCORING_CONFIG.repayment.maxPreviousLoans) * 
+  score +=
+    Math.min(completedLoans, SCORING_CONFIG.repayment.maxPreviousLoans) *
     SCORING_CONFIG.repayment.completedLoanBonus;
 
   // Calculate on-time payment rate
@@ -362,17 +363,16 @@ async function assessEligibility(userId, groupId, actorId, override = null) {
     }
 
     // Calculate all components
-    const [contributionResult, participationResult, repaymentResult, riskResult] = await Promise.all([
-      calculateContributionScore(userId, groupId),
-      calculateParticipationScore(userId, groupId),
-      calculateRepaymentScore(userId, groupId),
-      calculateRiskScore(userId, groupId),
-    ]);
+    const [contributionResult, participationResult, repaymentResult, riskResult] =
+      await Promise.all([
+        calculateContributionScore(userId, groupId),
+        calculateParticipationScore(userId, groupId),
+        calculateRepaymentScore(userId, groupId),
+        calculateRiskScore(userId, groupId),
+      ]);
 
     // Check minimum tenure
-    if (
-      contributionResult.data.monthsActive < SCORING_CONFIG.thresholds.minGroupTenureMonths
-    ) {
+    if (contributionResult.data.monthsActive < SCORING_CONFIG.thresholds.minGroupTenureMonths) {
       const auditData = {
         action: 'eligibility_assessed',
         user: userId,
@@ -475,10 +475,7 @@ async function assessEligibility(userId, groupId, actorId, override = null) {
     if (isEligible) {
       const totalContributed = contributionResult.data.totalContributed || 0;
       maxLoanAmount = Math.min(
-        Math.max(
-          totalContributed * SCORING_CONFIG.maxLoanMultiplier,
-          SCORING_CONFIG.minLoanAmount
-        ),
+        Math.max(totalContributed * SCORING_CONFIG.maxLoanMultiplier, SCORING_CONFIG.minLoanAmount),
         SCORING_CONFIG.maxLoanAmount
       );
     }

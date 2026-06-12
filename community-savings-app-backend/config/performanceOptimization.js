@@ -1,6 +1,6 @@
 /**
  * performanceOptimization.js
- * 
+ *
  * Database indexing, query optimization, and caching strategies
  * Production-ready performance tuning for community savings app
  */
@@ -217,7 +217,7 @@ const queryOptimizations = {
   getLoanWithSchedule: async (loanId) => {
     const Loan = require('../models/Loan');
     const LoanRepaymentSchedule = require('../models/LoanRepaymentSchedule');
-    
+
     const [loan, schedule] = await Promise.all([
       Loan.findById(loanId)
         .select('user group amount status interestRate repaymentPeriodMonths createdAt')
@@ -232,13 +232,7 @@ const queryOptimizations = {
    * Paginated query with sorting
    */
   getPaginatedResults: async (model, query, options = {}) => {
-    const {
-      page = 1,
-      limit = 20,
-      sortBy = 'createdAt',
-      sortOrder = -1,
-      lean = true,
-    } = options;
+    const { page = 1, limit = 20, sortBy = 'createdAt', sortOrder = -1, lean = true } = options;
 
     const skip = (page - 1) * limit;
     const sortObj = { [sortBy]: sortOrder };
@@ -314,9 +308,7 @@ const cachingStrategy = {
    * Generate cache key
    */
   generateKey: (type, id, params = {}) => {
-    const paramStr = Object.keys(params).length > 0
-      ? `:${JSON.stringify(params)}`
-      : '';
+    const paramStr = Object.keys(params).length > 0 ? `:${JSON.stringify(params)}` : '';
     return `${type}:${id}${paramStr}`;
   },
 

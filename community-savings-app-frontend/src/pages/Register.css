@@ -289,7 +289,7 @@
   line-height: 1.4;
 }
 
-.checkbox-label input[type="checkbox"] {
+.checkbox-label input[type='checkbox'] {
   width: 18px;
   height: 18px;
   margin-top: 0.2rem;

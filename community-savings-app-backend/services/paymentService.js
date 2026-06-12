@@ -30,7 +30,7 @@ const PAYMENT_METHODS = {
   MOBILE_MONEY: 'mobile_money',
   BANK_TRANSFER: 'bank_transfer',
   CARD: 'card',
-  CASH: 'cash'
+  CASH: 'cash',
 };
 
 const PAYMENT_STATUS = {
@@ -39,7 +39,7 @@ const PAYMENT_STATUS = {
   COMPLETED: 'completed',
   FAILED: 'failed',
   CANCELLED: 'cancelled',
-  REFUNDED: 'refunded'
+  REFUNDED: 'refunded',
 };
 
 const PAYMENT_TYPES = {
@@ -48,7 +48,7 @@ const PAYMENT_TYPES = {
   LOAN_DISBURSEMENT: 'loan_disbursement',
   REFERRAL_BONUS: 'referral_bonus',
   WITHDRAWAL: 'withdrawal',
-  FEE: 'fee'
+  FEE: 'fee',
 };
 
 // Mobile money provider configurations
@@ -59,7 +59,7 @@ const MOBILE_MONEY_PROVIDERS = {
     countries: ['KE', 'TZ', 'UG'],
     minAmount: 1,
     maxAmount: 150000,
-    fees: { percentage: 0.005, fixed: 0 } // 0.5% fee
+    fees: { percentage: 0.005, fixed: 0 }, // 0.5% fee
   },
   AIRTEL_MONEY: {
     name: 'Airtel Money',
@@ -67,7 +67,7 @@ const MOBILE_MONEY_PROVIDERS = {
     countries: ['KE', 'TZ', 'UG', 'RW'],
     minAmount: 1,
     maxAmount: 100000,
-    fees: { percentage: 0.003, fixed: 5 } // 0.3% + KES 5
+    fees: { percentage: 0.003, fixed: 5 }, // 0.3% + KES 5
   },
   MTN_MOMO: {
     name: 'MTN Mobile Money',
@@ -75,8 +75,8 @@ const MOBILE_MONEY_PROVIDERS = {
     countries: ['UG', 'RW', 'GH', 'CI'],
     minAmount: 1,
     maxAmount: 50000,
-    fees: { percentage: 0.004, fixed: 0 } // 0.4% fee
-  }
+    fees: { percentage: 0.004, fixed: 0 }, // 0.4% fee
+  },
 };
 
 /**
@@ -119,7 +119,9 @@ function validatePaymentAmount(amount, method, currency = 'KES') {
   if (method === PAYMENT_METHODS.MOBILE_MONEY) {
     const provider = MOBILE_MONEY_PROVIDERS.MPESA; // Default
     if (amount < provider.minAmount || amount > provider.maxAmount) {
-      throw new Error(`Amount must be between ${provider.minAmount} and ${provider.maxAmount} ${currency}`);
+      throw new Error(
+        `Amount must be between ${provider.minAmount} and ${provider.maxAmount} ${currency}`
+      );
     }
   }
 
@@ -139,18 +141,18 @@ async function initiatePayment({
   description,
   metadata = {},
   reference,
-  idempotencyKey
+  idempotencyKey,
 }) {
   // Check for duplicate payment using idempotency key
   if (idempotencyKey) {
-    const existingPayment = await Payment.findOne({ 
+    const existingPayment = await Payment.findOne({
       'metadata.idempotencyKey': idempotencyKey,
-      user: userId 
+      user: userId,
     });
     if (existingPayment) {
       logger.info('Idempotent payment request returning existing payment', {
         idempotencyKey,
-        paymentId: existingPayment._id
+        paymentId: existingPayment._id,
       });
       return {
         paymentId: existingPayment._id,
@@ -159,7 +161,7 @@ async function initiatePayment({
         fees: existingPayment.fees,
         totalAmount: existingPayment.totalAmount,
         status: existingPayment.status,
-        expiresAt: existingPayment.metadata.expiresAt
+        expiresAt: existingPayment.metadata.expiresAt,
       };
     }
   }
@@ -197,19 +199,15 @@ async function initiatePayment({
         ipAddress: metadata.ipAddress,
         userAgent: metadata.userAgent,
         idempotencyKey: idempotencyKey,
-        expiresAt: new Date(Date.now() + 30 * 60 * 1000) // 30 minutes
-      }
+        expiresAt: new Date(Date.now() + 30 * 60 * 1000), // 30 minutes
+      },
     });
 
     await payment.save({ session });
 
     // Update user balance if contribution
     if (type === PAYMENT_TYPES.CONTRIBUTION) {
-      await User.findByIdAndUpdate(
-        userId,
-        { $inc: { totalContributions: amount } },
-        { session }
-      );
+      await User.findByIdAndUpdate(userId, { $inc: { totalContributions: amount } }, { session });
 
       // Create contribution record
       const contribution = new Contribution({
@@ -218,7 +216,7 @@ async function initiatePayment({
         amount,
         payment: payment._id,
         type: 'regular',
-        status: 'completed'
+        status: 'completed',
       });
       await contribution.save({ session });
     }
@@ -229,7 +227,7 @@ async function initiatePayment({
       userId,
       amount,
       method,
-      type
+      type,
     });
 
     return {
@@ -239,9 +237,8 @@ async function initiatePayment({
       fees,
       totalAmount,
       status: payment.status,
-      expiresAt: payment.metadata.expiresAt
+      expiresAt: payment.metadata.expiresAt,
     };
-
   } catch (error) {
     await session.abortTransaction();
     logger.error('Payment initiation failed:', error);
@@ -258,7 +255,7 @@ async function processMobileMoneyPayment({
   paymentId,
   phoneNumber,
   provider = 'mpesa',
-  accountReference
+  accountReference,
 }) {
   try {
     const payment = await Payment.findById(paymentId);
@@ -277,7 +274,7 @@ async function processMobileMoneyPayment({
       phoneNumber,
       provider,
       accountReference,
-      processingStartedAt: new Date()
+      processingStartedAt: new Date(),
     };
     await payment.save();
 
@@ -287,7 +284,7 @@ async function processMobileMoneyPayment({
       phoneNumber,
       amount: payment.totalAmount,
       reference: payment.transactionRef,
-      provider
+      provider,
     });
 
     if (result.success) {
@@ -296,7 +293,7 @@ async function processMobileMoneyPayment({
         ...payment.metadata,
         transactionId: result.transactionId,
         completedAt: new Date(),
-        providerResponse: result
+        providerResponse: result,
       };
       await payment.save();
 
@@ -311,14 +308,13 @@ async function processMobileMoneyPayment({
         ...payment.metadata,
         failedAt: new Date(),
         failureReason: result.error,
-        providerResponse: result
+        providerResponse: result,
       };
       await payment.save();
 
       logger.error(`Mobile money payment failed: ${payment.transactionRef}`, result.error);
       return { success: false, error: result.error };
     }
-
   } catch (error) {
     logger.error('Mobile money payment processing failed:', error);
     throw error;
@@ -330,7 +326,7 @@ async function processMobileMoneyPayment({
  */
 async function simulateMobileMoneyAPI({ phoneNumber, amount, reference, provider }) {
   // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 2000));
+  await new Promise((resolve) => setTimeout(resolve, 2000));
 
   // Simulate success/failure (90% success rate)
   const success = Math.random() > 0.1;
@@ -339,13 +335,13 @@ async function simulateMobileMoneyAPI({ phoneNumber, amount, reference, provider
     return {
       success: true,
       transactionId: `MM-${Date.now()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`,
-      message: 'Payment processed successfully'
+      message: 'Payment processed successfully',
     };
   } else {
     return {
       success: false,
       error: 'Insufficient balance or payment failed',
-      message: 'Payment could not be processed'
+      message: 'Payment could not be processed',
     };
   }
 }
@@ -358,7 +354,7 @@ async function processBankTransfer({
   bankCode,
   accountNumber,
   accountName,
-  routingNumber
+  routingNumber,
 }) {
   try {
     const payment = await Payment.findById(paymentId);
@@ -373,7 +369,7 @@ async function processBankTransfer({
       accountNumber,
       accountName,
       routingNumber,
-      processingStartedAt: new Date()
+      processingStartedAt: new Date(),
     };
     await payment.save();
 
@@ -386,7 +382,6 @@ async function processBankTransfer({
     await handlePaymentCompletion(payment);
 
     return { success: true, message: 'Bank transfer processed' };
-
   } catch (error) {
     logger.error('Bank transfer processing failed:', error);
     throw error;
@@ -415,13 +410,12 @@ async function handlePaymentCompletion(payment) {
         {
           $inc: {
             totalContributions: payment.amount,
-            contributionCount: 1
+            contributionCount: 1,
           },
-          $set: { lastContributionDate: new Date() }
+          $set: { lastContributionDate: new Date() },
         },
         { session }
       );
-
     } else if (payment.type === PAYMENT_TYPES.LOAN_REPAYMENT) {
       // Update loan repayment status
       const loan = await Loan.findById(payment.metadata.loanId);
@@ -438,7 +432,6 @@ async function handlePaymentCompletion(payment) {
     await session.commitTransaction();
 
     logger.info(`Payment completion handled: ${payment.transactionRef}`);
-
   } catch (error) {
     await session.abortTransaction();
     logger.error('Payment completion handling failed:', error);
@@ -475,9 +468,8 @@ async function verifyPayment(paymentId) {
       group: payment.group,
       createdAt: payment.createdAt,
       updatedAt: payment.updatedAt,
-      metadata: payment.metadata
+      metadata: payment.metadata,
     };
-
   } catch (error) {
     logger.error('Payment verification failed:', error);
     throw error;
@@ -519,8 +511,8 @@ async function processRefund(paymentId, amount, reason) {
       metadata: {
         originalPayment: payment._id,
         refundReason: reason,
-        refundedAt: new Date()
-      }
+        refundedAt: new Date(),
+      },
     });
 
     await refundPayment.save({ session });
@@ -531,7 +523,7 @@ async function processRefund(paymentId, amount, reason) {
       refunded: true,
       refundAmount,
       refundId: refundPayment._id,
-      refundedAt: new Date()
+      refundedAt: new Date(),
     };
     await payment.save({ session });
 
@@ -539,7 +531,6 @@ async function processRefund(paymentId, amount, reason) {
 
     logger.info(`Refund processed: ${refundPayment.transactionRef}`);
     return { success: true, refundId: refundPayment._id };
-
   } catch (error) {
     await session.abortTransaction();
     logger.error('Refund processing failed:', error);
@@ -555,7 +546,7 @@ async function processRefund(paymentId, amount, reason) {
 async function getPaymentAnalytics(userId, groupId, startDate, endDate) {
   try {
     const matchConditions = {
-      createdAt: { $gte: startDate, $lte: endDate }
+      createdAt: { $gte: startDate, $lte: endDate },
     };
 
     if (userId) matchConditions.user = mongoose.Types.ObjectId(userId);
@@ -568,12 +559,12 @@ async function getPaymentAnalytics(userId, groupId, startDate, endDate) {
           _id: {
             method: '$method',
             type: '$type',
-            status: '$status'
+            status: '$status',
           },
           count: { $sum: 1 },
           totalAmount: { $sum: '$amount' },
-          totalFees: { $sum: '$fees' }
-        }
+          totalFees: { $sum: '$fees' },
+        },
       },
       {
         $group: {
@@ -584,18 +575,17 @@ async function getPaymentAnalytics(userId, groupId, startDate, endDate) {
               status: '$_id.status',
               count: '$count',
               amount: '$totalAmount',
-              fees: '$totalFees'
-            }
+              fees: '$totalFees',
+            },
           },
           totalCount: { $sum: '$count' },
           totalAmount: { $sum: '$totalAmount' },
-          totalFees: { $sum: '$totalFees' }
-        }
-      }
+          totalFees: { $sum: '$totalFees' },
+        },
+      },
     ]);
 
     return analytics;
-
   } catch (error) {
     logger.error('Payment analytics failed:', error);
     throw error;
@@ -614,5 +604,5 @@ module.exports = {
   PAYMENT_TYPES,
   MOBILE_MONEY_PROVIDERS,
   calculateFees,
-  validatePaymentAmount
+  validatePaymentAmount,
 };

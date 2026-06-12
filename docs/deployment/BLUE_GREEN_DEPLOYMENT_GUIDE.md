@@ -3,6 +3,7 @@
 ## Overview
 
 Blue-Green deployment is a zero-downtime deployment strategy that:
+
 - Maintains two identical production environments (Blue and Green)
 - Deploys new version to inactive environment
 - Tests new version thoroughly
@@ -46,26 +47,28 @@ Blue-Green deployment is a zero-downtime deployment strategy that:
 ### 1. Create Environment-Specific Docker Compose Files
 
 #### Blue Environment (docker-compose.blue.yml)
+
 ```yaml
 version: '3.9'
 services:
   backend:
     build: ./community-savings-app-backend
     ports:
-      - "5001:5000"
+      - '5001:5000'
     environment:
       ENVIRONMENT: production-blue
     # ... rest of configuration
 ```
 
 #### Green Environment (docker-compose.green.yml)
+
 ```yaml
 version: '3.9'
 services:
   backend:
     build: ./community-savings-app-backend
     ports:
-      - "5002:5000"
+      - '5002:5000'
     environment:
       ENVIRONMENT: production-green
     # ... rest of configuration
@@ -92,7 +95,7 @@ map $active_backend $backend_pool {
 server {
   listen 80;
   server_name api.example.com;
-  
+
   location / {
     proxy_pass http://$backend_pool;
   }
@@ -294,6 +297,7 @@ mongostat --uri "mongodb://..."
 ### Automatic Rollback
 
 The deployment script automatically rolls back if:
+
 - Build fails
 - Tests fail
 - Performance checks fail
@@ -333,14 +337,14 @@ docker-compose -f docker-compose.blue.yml up -d
 
 ### Key Metrics to Watch
 
-| Metric | Target | Alert Threshold |
-|--------|--------|-----------------|
-| Error Rate | < 0.1% | > 1% |
-| P99 Latency | < 1s | > 2s |
-| CPU Usage | < 70% | > 85% |
-| Memory Usage | < 80% | > 90% |
-| Database Connections | < 100 | > 150 |
-| Queue Depth | < 10 | > 50 |
+| Metric               | Target | Alert Threshold |
+| -------------------- | ------ | --------------- |
+| Error Rate           | < 0.1% | > 1%            |
+| P99 Latency          | < 1s   | > 2s            |
+| CPU Usage            | < 70%  | > 85%           |
+| Memory Usage         | < 80%  | > 90%           |
+| Database Connections | < 100  | > 150           |
+| Queue Depth          | < 10   | > 50            |
 
 ### Monitoring Commands
 
@@ -408,7 +412,7 @@ http://monitoring.example.com/
 mongosh << EOF
   db1 = db.getSiblingDB("production"); // Blue
   db2 = db.getSiblingDB("production"); // Green
-  
+
   print("Collections:");
   print("Users:", db1.users.count());
   print("Groups:", db1.groups.count());
