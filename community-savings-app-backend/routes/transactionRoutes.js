@@ -1,8 +1,11 @@
-import express from 'express';
-import { deposit } from '../controllers/TransactionController.js';
+// routes/transactionRoutes.js
 
+const express = require('express');
 const router = express.Router();
+const fraudMiddleware = require('../middleware/fraudMiddleware');
 
-router.post('/deposit', deposit);
+router.post('/withdraw', fraudMiddleware, async (req, res) => {
+  res.json({ message: 'Withdrawal successful' });
+});
 
-export default router;
+module.exports = router;

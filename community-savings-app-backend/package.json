@@ -40,7 +40,7 @@
     "express-async-handler": "^1.2.0",
     "express-mongo-sanitize": "^2.2.0",
     "express-rate-limit": "^6.11.2",
-    "express-validator": "^7.2.1",
+    "express-validator": "^7.3.2",
     "flatted": "^3.4.2",
     "handlebars": "^4.7.9",
     "helmet": "^8.1.0",

@@ -1,144 +1,83 @@
-// Transaction Model (models/Transaction.js)
-
 // models/Transaction.js
+// Production-ready Transaction model
 
 const mongoose = require("mongoose");
+const { Schema } = mongoose;
 
-const TransactionSchema = new mongoose.Schema(
+const TransactionSchema = new Schema(
   {
-    // 🔹 Core ownership
-    user: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-      index: true,
-    },
-
-    // 🔹 Financial details
-    amount: {
-      type: Number,
-      required: true,
-      min: 0,
-    },
-
-    currency: {
-      type: String,
-      default: "UGX",
-    },
-
-    // 🔹 Transaction nature
-    type: {
-      type: String,
-      enum: ["DEPOSIT", "WITHDRAW", "TRANSFER", "PAYMENT"],
-      required: true,
-    },
-
-    flow: {
-      type: String,
-      enum: ["credit", "debit"], // Ledger direction
-      required: true,
-    },
-
-    // 🔹 MoMo / External Integration
-    phone: {
-      type: String,
+    tenantId: {
+      type: Schema.Types.ObjectId,
+      ref: "Tenant",
+      required: [true, "tenantId is required"],
       index: true,
     },
 
     momoTransactionId: {
       type: String,
-      unique: true,
-      sparse: true,
+      trim: true,
+      maxlength: 128,
     },
 
-    externalId: {
-      type: String, // ID from provider (MTN/Airtel/API)
-    },
-
-    // 🔹 Tracking & references
     reference: {
       type: String,
-      index: true,
+      trim: true,
+      maxlength: 128,
     },
 
-    source: {
-      type: String, // e.g. "MTN_MOMO", "AIRTEL", "INTERNAL"
+    amount: {
+      type: Schema.Types.Decimal128,
+      required: [true, "amount is required"],
     },
 
-    channel: {
-      type: String, // USSD, APP, API, AGENT
+    currency: {
+      type: String,
+      required: true,
+      uppercase: true,
+      trim: true,
+      default: "UGX",
+      maxlength: [3, "currency must be a 3-letter ISO code"],
     },
 
-    // 🔹 Status lifecycle
     status: {
       type: String,
-      enum: ["PENDING", "SUCCESSFUL", "FAILED", "REVERSED"],
+      enum: ["PENDING", "COMPLETED", "FAILED"],
       default: "PENDING",
       index: true,
     },
 
-    // 🔹 Reversal & linking
-    relatedTransaction: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Transaction",
-    },
-
-    // 🔹 Metadata (for extensibility, fraud scoring, logs)
     metadata: {
-      type: mongoose.Schema.Types.Mixed,
+      type: Schema.Types.Mixed,
       default: {},
-    },
-
-    // 🔹 Risk & fraud (future-ready)
-    riskScore: {
-      type: Number, // AI fraud score
-      default: 0,
-    },
-
-    flagged: {
-      type: Boolean,
-      default: false,
-    },
-
-    // 🔹 Tenant (multi-SACCO support)
-    tenantId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Tenant",
-      index: true,
     },
   },
   {
-    timestamps: true, // createdAt + updatedAt
+    timestamps: true,
+    versionKey: "version",
   }
 );
 
-// ✅ Indexes for performance
-TransactionSchema.index({ user: 1, createdAt: -1 });
+/* Schema-level indexes */
 TransactionSchema.index({ momoTransactionId: 1 });
-TransactionSchema.index({ reference: 1 });
+TransactionSchema.index({ tenantId: 1, status: 1 });
 
-// ✅ Prevent duplicate MoMo transactions
-TransactionSchema.path("momoTransactionId").validate(async function (value) {
-  if (!value) return true;
+/* Unique per-tenant validation for momoTransactionId */
+TransactionSchema.path("momoTransactionId").validate(
+  async function (value) {
+    if (!value) return true;
+    if (!this.isNew && !this.isModified("momoTransactionId")) return true;
+    const query = { momoTransactionId: value };
+    if (this.tenantId) query.tenantId = this.tenantId;
+    const existing = await mongoose.models.Transaction.findOne(query).lean().exec();
+    return !existing;
+  },
+  "momoTransactionId must be unique per tenant"
+);
 
-  const existing = await mongoose.models.Transaction.findOne({
-    momoTransactionId: value,
-    _id: { $ne: this._id },
-  });
+/* Defensive export to avoid duplicate model registration */
+const Transaction =
+  mongoose.models && mongoose.models.Transaction
+    ? mongoose.models.Transaction
+    : mongoose.model("Transaction", TransactionSchema);
 
-  return !existing;
-}, "Duplicate MoMo Transaction ID");
-
-// ✅ Helper: check if successful
-TransactionSchema.methods.isSuccessful = function () {
-  return this.status === "SUCCESSFUL";
-};
-
-// ✅ Helper: mark failed
-TransactionSchema.methods.markFailed = function (reason) {
-  this.status = "FAILED";
-  this.metadata = { ...this.metadata, failureReason: reason };
-  return this.save();
-};
-
-module.exports = mongoose.model("Transaction", TransactionSchema);
+module.exports = Transaction;

@@ -65,6 +65,10 @@ try {
   });
 }
 
+// Mount routers (add risk routes)
+const riskRoutes = require('./routes/risk');
+app.use('/api/risk', riskRoutes);
+
 app.use(apiLimiter);
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(hpp());

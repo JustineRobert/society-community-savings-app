@@ -12,10 +12,19 @@
  * - Payment analytics
  */
 
+// controllers/paymentController.js (top of file)
+const FraudDetectionService = require('../services/fraudDetectionService');
+const EventStreamService = require('../services/eventStreamService');
+const FraudLog = require('../models/FraudLog');
+const ComplianceLog = require('../models/ComplianceLog');
 const asyncHandler = require('../utils/asyncHandler');
 const paymentService = require('../services/paymentService');
 const Payment = require('../models/Payment');
 const logger = require('../utils/logger');
+
+// Support both named and class-style exports from the fraud service
+const detectFraud = FraudDetectionService.detectFraud || FraudDetectionService.checkTransaction || FraudDetectionService.check || FraudDetectionService;
+
 
 /**
  * Initiate a new payment
@@ -59,6 +68,103 @@ exports.initiatePayment = asyncHandler(async (req, res) => {
       userId: req.user._id,
     };
 
+    // Build a lightweight transaction object for fraud check
+    const transactionForCheck = {
+      _id: `intent-${req.user._id}-${Date.now()}`,
+      type,
+      amount: parseFloat(amount),
+      method,
+      metadata: enrichedMetadata,
+      // optional signals
+      frequency: 9999,
+      newDevice: !!enrichedMetadata.newDevice,
+      locationMismatch: !!enrichedMetadata.locationMismatch,
+      device: { deviceId: enrichedMetadata.deviceId || null, userAgent: enrichedMetadata.userAgent || null },
+      geo: enrichedMetadata.geo || {}
+    };
+
+    // Run synchronous fraud check (fast path)
+    let fraudResult = { fraudScore: 0, decision: 'ALLOW' };
+    try {
+      const r = await detectFraud(req.user, transactionForCheck);
+      // Support different return shapes
+      fraudResult.fraudScore = r?.fraudScore ?? r?.score ?? 0;
+      fraudResult.decision = (r?.decision || r?.action || 'ALLOW').toUpperCase();
+    } catch (err) {
+      // Non-fatal: log and continue with conservative posture
+      logger.warn('[PaymentController] Fraud detection failed (initiatePayment)', { error: err?.message || err });
+      fraudResult = { fraudScore: 0.0, decision: 'STEP_UP' };
+    }
+
+    // Persist fraud log (best-effort)
+    try {
+      await FraudLog.createLog({
+        tenantId: req.user.tenantId || 'default',
+        userId: req.user._id,
+        transactionId: transactionForCheck._id,
+        transactionSnapshot: {
+          type: transactionForCheck.type,
+          amount: transactionForCheck.amount,
+          metadata: transactionForCheck.metadata
+        },
+        fraudScore: Number(fraudResult.fraudScore) || 0,
+        decision: fraudResult.decision === 'BLOCK' ? 'BLOCK' : fraudResult.decision === 'STEP_UP' ? 'STEP_UP' : 'ALLOW',
+        engine: 'hybrid',
+        explain: { source: 'initiatePayment' },
+        modelVersion: process.env.FRAUD_MODEL_VERSION || 'v1'
+      });
+    } catch (err) {
+      logger.warn('[PaymentController] Failed to persist FraudLog (initiatePayment)', err?.message || err);
+    }
+
+    // If blocked, return 403
+    if (fraudResult.decision === 'BLOCK') {
+      // Create compliance STR (best-effort)
+      try {
+        await ComplianceLog.createSTR({
+          tenantId: req.user.tenantId || 'default',
+          userId: req.user._id,
+          activity: 'STR_GENERATED',
+          flagged: true,
+          reason: 'Transaction blocked by fraud engine',
+          details: { fraudScore: fraudResult.fraudScore, transactionId: transactionForCheck._id },
+          reporter: 'fraud-engine'
+        });
+      } catch (e) {
+        logger.warn('[PaymentController] Failed to create STR for blocked transaction', e?.message || e);
+      }
+
+      return res.status(403).json({
+        success: false,
+        message: 'Transaction blocked by fraud detection',
+        data: { fraudScore: fraudResult.fraudScore }
+      });
+    }
+
+    // Enqueue to event stream for async feature extraction / ML (best-effort)
+    try {
+      await EventStreamService.pushTransaction({
+        _id: transactionForCheck._id,
+        userId: req.user._id,
+        tenantId: req.user.tenantId || 'default',
+        type: transactionForCheck.type,
+        amount: transactionForCheck.amount,
+        metadata: { ...transactionForCheck.metadata, fraudScore: fraudResult.fraudScore, decision: fraudResult.decision }
+      });
+    } catch (e) {
+      logger.warn('[PaymentController] EventStream push failed (initiatePayment)', e?.message || e);
+    }
+
+    // If STEP_UP, instruct caller to perform step-up auth (OTP/KYC)
+    if (fraudResult.decision === 'STEP_UP') {
+      return res.status(202).json({
+        success: true,
+        message: 'Transaction requires step-up authentication',
+        data: { action: 'step_up_auth', fraudScore: fraudResult.fraudScore }
+      });
+    }
+
+    // Proceed to create payment intent via paymentService
     const result = await paymentService.initiatePayment({
       userId: req.user._id,
       groupId,
@@ -100,6 +206,98 @@ exports.processMobileMoneyPayment = asyncHandler(async (req, res) => {
   }
 
   try {
+    // Build transaction object for fraud check
+    const transactionForCheck = {
+      _id: paymentId,
+      type: 'mobile_money',
+      amount: req.body.amount || 0,
+      frequency: req.body.frequency || 9999,
+      newDevice: !!req.body.newDevice,
+      locationMismatch: !!req.body.locationMismatch,
+      device: { deviceId: req.body.deviceId || null, userAgent: req.get('User-Agent') },
+      geo: req.body.geo || {},
+      metadata: { phoneNumber, provider, accountReference }
+    };
+
+    // Run fraud detection
+    let fraudResult = { fraudScore: 0, decision: 'ALLOW' };
+    try {
+      const r = await detectFraud(req.user, transactionForCheck);
+      fraudResult.fraudScore = r?.fraudScore ?? r?.score ?? 0;
+      fraudResult.decision = (r?.decision || r?.action || 'ALLOW').toUpperCase();
+    } catch (err) {
+      logger.warn('[PaymentController] Fraud detection failed (mobile money)', { error: err?.message || err });
+      fraudResult = { fraudScore: 0.0, decision: 'STEP_UP' };
+    }
+
+    // Persist fraud log (best-effort)
+    try {
+      await FraudLog.createLog({
+        tenantId: req.user.tenantId || 'default',
+        userId: req.user._id,
+        transactionId: paymentId,
+        transactionSnapshot: {
+          type: transactionForCheck.type,
+          amount: transactionForCheck.amount,
+          metadata: transactionForCheck.metadata
+        },
+        fraudScore: Number(fraudResult.fraudScore) || 0,
+        decision: fraudResult.decision === 'BLOCK' ? 'BLOCK' : fraudResult.decision === 'STEP_UP' ? 'STEP_UP' : 'ALLOW',
+        engine: 'hybrid',
+        explain: { source: 'processMobileMoneyPayment' },
+        modelVersion: process.env.FRAUD_MODEL_VERSION || 'v1'
+      });
+    } catch (err) {
+      logger.warn('[PaymentController] Failed to persist FraudLog (mobile money)', err?.message || err);
+    }
+
+    // Block if necessary
+    if (fraudResult.decision === 'BLOCK') {
+      try {
+        await ComplianceLog.createSTR({
+          tenantId: req.user.tenantId || 'default',
+          userId: req.user._id,
+          activity: 'STR_GENERATED',
+          flagged: true,
+          reason: 'Mobile money transaction blocked by fraud engine',
+          details: { fraudScore: fraudResult.fraudScore, paymentId },
+          reporter: 'fraud-engine'
+        });
+      } catch (e) {
+        logger.warn('[PaymentController] Failed to create STR for blocked mobile money', e?.message || e);
+      }
+
+      return res.status(403).json({
+        success: false,
+        message: 'Transaction blocked by fraud detection',
+        data: { fraudScore: fraudResult.fraudScore }
+      });
+    }
+
+    // If step-up required, return 202 instructing caller to perform OTP/KYC
+    if (fraudResult.decision === 'STEP_UP') {
+      return res.status(202).json({
+        success: true,
+        message: 'Transaction requires step-up authentication',
+        data: { action: 'step_up_auth', fraudScore: fraudResult.fraudScore }
+      });
+    }
+
+    // Enqueue to event stream for async processing (best-effort)
+    try {
+      await EventStreamService.pushTransaction({
+        _id: paymentId,
+        userId: req.user._id,
+        tenantId: req.user.tenantId || 'default',
+        type: 'mobile_money',
+        amount: transactionForCheck.amount,
+        metadata: { phoneNumber, provider, accountReference, fraudScore: fraudResult.fraudScore }
+      });
+    } catch (e) {
+      logger.warn('[PaymentController] EventStream push failed (mobile money)', e?.message || e);
+    }
+
+    // Proceed to process payment via paymentService
     const result = await paymentService.processMobileMoneyPayment({
       paymentId,
       phoneNumber,
@@ -128,6 +326,7 @@ exports.processMobileMoneyPayment = asyncHandler(async (req, res) => {
   }
 });
 
+
 /**
  * Process bank transfer payment
  * POST /api/payments/:paymentId/bank-transfer
@@ -144,6 +343,98 @@ exports.processBankTransfer = asyncHandler(async (req, res) => {
   }
 
   try {
+    // Build transaction object for fraud check
+    const transactionForCheck = {
+      _id: paymentId,
+      type: 'bank_transfer',
+      amount: req.body.amount || 0,
+      frequency: req.body.frequency || 9999,
+      newDevice: !!req.body.newDevice,
+      locationMismatch: !!req.body.locationMismatch,
+      device: { deviceId: req.body.deviceId || null, userAgent: req.get('User-Agent') },
+      geo: req.body.geo || {},
+      metadata: { bankCode, accountNumber, accountName, routingNumber }
+    };
+
+    // Run fraud detection
+    let fraudResult = { fraudScore: 0, decision: 'ALLOW' };
+    try {
+      const r = await detectFraud(req.user, transactionForCheck);
+      fraudResult.fraudScore = r?.fraudScore ?? r?.score ?? 0;
+      fraudResult.decision = (r?.decision || r?.action || 'ALLOW').toUpperCase();
+    } catch (err) {
+      logger.warn('[PaymentController] Fraud detection failed (bank transfer)', { error: err?.message || err });
+      fraudResult = { fraudScore: 0.0, decision: 'STEP_UP' };
+    }
+
+    // Persist fraud log (best-effort)
+    try {
+      await FraudLog.createLog({
+        tenantId: req.user.tenantId || 'default',
+        userId: req.user._id,
+        transactionId: paymentId,
+        transactionSnapshot: {
+          type: transactionForCheck.type,
+          amount: transactionForCheck.amount,
+          metadata: transactionForCheck.metadata
+        },
+        fraudScore: Number(fraudResult.fraudScore) || 0,
+        decision: fraudResult.decision === 'BLOCK' ? 'BLOCK' : fraudResult.decision === 'STEP_UP' ? 'STEP_UP' : 'ALLOW',
+        engine: 'hybrid',
+        explain: { source: 'processBankTransfer' },
+        modelVersion: process.env.FRAUD_MODEL_VERSION || 'v1'
+      });
+    } catch (err) {
+      logger.warn('[PaymentController] Failed to persist FraudLog (bank transfer)', err?.message || err);
+    }
+
+    // Block if necessary
+    if (fraudResult.decision === 'BLOCK') {
+      try {
+        await ComplianceLog.createSTR({
+          tenantId: req.user.tenantId || 'default',
+          userId: req.user._id,
+          activity: 'STR_GENERATED',
+          flagged: true,
+          reason: 'Bank transfer blocked by fraud engine',
+          details: { fraudScore: fraudResult.fraudScore, paymentId },
+          reporter: 'fraud-engine'
+        });
+      } catch (e) {
+        logger.warn('[PaymentController] Failed to create STR for blocked bank transfer', e?.message || e);
+      }
+
+      return res.status(403).json({
+        success: false,
+        message: 'Transaction blocked by fraud detection',
+        data: { fraudScore: fraudResult.fraudScore }
+      });
+    }
+
+    // If step-up required, return 202 instructing caller to perform OTP/KYC
+    if (fraudResult.decision === 'STEP_UP') {
+      return res.status(202).json({
+        success: true,
+        message: 'Transaction requires step-up authentication',
+        data: { action: 'step_up_auth', fraudScore: fraudResult.fraudScore }
+      });
+    }
+
+    // Enqueue to event stream for async processing (best-effort)
+    try {
+      await EventStreamService.pushTransaction({
+        _id: paymentId,
+        userId: req.user._id,
+        tenantId: req.user.tenantId || 'default',
+        type: 'bank_transfer',
+        amount: transactionForCheck.amount,
+        metadata: { bankCode, accountNumber: 'REDACTED', accountName, fraudScore: fraudResult.fraudScore }
+      });
+    } catch (e) {
+      logger.warn('[PaymentController] EventStream push failed (bank transfer)', e?.message || e);
+    }
+
+    // Proceed to process bank transfer via paymentService
     const result = await paymentService.processBankTransfer({
       paymentId,
       bankCode,

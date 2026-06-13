@@ -1,168 +1,185 @@
 // services/ledger.service.js
-// Production-ready ledger service for creating balanced double-entry records.
-//
-// Features:
-// - Strong validation of input entries
-// - Decimal-safe arithmetic using Decimal.js and MongoDB Decimal128
-// - Idempotency guard (by transactionId or optional idempotencyKey)
-// - Uses MongoDB transactions when available (replica set) for atomic writes
-// - Detailed errors and structured logging hooks
-// - Optional "force" flag to bypass idempotency checks (use with caution)
-
-const mongoose = require("mongoose");
-const Decimal = require("decimal.js");
-const LedgerEntry = require("../models/LedgerEntry");
-const logger = require("../utils/logger"); // optional structured logger
+const { Pool } = require('pg');
+const format = require('pg-format');
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 /**
- * createEntries
+ * LedgerService
+ * - createTransaction(reference, description, tenantId, entries[])
+ * - validateTransaction(entries) -> ensures debits == credits
+ * - postTransaction(transactionId)
+ * - reverseTransaction(transactionId, reason)
  *
- * Creates balanced ledger entries for a single transaction.
- *
- * Params:
- *  - transactionId: ObjectId or string (required)
- *  - entries: Array of { account, type: "DEBIT"|"CREDIT", amount, currency?, tenantId, description?, reference?, metadata? }
- *  - tenantId: ObjectId or string (optional if provided per-entry)
- *  - options: { force: boolean, idempotencyKey: string }
- *
- * Behavior:
- *  - Validates entries and ensures total debits == total credits (Decimal-safe)
- *  - Checks for existing ledger lines for the transactionId (idempotency) unless options.force === true
- *  - Attempts to use a MongoDB transaction (session) if available; falls back to single insertMany
- *
- * Returns: Array of created LedgerEntry documents
+ * entries[] = [{ accountId, amount (integer), direction: 'debit'|'credit', metadata }]
  */
-exports.createEntries = async ({ transactionId, entries = [], tenantId, options = {} } = {}) => {
-  if (!transactionId) {
-    throw new Error("transactionId is required");
-  }
 
-  if (!Array.isArray(entries) || entries.length < 2) {
-    throw new Error("At least two ledger entries are required");
-  }
-
-  const { force = false, idempotencyKey } = options;
-
-  // Basic entry validation and normalization
-  const normalized = entries.map((e, idx) => {
-    if (!e) throw new Error(`Entry at index ${idx} is falsy`);
-    if (!e.account) throw new Error(`Entry at index ${idx} missing account`);
-    if (!e.type || !["DEBIT", "CREDIT"].includes(e.type)) {
-      throw new Error(`Entry at index ${idx} has invalid type (must be DEBIT or CREDIT)`);
+class LedgerService {
+  static async validateEntries(entries) {
+    if (!Array.isArray(entries) || entries.length < 2) {
+      throw new Error('Transaction must have at least two entries');
     }
-    if (e.amount == null) throw new Error(`Entry at index ${idx} missing amount`);
-    // Use Decimal for arithmetic safety
-    let amountDecimal;
-    try {
-      amountDecimal = new Decimal(e.amount);
-    } catch (err) {
-      throw new Error(`Entry at index ${idx} has invalid amount: ${e.amount}`);
-    }
-    if (!amountDecimal.isFinite() || amountDecimal.lte(0)) {
-      throw new Error(`Entry at index ${idx} amount must be a positive number`);
-    }
-
-    return {
-      account: e.account,
-      type: e.type,
-      amountDecimal,
-      amount: mongoose.Types.Decimal128.fromString(amountDecimal.toString()),
-      currency: (e.currency || "UGX").toUpperCase(),
-      tenantId: e.tenantId || tenantId,
-      description: e.description,
-      reference: e.reference,
-      metadata: e.metadata || {},
-    };
-  });
-
-  // Ensure tenantId is present for all entries
-  for (let i = 0; i < normalized.length; i++) {
-    if (!normalized[i].tenantId) {
-      throw new Error(`tenantId is required for entry at index ${i}`);
-    }
-  }
-
-  // Sum debits and credits using Decimal
-  const debitSum = normalized
-    .filter((e) => e.type === "DEBIT")
-    .reduce((acc, e) => acc.plus(e.amountDecimal), new Decimal(0));
-  const creditSum = normalized
-    .filter((e) => e.type === "CREDIT")
-    .reduce((acc, e) => acc.plus(e.amountDecimal), new Decimal(0));
-
-  if (!debitSum.equals(creditSum)) {
-    throw new Error(
-      `Ledger imbalance: total debits (${debitSum.toString()}) must equal total credits (${creditSum.toString()})`
-    );
-  }
-
-  // Idempotency guard: if ledger entries already exist for this transactionId, return them unless forced
-  if (!force) {
-    try {
-      const existingCount = await LedgerEntry.countDocuments({ transaction: transactionId }).exec();
-      if (existingCount > 0) {
-        logger?.info?.("Ledger entries already exist for transaction", { transactionId, existingCount, idempotencyKey });
-        const existing = await LedgerEntry.find({ transaction: transactionId }).exec();
-        return existing;
+    let debit = 0;
+    let credit = 0;
+    for (const e of entries) {
+      if (!e.accountId || typeof e.amount !== 'number' || e.amount <= 0) {
+        throw new Error('Invalid entry: accountId and positive integer amount required');
       }
-    } catch (err) {
-      // Log and continue; we don't want to fail creation just because idempotency check couldn't run
-      logger?.warn?.("Failed to check existing ledger entries for idempotency", { err: err?.message, transactionId });
+      if (e.direction === 'debit') debit += e.amount;
+      else if (e.direction === 'credit') credit += e.amount;
+      else throw new Error('Invalid entry direction');
     }
+    if (debit !== credit) {
+      throw new Error(`Entries do not balance: debit=${debit} credit=${credit}`);
+    }
+    return true;
   }
 
-  // Prepare documents for insertion
-  const docs = normalized.map((e) => ({
-    account: e.account,
-    transaction: transactionId,
-    type: e.type,
-    amount: e.amount,
-    currency: e.currency,
-    tenantId: e.tenantId,
-    description: e.description,
-    reference: e.reference || idempotencyKey || undefined,
-    metadata: e.metadata,
-  }));
+  static async createTransaction({ reference, description, tenantId, entries, metadata = {} }) {
+    await LedgerService.validateEntries(entries);
 
-  // Attempt to write within a MongoDB transaction if supported
-  const connection = mongoose.connection;
-  let session;
-  let created;
-  const useTransactions = connection?.client?.topology?.s?.isMaster?.() !== false; // best-effort check; will still try to startSession
-  try {
-    session = await mongoose.startSession();
-  } catch (err) {
-    session = null;
-  }
-
-  if (session) {
+    const client = await pool.connect();
     try {
-      session.startTransaction();
-      created = await LedgerEntry.insertMany(docs, { session, ordered: true });
-      await session.commitTransaction();
-      session.endSession();
-      logger?.info?.("Ledger entries created in transaction", { transactionId, count: created.length });
-      return created;
+      await client.query('BEGIN');
+
+      const txRes = await client.query(
+        `INSERT INTO transactions (reference, description, status, tenant_id, metadata)
+         VALUES ($1,$2,'pending',$3,$4) RETURNING id, created_at`,
+        [reference, description || null, tenantId, metadata]
+      );
+      const transactionId = txRes.rows[0].id;
+
+      const insertValues = entries.map(e => [
+        transactionId,
+        e.accountId,
+        e.amount,
+        e.direction,
+        e.metadata || {}
+      ]);
+
+      const insertQuery = format(
+        `INSERT INTO entries (transaction_id, account_id, amount, direction, metadata) VALUES %L RETURNING id`,
+        insertValues
+      );
+
+      await client.query(insertQuery);
+
+      await client.query('COMMIT');
+      return { transactionId };
     } catch (err) {
-      try {
-        await session.abortTransaction();
-      } catch (abortErr) {
-        logger?.error?.("Failed to abort ledger transaction", { err: abortErr?.message });
-      } finally {
-        session.endSession();
-      }
-      logger?.error?.("Failed to create ledger entries in transaction", { err: err?.message, transactionId });
+      await client.query('ROLLBACK');
       throw err;
+    } finally {
+      client.release();
     }
   }
 
-  // Fallback: insert without transaction
-  try {
-    created = await LedgerEntry.insertMany(docs, { ordered: true });
-    logger?.info?.("Ledger entries created (no transaction)", { transactionId, count: created.length });
-    return created;
-  } catch (err) {
-    logger?.error?.("Failed to create ledger entries", { err: err?.message, transactionId });
-    throw err;
+  static async postTransaction(transactionId) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Ensure transaction exists and is pending
+      const tx = await client.query('SELECT * FROM transactions WHERE id=$1 FOR UPDATE', [transactionId]);
+      if (tx.rowCount === 0) throw new Error('Transaction not found');
+      if (tx.rows[0].status !== 'pending') throw new Error('Only pending transactions can be posted');
+
+      // Validate entries sum again (defensive)
+      const entriesRes = await client.query('SELECT direction, SUM(amount) as total FROM entries WHERE transaction_id=$1 GROUP BY direction', [transactionId]);
+      let debit = 0, credit = 0;
+      for (const r of entriesRes.rows) {
+        if (r.direction === 'debit') debit = parseInt(r.total, 10);
+        if (r.direction === 'credit') credit = parseInt(r.total, 10);
+      }
+      if (debit !== credit) throw new Error('Transaction entries do not balance at post time');
+
+      // Mark transaction as posted
+      await client.query('UPDATE transactions SET status=$1, posted_at=now() WHERE id=$2', ['posted', transactionId]);
+
+      // Optionally: push to account_balance_cache (deferred to worker)
+      // Insert into a posting queue table or update cache here if desired.
+
+      await client.query('COMMIT');
+      return { ok: true };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   }
-};
+
+  static async reverseTransaction(transactionId, { reference, reason, tenantId }) {
+    // Create reversing transaction with opposite directions
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const txRes = await client.query('SELECT * FROM transactions WHERE id=$1 FOR UPDATE', [transactionId]);
+      if (txRes.rowCount === 0) throw new Error('Transaction not found');
+      const tx = txRes.rows[0];
+      if (tx.status !== 'posted') throw new Error('Only posted transactions can be reversed');
+
+      // Fetch entries
+      const entriesRes = await client.query('SELECT account_id, amount, direction, metadata FROM entries WHERE transaction_id=$1', [transactionId]);
+      const originalEntries = entriesRes.rows;
+      if (originalEntries.length < 2) throw new Error('Original transaction invalid');
+
+      // Build reversed entries
+      const reversedEntries = originalEntries.map(e => ({
+        accountId: e.account_id,
+        amount: parseInt(e.amount, 10),
+        direction: e.direction === 'debit' ? 'credit' : 'debit',
+        metadata: { reversed_from: transactionId, original_metadata: e.metadata }
+      }));
+
+      // Create reversal transaction
+      const reversalRef = reference || `REV-${tx.reference}-${Date.now()}`;
+      const createRes = await client.query(
+        `INSERT INTO transactions (reference, description, status, tenant_id, metadata) VALUES ($1,$2,'pending',$3,$4) RETURNING id`,
+        [reversalRef, `Reversal of ${tx.reference}: ${reason || ''}`, tenantId || tx.tenant_id, { reversal_of: transactionId, reason }]
+      );
+      const reversalId = createRes.rows[0].id;
+
+      // Insert reversal entries
+      const insertValues = reversedEntries.map(e => [reversalId, e.accountId, e.amount, e.direction, e.metadata || {}]);
+      const insertQuery = format(
+        `INSERT INTO entries (transaction_id, account_id, amount, direction, metadata) VALUES %L`,
+        insertValues
+      );
+      await client.query(insertQuery);
+
+      // Post reversal immediately
+      await client.query('UPDATE transactions SET status=$1, posted_at=now() WHERE id=$2', ['posted', reversalId]);
+
+      // Mark original transaction as reversed
+      await client.query(
+        `UPDATE transactions
+   SET status = $1,
+       metadata = jsonb_set(
+         COALESCE(metadata, '{}'::jsonb),
+         '{reversed_by}',
+         to_jsonb($2)
+       )
+   WHERE id = $3`,
+        ['reversed', reversalId, transactionId]
+      );
+
+      await client.query('COMMIT');
+      return { reversalId };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  // Utility: get account balance from cache
+  static async getAccountBalance(accountId) {
+    const res = await pool.query('SELECT balance, currency, last_updated FROM account_balance_cache WHERE account_id=$1', [accountId]);
+    if (res.rowCount === 0) return { balance: 0, currency: 'UGX' };
+    return res.rows[0];
+  }
+}
+
+module.exports = LedgerService;

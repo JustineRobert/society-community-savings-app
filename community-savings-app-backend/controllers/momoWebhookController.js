@@ -1,101 +1,151 @@
 // controllers/momoWebhookController.js
+// Production-ready webhook handler for MoMo notifications.
+// Exports a named handler `momoCallback` expected by routes/momoRoutes.js
 
+const mongoose = require("mongoose");
+const { v4: uuidv4 } = require("uuid");
+const LedgerEntry = require("../models/LedgerEntry");
 const Transaction = require("../models/Transaction");
-const ledgerService = require("../services/ledgerService");
 
 /**
- * MoMo Webhook Callback Handler
- * - Validates payload
- * - Ensures idempotency (no double processing)
- * - Updates transaction safely
- * - Triggers double-entry ledger
+ * Generate a short error id for logs and responses.
  */
-exports.momoCallback = async (req, res) => {
+function makeErrorId() {
+  return uuidv4();
+}
+
+/**
+ * Check mongoose connection readiness.
+ * readyState: 0 = disconnected, 1 = connected, 2 = connecting, 3 = disconnecting
+ */
+function isDbReady() {
+  return mongoose.connection && mongoose.connection.readyState === 1;
+}
+
+/**
+ * momoCallback
+ *
+ * POST /webhook
+ * - Validates payload minimally.
+ * - Performs idempotency checks against momoTransactionId and reference.
+ * - Creates a LedgerEntry and optionally a Transaction record.
+ * - Returns 503 when DB is not ready so callers can retry.
+ */
+async function momoCallback(req, res) {
+  const errorId = makeErrorId();
+
   try {
-    const payload = req.body;
-
-    // ✅ 1. Basic Validation
-    if (!payload || !payload.externalId) {
-      console.error("❌ Invalid MoMo payload:", payload);
-      return res.status(400).json({ message: "Invalid payload" });
+    if (!isDbReady()) {
+      req.log && req.log.warn && req.log.warn({ errorId }, "DB not ready for webhook processing");
+      return res.status(503).json({ message: "Service temporarily unavailable", errorId });
     }
 
-    // ✅ 2. Fetch existing transaction
-    const existingTransaction = await Transaction.findOne({
-      externalId: payload.externalId
+    const payload = req.body || {};
+
+    // Normalize common provider fields
+    const momoTransactionId = payload.momoTransactionId || payload.financialTransactionId || null;
+    const reference = payload.reference || payload.externalReference || null;
+    const amount = payload.amount || payload.value || payload.transactionAmount;
+    const currency = (payload.currency || payload.currencyCode || "UGX").toUpperCase();
+    const account = payload.account || payload.accountId || payload.destinationAccount;
+    const transactionId = payload.transaction || payload.transactionId || null;
+    const type = payload.type || "CREDIT";
+    const tenantId = payload.tenantId || payload.saccoId || null;
+    const description = payload.description || payload.note || null;
+    const metadata = payload.metadata || {};
+
+    // Basic validation
+    if (!momoTransactionId && !reference) {
+      return res.status(400).json({
+        message: "Either momoTransactionId (or financialTransactionId) or reference is required for idempotency",
+      });
+    }
+    if (!amount) return res.status(400).json({ message: "amount is required" });
+    if (!account) return res.status(400).json({ message: "account is required" });
+    if (!tenantId) return res.status(400).json({ message: "tenantId is required" });
+
+    // Idempotency check: prefer LedgerEntry, fallback to Transaction
+    const idempotencyQuery = { $or: [] };
+    if (momoTransactionId) idempotencyQuery.$or.push({ momoTransactionId });
+    if (reference) idempotencyQuery.$or.push({ reference });
+
+    if (idempotencyQuery.$or.length > 0) {
+      const existingEntry = await LedgerEntry.findOne(idempotencyQuery).lean().exec();
+      if (existingEntry) {
+        return res.status(200).json({
+          message: "Already processed (ledger entry)",
+          existingId: existingEntry._id,
+        });
+      }
+
+      const existingTx = await Transaction.findOne(idempotencyQuery).lean().exec();
+      if (existingTx) {
+        return res.status(200).json({
+          message: "Already processed (transaction)",
+          existingTransactionId: existingTx._id,
+        });
+      }
+    }
+
+    // Prepare ledger document
+    const ledgerDoc = {
+      account,
+      transaction: transactionId || undefined,
+      type: type === "DEBIT" ? "DEBIT" : "CREDIT",
+      amount:
+        typeof amount === "object" && amount._bsontype === "Decimal128"
+          ? amount
+          : mongoose.Types.Decimal128.fromString(String(amount)),
+      currency,
+      tenantId,
+      description,
+      reference: reference || undefined,
+      momoTransactionId: momoTransactionId || undefined,
+      metadata,
+    };
+
+    const created = await LedgerEntry.create(ledgerDoc);
+
+    // Optionally create a Transaction record (non-blocking)
+    try {
+      if (!transactionId && momoTransactionId) {
+        await Transaction.create({
+          tenantId,
+          momoTransactionId,
+          reference: reference || undefined,
+          amount: mongoose.Types.Decimal128.fromString(String(amount)),
+          currency,
+          status: "COMPLETED",
+          metadata: { createdFrom: "momoWebhook", ...metadata },
+        });
+      }
+    } catch (txErr) {
+      req.log && req.log.warn && req.log.warn({ txErr, errorId }, "Transaction create warning");
+    }
+
+    return res.status(201).json({
+      message: "Ledger entry created",
+      id: created._id,
     });
-
-    if (!existingTransaction) {
-      console.error("❌ Transaction not found:", payload.externalId);
-      return res.status(404).json({ message: "Transaction not found" });
-    }
-
-    // ✅ 3. Idempotency Check (prevent double ledger posting)
-    if (existingTransaction.status === "SUCCESSFUL") {
-      console.warn("⚠️ Duplicate callback ignored:", payload.externalId);
-      return res.sendStatus(200);
-    }
-
-    // ✅ 4. Update transaction
-    const transaction = await Transaction.findOneAndUpdate(
-      { externalId: payload.externalId },
-      {
-        status: payload.status,
-        momoTransactionId: payload.financialTransactionId,
-        rawCallback: payload // store full payload for audit
-      },
-      { new: true }
-    );
-
-    // ✅ 5. Process ledger ONLY on success
-    if (payload.status === "SUCCESSFUL") {
-      console.log("✅ Processing ledger for:", transaction.externalId);
-
-      // ✅ Extra safety: prevent negative/zero amounts
-      if (!transaction.amount || transaction.amount <= 0) {
-        throw new Error("Invalid transaction amount");
-      }
-
-      // ✅ Ledger routing
-      const ledgerPayload = {
-        transactionId: transaction.externalId,
-        amount: transaction.amount
-      };
-
-      if (transaction.type === "DEPOSIT") {
-        await ledgerService.processTransaction({
-          ...ledgerPayload,
-          fromWalletId: process.env.SYSTEM_WALLET_ID, // SACCO treasury
-          toWalletId: transaction.userId,
-          description: "MoMo Deposit"
-        });
-      }
-
-      if (transaction.type === "WITHDRAW") {
-        await ledgerService.processTransaction({
-          ...ledgerPayload,
-          fromWalletId: transaction.userId,
-          toWalletId: process.env.SYSTEM_WALLET_ID,
-          description: "MoMo Withdrawal"
-        });
-      }
-
-      if (!["DEPOSIT", "WITHDRAW"].includes(transaction.type)) {
-        console.warn("⚠️ Unknown transaction type:", transaction.type);
-      }
-    }
-
-    // ✅ 6. Handle failure case (optional but recommended)
-    if (payload.status === "FAILED") {
-      console.warn("❌ MoMo transaction failed:", payload.externalId);
-      // Optional: trigger retry, alerting, or user notification
-    }
-
-    res.sendStatus(200);
   } catch (err) {
-    console.error("❌ MoMo webhook error:", err.message);
+    const eid = makeErrorId();
+    if (req.log && req.log.error) {
+      req.log.error({ err, eid }, "Unhandled error in momo webhook");
+    } else {
+      console.error("Unhandled error in momo webhook", { eid, err });
+    }
 
-    // ✅ Always return 200 to prevent MoMo retries storm
-    res.sendStatus(200);
+    if (err && err.name === "MongooseError" && /buffering timed out/i.test(err.message)) {
+      return res.status(503).json({ message: "Database not ready", errorId: eid });
+    }
+
+    return res.status(500).json({ message: "Internal server error", errorId: eid });
   }
+}
+
+/**
+ * Export named handler expected by routes/momoRoutes.js
+ */
+module.exports = {
+  momoCallback,
 };

@@ -16,6 +16,8 @@
  * All operations require authentication via req.user._id
  * Admin operations require admin role
  */
+const CreditScoringService = require('../services/creditScoringService');
+const ComplianceLog = require('../models/ComplianceLog'); // ensure ComplianceLog is imported for STR logging
 
 const logger = require('../utils/logger');
 const asyncHandler = require('../utils/asyncHandler');
@@ -514,11 +516,10 @@ exports.getLoanSummary = async (req, res, next) => {
   }
 };
 
-/**
- * Approve loan (admin/group_admin only)
- * PUT /api/loans/:loanId/approve
- * Body: { interestRate, repaymentPeriodMonths, notes }
- */
+
+// Approve loan (admin/group_admin only) - with credit scoring guard
+PUT /api/loans/:loanId/approve
+*/
 exports.approveLoan = asyncHandler(async (req, res) => {
   const { loanId } = req.params;
   const { interestRate = 0, repaymentPeriodMonths = 6, notes } = req.body;
@@ -532,8 +533,7 @@ exports.approveLoan = asyncHandler(async (req, res) => {
   }
 
   // Validate loan exists
-  const loan = await Loan.findById(loanId).populate('user', 'name email').populate('group', 'name');
-
+  const loan = await Loan.findById(loanId).populate('user', 'name email phone tenantId nationalId avgTransaction');
   if (!loan) {
     return res.status(404).json({
       success: false,
@@ -564,6 +564,144 @@ exports.approveLoan = asyncHandler(async (req, res) => {
     });
   }
 
+  // ---------------------------
+  // CREDIT SCORING GUARD (NEW)
+  // ---------------------------
+  try {
+    // Build features payload for scoring. Prefer aggregated metrics if available on user,
+    // otherwise use conservative defaults and minimal loan context.
+    const features = {
+      contributions: loan.user?.contributionsCount || 0,
+      loanRepaymentsOnTime: loan.user?.onTimeRepayments || false,
+      missedPayments: loan.user?.missedPayments || 0,
+      momoInflows: loan.user?.momoInflows || 0,
+      momoOutflows: loan.user?.momoOutflows || 0,
+      savingsConsistency: loan.user?.savingsConsistency || false,
+      groupParticipation: !!loan.group,
+      guarantorStrength: loan.guarantorStrength || 'unknown',
+      // include loan context to help scoring
+      requestedAmount: loan.amount,
+      requestedDurationMonths: loan.repaymentPeriodMonths || repaymentPeriodMonths
+    };
+
+    // Call scoring service (fast path). Service returns { score, riskLevel }.
+    const { score, riskLevel } = await CreditScoringService.calculateScore(loan.user, features);
+
+    // Map to decision
+    // <400 → Reject
+    // 401–650 → Manual Review
+    // >650 → Approve
+    if (score < 400) {
+      // Audit: record attempted approval and rejection reason
+      await LoanAudit.logAction({
+        action: 'loan_approval_blocked_by_score',
+        loan: loan._id,
+        user: loan.user._id,
+        group: loan.group?._id || null,
+        actor: req.user._id,
+        actorRole: req.user.role,
+        description: `Loan approval blocked by credit score (${score})`,
+        amount: loan.amount,
+        metadata: { score, riskLevel, features },
+        status: 'blocked'
+      });
+
+      // Optionally create a compliance log / STR if score is extremely low or suspicious
+      if (score < 200) {
+        try {
+          await ComplianceLog.createSTR({
+            tenantId: loan.user.tenantId || 'unknown',
+            userId: loan.user._id,
+            activity: 'STR_GENERATED',
+            flagged: true,
+            reason: 'Very low credit score on approval attempt',
+            details: { score, riskLevel, loanId: loan._id, actor: req.user._id },
+            fraudLogId: null,
+            reporter: 'credit-scoring'
+          });
+        } catch (e) {
+          // non-fatal: log and continue
+          logger.warn('Failed to create STR for low score', e.message || e);
+        }
+      }
+
+      return res.status(400).json({
+        success: false,
+        message: 'Loan rejected due to credit risk',
+        data: { score, riskLevel }
+      });
+    }
+
+    if (score <= 650) {
+      // Move to manual review workflow instead of auto-approve
+      loan.status = 'manual_review';
+      loan.reviewRequestedBy = req.user._id;
+      loan.reviewRequestedAt = new Date();
+      await loan.save();
+
+      await LoanAudit.logAction({
+        action: 'loan_marked_manual_review',
+        loan: loan._id,
+        user: loan.user._id,
+        group: loan.group?._id || null,
+        actor: req.user._id,
+        actorRole: req.user.role,
+        description: `Loan moved to manual review due to credit score (${score})`,
+        amount: loan.amount,
+        metadata: { score, riskLevel, features },
+        status: 'pending'
+      });
+
+      return res.status(202).json({
+        success: true,
+        message: 'Loan requires manual review due to risk profile',
+        data: { score, riskLevel }
+      });
+    }
+
+    // score > 650 → proceed to approval path
+    // record score in RiskProfile (upsert) for auditability and future reference
+    try {
+      await RiskProfile.upsertScore(loan.user._id, loan.user.tenantId || 'default', score, {
+        explain: { source: 'creditScoringService', features },
+        modelVersion: process.env.CREDIT_MODEL_VERSION || 'v1',
+        source: 'hybrid'
+      });
+    } catch (e) {
+      logger.warn('RiskProfile upsert failed during approval flow', e.message || e);
+    }
+  } catch (scoringErr) {
+    // If scoring service fails, fail-safe: do not auto-approve. Log and escalate.
+    logger.error('Credit scoring failed during approval', { error: scoringErr?.message || scoringErr, loanId, actor: req.user._id });
+
+    await LoanAudit.logAction({
+      action: 'loan_approval_scoring_error',
+      loan: loan._id,
+      user: loan.user._id,
+      group: loan.group?._id || null,
+      actor: req.user._id,
+      actorRole: req.user.role,
+      description: 'Credit scoring service error during approval',
+      metadata: { error: scoringErr?.message || String(scoringErr) },
+      status: 'failed'
+    });
+
+    // Conservative response: require manual review
+    loan.status = 'manual_review';
+    loan.reviewRequestedBy = req.user._id;
+    loan.reviewRequestedAt = new Date();
+    await loan.save();
+
+    return res.status(202).json({
+      success: false,
+      message: 'Credit scoring unavailable; loan moved to manual review',
+    });
+  }
+  // ---------------------------
+  // END CREDIT SCORING GUARD
+  // ---------------------------
+
+  // Proceed with original approval flow (transactional)
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -624,6 +762,7 @@ exports.approveLoan = asyncHandler(async (req, res) => {
     session.endSession();
   }
 });
+
 
 /**
  * Reject loan (admin/group_admin only)
