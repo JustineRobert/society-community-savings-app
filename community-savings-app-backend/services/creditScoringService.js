@@ -1,120 +1,41 @@
 // services/creditScoringService.js
+"use strict";
 
-const RiskProfile = require('../models/RiskProfile');
-const FraudLog = require('../models/FraudLog');
+const RiskProfile = require("../models/RiskProfile");
 
 /**
- * CREDIT SCORING SERVICE
+ * Calculate credit score based on user data
+ * @param {Object} userData - { savingsConsistency, repaymentHistory, missedPayments }
+ * @returns {Object} - { score, riskLevel }
  */
-const calculateCreditScore = async (user, financials = {}) => {
-  let score = 0;
+exports.calculateScore = async (userData) => {
+  let score = 500;
 
-  // ✅ Safe defaults
-  const {
-    savingsFrequency = 0,
-    depositConsistency = 0,
-    repaymentRate = 0,
-    missedPayments = 0,
-    momoInflows = 0,
-    spendingVolatility = 0,
-    groupParticipation = 0,
-    guarantorStrength = 0
-  } = financials;
+  if (userData.savingsConsistency > 0.8) score += 150;
+  if (userData.repaymentHistory > 0.9) score += 200;
+  if (userData.missedPayments > 2) score -= 200;
 
-  // ✅ Behavioral
-  score += savingsFrequency * 40;
-  score += depositConsistency * 100;
+  // Clamp score between 0 and 1000
+  if (score > 1000) score = 1000;
+  if (score < 0) score = 0;
 
-  // ✅ Loan performance
-  score += repaymentRate * 300;
-  score -= missedPayments * 120;
+  // Risk level bands
+  let riskLevel = "MEDIUM";
+  if (score > 700) riskLevel = "LOW";
+  if (score < 400) riskLevel = "HIGH";
 
-  // ✅ Transactional (MoMo)
-  score += momoInflows * 0.01;
-  score -= spendingVolatility * 50;
-
-  // ✅ SACCO social
-  score += groupParticipation * 80;
-  score += guarantorStrength * 100;
-
-  // ✅ Clamp score
-  score = Math.max(0, Math.min(1000, score));
-
-  // ✅ Decision logic
-  let decision = "REJECT";
-  if (score > 650) decision = "APPROVE";
-  else if (score > 400) decision = "REVIEW";
-
-  // ✅ Persist risk profile (multi-tenant safe)
-  await RiskProfile.findOneAndUpdate(
-    { userId: user._id },
-    {
-      userId: user._id,
-      tenantId: user.tenantId,
-      creditScore: score,
-      riskLevel: decision,
-      updatedAt: new Date()
-    },
-    { upsert: true, new: true }
-  );
-
-  return { score, decision };
+  return { score, riskLevel };
 };
 
-
 /**
- * FRAUD DETECTION SERVICE
+ * Store score in RiskProfile collection
+ * @param {Object} params - { userId, tenantId, score, riskLevel }
+ * @returns {Promise<Document>} - Updated RiskProfile document
  */
-class FraudDetectionService {
-  static async checkTransaction(user, transaction) {
-    let fraudScore = 0;
-
-    // ✅ Safe defaults
-    const {
-      type,
-      frequency = 0,
-      newDevice = false,
-      amount = 0,
-      locationMismatch = false,
-      _id: transactionId
-    } = transaction;
-
-    const avgTransaction = user?.avgTransaction || 1;
-
-    // ✅ Rules Engine
-    if (type === 'withdrawal' && frequency < 30) fraudScore += 0.4;
-    if (newDevice && amount > 1000000) fraudScore += 0.5;
-    if (locationMismatch) fraudScore += 0.3;
-
-    if (amount > avgTransaction * 5) fraudScore += 0.3;
-
-    // ✅ Normalize
-    fraudScore = Math.min(1, fraudScore);
-
-    // ✅ Decision logic
-    let decision = 'ALLOW';
-    if (fraudScore > 0.8) decision = 'BLOCK';
-    else if (fraudScore >= 0.5) decision = 'STEP_UP';
-
-    // ✅ Log fraud event (tenant-safe)
-    await FraudLog.create({
-      userId: user._id,
-      tenantId: user.tenantId,
-      transactionId,
-      fraudScore,
-      decision,
-      createdAt: new Date()
-    });
-
-    return { fraudScore, decision };
-  }
-}
-
-
-/**
- * EXPORTS
- */
-module.exports = {
-  calculateCreditScore,
-  FraudDetectionService
+exports.storeScore = async ({ userId, tenantId, score, riskLevel }) => {
+  return RiskProfile.findOneAndUpdate(
+    { userId, tenantId },
+    { creditScore: score, riskLevel },
+    { upsert: true, new: true }
+  );
 };

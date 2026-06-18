@@ -1,113 +1,64 @@
-// routes/chat.js
+'use strict';
 
 const express = require('express');
 const router = express.Router();
-const asyncHandler = require('../utils/asyncHandler');
-
-const { body, param, query } = require('express-validator');
-const { handleValidation } = require('../utils/validators');
-
-// AuthZ middleware
-const { verifyToken, requireRole } = require('../middleware/auth');
-
-// Controllers (some may be optional)
+const chatController = require('../controllers/chatController');
 const {
-  sendMessage,
-  getMessages, // <– real export from chatController
-  getUserMessages, // Optional: for private/user-to-user messaging
-  deleteMessage, // Optional: for admin/moderator cleanup
-} = require('../controllers/chatController');
+  createConversationValidator,
+  sendMessageValidator,
+  editMessageValidator,
+} = require('../validators/chatValidator');
+const { verifyToken, requireRole } = require('../middlewares/auth'); // JWT + role middleware
+const asyncHandler = require('../utils/asyncHandler'); // centralized async error wrapper
 
-// alias so the route code stays semantically the same
-const getGroupMessages = getMessages;
-
-// --- Guardrails: verify controllers are functions at load time (if provided).
-const controllers = { sendMessage, getGroupMessages, getUserMessages, deleteMessage };
+// --- Guardrails: verify controllers are functions at load time
+const controllers = {
+  createConversation: chatController.createConversation,
+  listConversations: chatController.listConversations,
+  getConversationById: chatController.getConversationById,
+  getConversationMessages: chatController.getConversationMessages,
+  sendMessage: chatController.sendMessage,
+  editMessage: chatController.editMessage,
+  deleteMessageSoft: chatController.deleteMessageSoft,
+  searchMessages: chatController.searchMessages,
+  pinMessage: chatController.pinMessage,
+  archiveConversation: chatController.archiveConversation,
+};
 for (const [key, val] of Object.entries(controllers)) {
   if (val !== undefined && typeof val !== 'function') {
-    throw new TypeError(
-      `[routes/chat] Controller "${key}" must be a function, received: ${typeof val}`
-    );
+    throw new TypeError(`[routes/chat] Controller "${key}" must be a function, received: ${typeof val}`);
   }
 }
 
-/**
- * @route   POST /api/chat
- * @desc    Send a message to a group
- * @access  Private (Authenticated Users)
- * @notes   Enforces minimal payload shape; controllers also normalize/sanitize content.
- */
+// All routes require authentication
+router.use(verifyToken);
+
+// Conversation routes
 router.post(
-  '/',
-  verifyToken,
-  [
-    body('groupId').isString().trim().notEmpty().withMessage('groupId is required'),
-    body('content')
-      .isString()
-      .trim()
-      .isLength({ min: 1, max: 5000 })
-      .withMessage('content is required (1-5000 chars)'),
-    body('attachments').optional().isArray().withMessage('attachments must be an array'),
-  ],
-  handleValidation,
-  asyncHandler(sendMessage)
+  '/conversation',
+  createConversationValidator,
+  asyncHandler(chatController.createConversation)
+);
+router.get('/conversations', asyncHandler(chatController.listConversations));
+router.get('/conversation/:id', asyncHandler(chatController.getConversationById));
+router.get('/conversation/:id/messages', asyncHandler(chatController.getConversationMessages));
+router.post(
+  '/conversation/:conversationId/pin/:messageId',
+  requireRole('ADMIN'),
+  asyncHandler(chatController.pinMessage)
+);
+router.post(
+  '/conversation/:id/archive',
+  requireRole('ADMIN', 'SUPPORT'),
+  asyncHandler(chatController.archiveConversation)
 );
 
-/**
- * @route   GET /api/chat/group/:groupId
- * @desc    Retrieve messages in a specific group (paginated)
- * @access  Private (Authenticated Users)
- * @query   ?page=1&limit=50&before=<ISO8601>&after=<ISO8601>
- */
-router.get(
-  '/group/:groupId',
-  verifyToken,
-  [
-    param('groupId').isString().trim().notEmpty(),
-    query('page').optional().toInt().isInt({ min: 1 }),
-    query('limit').optional().toInt().isInt({ min: 1, max: 200 }),
-    query('before').optional().isISO8601().withMessage('before must be ISO date'),
-    query('after').optional().isISO8601().withMessage('after must be ISO date'),
-  ],
-  handleValidation,
-  asyncHandler(getGroupMessages)
-);
+// Message routes
+router.post('/message', sendMessageValidator, asyncHandler(chatController.sendMessage));
+router.put('/message/:id', editMessageValidator, asyncHandler(chatController.editMessage));
+router.delete('/message/:id', asyncHandler(chatController.deleteMessageSoft));
 
-/**
- * @route   GET /api/chat/user/:userId
- * @desc    Retrieve direct messages with a specific user (paginated)
- * @access  Private (Optional Direct Messaging Feature)
- * @query   ?page=1&limit=50
- */
-if (typeof getUserMessages === 'function') {
-  router.get(
-    '/user/:userId',
-    verifyToken,
-    [
-      param('userId').isString().trim().notEmpty(),
-      query('page').optional().toInt().isInt({ min: 1 }),
-      query('limit').optional().toInt().isInt({ min: 1, max: 200 }),
-    ],
-    handleValidation,
-    asyncHandler(getUserMessages)
-  );
-}
-
-/**
- * @route   DELETE /api/chat/:messageId
- * @desc    Delete a specific message by its ID
- * @access  Private (Admin/Moderator Only)
- * @notes   Controller may further enforce ownership if needed.
- */
-if (typeof deleteMessage === 'function') {
-  router.delete(
-    '/:messageId',
-    verifyToken,
-    requireRole('admin', 'group_admin'),
-    [param('messageId').isString().trim().notEmpty()],
-    handleValidation,
-    asyncHandler(deleteMessage)
-  );
-}
+// Search
+router.get('/messages/search', asyncHandler(chatController.searchMessages));
 
 module.exports = router;

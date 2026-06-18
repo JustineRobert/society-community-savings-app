@@ -1,63 +1,37 @@
 // services/fraudDetectionService.js
+"use strict";
 
-const FraudLog = require('../models/FraudLog');
+const FraudLog = require("../models/FraudLog");
 
-class FraudDetectionService {
-  static async checkTransaction(user, transaction = {}) {
-    let fraudScore = 0;
+/**
+ * Fraud detection service
+ * Evaluates a transaction using simple rules + AI simulation
+ * Persists fraud log entry for audit trail
+ */
+exports.checkFraud = async (transaction) => {
+  let score = 0;
 
-    // ✅ Safe defaults
-    const {
-      type,
-      frequency = 0,
-      rapidWithdrawals = false,
-      newDevice = false,
-      amount = 0,
-      locationChange = false,
-      locationMismatch = false,
-      _id,
-      id
-    } = transaction;
+  // ✅ RULES ENGINE
+  if (transaction.amount > 5000000) score += 0.3;
+  if (transaction.isNewDevice) score += 0.3;
+  if (transaction.quickRepeat) score += 0.4;
 
-    const transactionId = _id || id;
-    const avgTransaction = user?.avgTransaction || 1;
+  // ✅ AI SIMULATION
+  if (transaction.userPatternDeviation > 0.7) score += 0.5;
 
-    // ✅ RULES ENGINE (merged logic)
+  // ✅ Decision logic
+  let decision = "ALLOW";
+  if (score > 0.8) decision = "BLOCK";
+  else if (score > 0.5) decision = "REVIEW";
 
-    // Legacy rules
-    if (rapidWithdrawals) fraudScore += 0.4;
-    if (newDevice && amount > 500000) fraudScore += 0.3;
-    if (locationChange) fraudScore += 0.3;
+  // ✅ Persist fraud log (multi-tenant safe)
+  await FraudLog.create({
+    userId: transaction.userId,
+    tenantId: transaction.tenantId,
+    transactionId: transaction.id,
+    fraudScore: score,
+    decision,
+  });
 
-    // New rules
-    if (type === 'withdrawal' && frequency < 30) fraudScore += 0.4;
-    if (newDevice && amount > 1000000) fraudScore += 0.5;
-    if (locationMismatch) fraudScore += 0.3;
-
-    // Behavioral anomaly
-    if (amount > avgTransaction * 3) fraudScore += 0.2;
-    if (amount > avgTransaction * 5) fraudScore += 0.3;
-
-    // ✅ Clamp score
-    fraudScore = Math.min(1, fraudScore);
-
-    // ✅ Decision logic
-    let decision = 'ALLOW';
-    if (fraudScore > 0.8) decision = 'BLOCK';
-    else if (fraudScore >= 0.5) decision = 'STEP_UP_AUTH';
-
-    // ✅ Persist fraud log (multi-tenant safe)
-    await FraudLog.create({
-      userId: user._id,
-      tenantId: user.tenantId,
-      transactionId,
-      fraudScore,
-      decision,
-      createdAt: new Date()
-    });
-
-    return { score: fraudScore, decision };
-  }
-}
-
-module.exports = { FraudDetectionService };
+  return { score, decision };
+};

@@ -3,18 +3,19 @@
 const mongoose = require("mongoose");
 
 /**
- * Wallet Schema
+ * Wallet Schema (Production-Grade)
  *
- * ✅ Supports SACCO multi-tenant architecture
- * ✅ Tracks available + pending balances
+ * ✅ Multi-tenant SACCO isolation
+ * ✅ Decimal precision for financial safety
  * ✅ Audit & compliance ready
- * ✅ Prevents negative balances (controlled via services)
+ * ✅ Prevents negative balances (via services)
+ * ✅ Extensible metadata for integrations
  */
 
 const WalletSchema = new mongoose.Schema(
   {
     // 🔹 Ownership
-    user: {
+    userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
@@ -25,32 +26,23 @@ const WalletSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Tenant",
       required: true,
-      index: true, // SACCO isolation
+      index: true,
     },
 
-    // 🔹 Financial balances
-    availableBalance: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
-
-    pendingBalance: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
-
-    // 🔹 Derived total (optional but useful)
+    // 🔹 Financial balances (use Decimal128 for precision)
     balance: {
-      type: Number,
-      default: 0,
-      min: 0,
+      type: mongoose.Schema.Types.Decimal128,
+      default: 0.0,
+      get: (v) => parseFloat(v.toString()), // normalize for JSON responses
     },
 
     currency: {
       type: String,
       default: "UGX",
+      validate: {
+        validator: (val) => /^[A-Z]{3}$/.test(val),
+        message: "Currency must be a valid ISO 4217 code",
+      },
     },
 
     // 🔹 Wallet status
@@ -69,35 +61,60 @@ const WalletSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: {},
     },
+
+    // 🔹 Soft delete / archival
+    isDeleted: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
   },
   {
-    timestamps: true, // ✅ createdAt + updatedAt
+    timestamps: true, // createdAt + updatedAt
+    toJSON: { getters: true }, // ensure Decimal128 is serialized cleanly
   }
 );
 
 // ✅ Unique constraint per user per tenant
-WalletSchema.index({ user: 1, tenantId: 1 }, { unique: true });
+WalletSchema.index({ userId: 1, tenantId: 1 }, { unique: true });
 
-// ✅ Keep balance in sync
-WalletSchema.pre("save", function (next) {
-  this.balance = this.availableBalance + this.pendingBalance;
-  next();
-});
-
-// ✅ Helper: Check if wallet is usable
+// ✅ Helper methods
 WalletSchema.methods.isActive = function () {
-  return this.status === "active";
+  return this.status === "active" && !this.isDeleted;
 };
 
-// ✅ Helper: Freeze wallet
 WalletSchema.methods.freeze = function () {
   this.status = "frozen";
   return this.save();
 };
 
-// ✅ Helper: Resume wallet
 WalletSchema.methods.activate = function () {
   this.status = "active";
+  return this.save();
+};
+
+WalletSchema.methods.suspend = function () {
+  this.status = "suspended";
+  return this.save();
+};
+
+// ✅ Safe credit/debit helpers
+WalletSchema.methods.credit = function (amount) {
+  this.balance = mongoose.Types.Decimal128.fromString(
+    (this.balance + amount).toString()
+  );
+  this.lastTransactionAt = new Date();
+  return this.save();
+};
+
+WalletSchema.methods.debit = function (amount) {
+  if (parseFloat(this.balance.toString()) < amount) {
+    throw new Error("Insufficient funds");
+  }
+  this.balance = mongoose.Types.Decimal128.fromString(
+    (this.balance - amount).toString()
+  );
+  this.lastTransactionAt = new Date();
   return this.save();
 };
 

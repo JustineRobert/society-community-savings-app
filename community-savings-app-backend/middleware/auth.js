@@ -1,5 +1,4 @@
 // middleware/auth.js
-
 "use strict";
 
 const jwt = require("jsonwebtoken");
@@ -9,11 +8,9 @@ const jwt = require("jsonwebtoken");
  */
 const extractToken = (req) => {
   const authHeader = req.headers.authorization || "";
-
   if (authHeader.startsWith("Bearer ")) {
     return authHeader.split(" ")[1];
   }
-
   return null;
 };
 
@@ -38,8 +35,9 @@ exports.authenticate = (req, res, next) => {
      * Expected structure:
      * {
      *   id,
-     *   saccoId,
+     *   tenantId,
      *   role,
+     *   roles (optional array),
      *   ...
      * }
      */
@@ -49,7 +47,6 @@ exports.authenticate = (req, res, next) => {
     return next();
   } catch (error) {
     console.error("[Auth] JWT verification failed:", error.message);
-
     return res.status(401).json({
       success: false,
       message: "Invalid or expired token",
@@ -70,6 +67,7 @@ exports.requireRole =
       });
     }
 
+    // Support both single role and multiple roles array
     const userRoles = [req.user.role, ...(req.user.roles || [])].filter(Boolean);
 
     if (allowedRoles.length === 0 || userRoles.some((r) => allowedRoles.includes(r))) {
@@ -85,5 +83,6 @@ exports.requireRole =
 /**
  * Optional helpers (clean aliases)
  */
-exports.isAdmin = exports.requireRole("admin");
-exports.isGroupAdmin = exports.requireRole("admin", "group_admin");
+exports.isAdmin = exports.requireRole("ADMIN");
+exports.isAuditor = exports.requireRole("AUDITOR");
+exports.isGroupAdmin = exports.requireRole("ADMIN", "GROUP_ADMIN");

@@ -1,30 +1,33 @@
 version: '3.9'
 
 services:
-  # MongoDB - Primary data store
   mongodb:
     image: mongo:7-jammy
     container_name: community-savings-mongodb
     restart: unless-stopped
     ports:
       - '27017:27017'
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: password123
-      MONGO_INITDB_DATABASE: community-savings
+    env_file:
+      - .env
     volumes:
       - mongodb_data:/data/db
       - ./scripts/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
     networks:
-      - community-savings-net
+      community-savings-net:
+        aliases:
+          - mongo
     healthcheck:
-      test: ['CMD', 'mongosh', '--eval', "db.adminCommand('ping')"]
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')", "--username", "$$MONGO_INITDB_ROOT_USERNAME", "--password", "$$MONGO_INITDB_ROOT_PASSWORD"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
 
-  # Redis - Cache & rate limiting
   redis:
     image: redis:7-alpine
     container_name: community-savings-redis
@@ -42,36 +45,40 @@ services:
       --maxmemory 256mb
       --maxmemory-policy allkeys-lru
     networks:
-      - community-savings-net
+      community-savings-net:
+        aliases:
+          - cache
     healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
 
-  # MongoDB Express - Web UI for MongoDB (optional)
   mongo-express:
     image: mongo-express:latest
     container_name: community-savings-mongo-express
     restart: unless-stopped
     ports:
       - '8081:8081'
+    env_file:
+      - .env
     environment:
-      ME_CONFIG_MONGODB_ADMINUSERNAME: admin
-      ME_CONFIG_MONGODB_ADMINPASSWORD: password123
       ME_CONFIG_MONGODB_SERVER: mongodb
       ME_CONFIG_MONGODB_PORT: 27017
-      ME_CONFIG_BASICAUTH_USERNAME: admin
-      ME_CONFIG_BASICAUTH_PASSWORD: admin123
     depends_on:
-      - mongodb
+      mongodb:
+        condition: service_healthy
     networks:
-      - community-savings-net
+      community-savings-net:
     profiles:
       - tools
 
-  # Redis Commander - Web UI for Redis (optional)
   redis-commander:
     image: rediscommander/redis-commander:latest
     container_name: community-savings-redis-commander
@@ -81,9 +88,10 @@ services:
     environment:
       REDIS_HOSTS: local:redis:6379
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     networks:
-      - community-savings-net
+       community-savings-net:
     profiles:
       - tools
 

@@ -1,4 +1,4 @@
-// src/App.js
+// src/App.jsx
 import React, { Suspense, lazy } from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { ToastContainer } from "react-toastify";
@@ -9,7 +9,6 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import ProtectedRouteWithRole from "./components/ProtectedRouteWithRole";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
-
 import { ErrorBoundary, ErrorFallback } from "./components/ErrorBoundary";
 
 // Lazy-loaded pages
@@ -26,11 +25,16 @@ const GroupDetails = lazy(() => import("./pages/GroupDetails"));
 const CreateGroup = lazy(() => import("./pages/CreateGroupV2"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
-// Admin
+// Admin pages
 const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
 const AdminSettings = lazy(() => import("./pages/admin/AdminSettings"));
 const ManageUsers = lazy(() => import("./pages/admin/ManageUsers"));
 const AdminSessions = lazy(() => import("./pages/admin/AdminSessions"));
+
+//const chatRoutes = require('./routes/chat');
+//app.use('/api/chat', chatRoutes);
+
+//<Route path="/chat" element={<TITechChat />} />
 
 function RouteFallback() {
   return (

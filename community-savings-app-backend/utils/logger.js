@@ -1,39 +1,49 @@
 // utils/logger.js
-// Winston-based structured logger with environment-aware formatting.
-
 'use strict';
 
-const winston = require('winston');
-const config = require('../config');
+const { createLogger, format, transports } = require("winston");
+require("winston-mongodb");
 
-const isProd = config.env === 'production';
-
-const logger = winston.createLogger({
-  level: isProd ? 'info' : 'debug',
-  format: isProd
-    ? winston.format.combine(winston.format.timestamp(), winston.format.json())
-    : winston.format.combine(winston.format.colorize(), winston.format.timestamp(), winston.format.simple()),
+const logger = createLogger({
+  level: process.env.LOG_LEVEL || "info",
+  format: format.combine(
+    format.timestamp(),
+    format.errors({ stack: true }),
+    format.json()
+  ),
+  defaultMeta: { service: "titech-fintech-api" },
   transports: [
-    new winston.transports.Console({
+    // ✅ Console transport (development + production fallback)
+    new transports.Console({
       handleExceptions: true,
+      format:
+        process.env.NODE_ENV !== "production"
+          ? format.combine(format.colorize(), format.simple())
+          : format.json(),
     }),
+
+    // ✅ MongoDB transport (audit trail, only if AUDIT_LOG_URI is set)
+    ...(process.env.AUDIT_LOG_URI
+      ? [
+          new transports.MongoDB({
+            db: process.env.AUDIT_LOG_URI,
+            collection: "auditlogs",
+            options: { useUnifiedTopology: true },
+          }),
+        ]
+      : []),
   ],
   exitOnError: false,
 });
 
-// Helper wrappers for consistent structured logs
-const wrap = (level) => (message, meta = {}) => {
-  if (typeof message === 'object') {
-    logger.log(level, '', message);
-  } else {
-    logger.log(level, message, meta);
-  }
-};
+/**
+ * Helper: log with correlation ID (requestId)
+ */
+logger.withRequest = (requestId) => ({
+  info: (msg, meta = {}) => logger.info(msg, { requestId, ...meta }),
+  warn: (msg, meta = {}) => logger.warn(msg, { requestId, ...meta }),
+  error: (msg, meta = {}) => logger.error(msg, { requestId, ...meta }),
+  debug: (msg, meta = {}) => logger.debug(msg, { requestId, ...meta }),
+});
 
-module.exports = {
-  logger,
-  debug: wrap('debug'),
-  info: wrap('info'),
-  warn: wrap('warn'),
-  error: wrap('error'),
-};
+module.exports = logger;

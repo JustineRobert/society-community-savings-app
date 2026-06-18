@@ -518,8 +518,8 @@ exports.getLoanSummary = async (req, res, next) => {
 
 
 // Approve loan (admin/group_admin only) - with credit scoring guard
-PUT /api/loans/:loanId/approve
-*/
+PUT /api/loans/loanId/approve; 
+
 exports.approveLoan = asyncHandler(async (req, res) => {
   const { loanId } = req.params;
   const { interestRate = 0, repaymentPeriodMonths = 6, notes } = req.body;

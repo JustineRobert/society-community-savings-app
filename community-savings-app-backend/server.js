@@ -23,11 +23,25 @@ const { createSocketServer } = require('./services/socket');
 const redisClient = require('./services/redis'); // optional
 const { errorHandler } = require('./middleware/errorHandler');
 
+const apiGateway = require('./middleware/apiGateway'); // if folder is singular
+
+const initChatSocket = require('./realtime/chatSocket');
+// const io = initChatSocket(server); // pass HTTP server instance
+
+
+// ✅ Initialize app first
 const app = express();
 const server = http.createServer(app);
 
 // Basic app settings
 app.set('trust proxy', 1);
+
+// ✅ Use middleware after app is defined
+app.use("/api", apiGateway);
+
+module.exports = { app, server };
+
+
 
 // Rate limiter setup (unchanged)
 let apiLimiter;
@@ -68,6 +82,8 @@ try {
 // Mount routers (add risk routes)
 const riskRoutes = require('./routes/risk');
 app.use('/api/risk', riskRoutes);
+
+app.use(require("./middleware/requestId"));
 
 app.use(apiLimiter);
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));

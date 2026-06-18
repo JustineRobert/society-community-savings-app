@@ -1,24 +1,23 @@
 // models/EmailAudit.js
-// ============================================================================
-// Email Audit Model
-// Tracks all email-related operations for security, compliance, and debugging
-// ============================================================================
+'use strict';
 
 const mongoose = require('mongoose');
 
-const emailAuditSchema = new mongoose.Schema(
+const EmailAuditSchema = new mongoose.Schema(
   {
     event: {
       type: String,
       enum: [
-        'send_verification_email',
-        'verify_email',
-        'request_password_reset',
-        'reset_password',
-        'change_password',
-        'resend_verification_email',
+        'SEND_VERIFICATION_EMAIL',
+        'VERIFY_EMAIL',
+        'REQUEST_PASSWORD_RESET',
+        'RESET_PASSWORD',
+        'CHANGE_PASSWORD',
+        'RESEND_VERIFICATION_EMAIL',
       ],
       required: true,
+      uppercase: true,
+      trim: true,
       index: true,
     },
 
@@ -39,19 +38,25 @@ const emailAuditSchema = new mongoose.Schema(
 
     ipAddress: {
       type: String,
+      trim: true,
+      maxlength: 64,
       index: true,
       sparse: true,
     },
 
     userAgent: {
       type: String,
+      trim: true,
+      maxlength: 512,
       sparse: true,
     },
 
     status: {
       type: String,
-      enum: ['success', 'failed'],
-      default: 'success',
+      enum: ['SUCCESS', 'FAILED'],
+      default: 'SUCCESS',
+      uppercase: true,
+      trim: true,
       index: true,
     },
 
@@ -63,26 +68,61 @@ const emailAuditSchema = new mongoose.Schema(
     },
 
     metadata: {
-      type: mongoose.Schema.Types.Mixed,
-      default: {},
+      providerResponse: { type: mongoose.Schema.Types.Mixed },
+      requestId: { type: String, trim: true },
     },
 
     timestamp: {
       type: Date,
       default: Date.now,
       index: true,
-      expires: 7776000, // TTL: 90 days - auto-delete old audit logs
+      expires: 60 * 60 * 24 * 90, // 90 days
+    },
+
+    isArchived: {
+      type: Boolean,
+      default: false,
+      index: true,
     },
   },
   {
     collection: 'email_audits',
     versionKey: false,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
   }
 );
 
-// Index for common queries
-emailAuditSchema.index({ userId: 1, event: 1, timestamp: -1 });
-emailAuditSchema.index({ email: 1, event: 1, timestamp: -1 });
-emailAuditSchema.index({ status: 1, timestamp: -1 });
+// Indexes for common queries
+EmailAuditSchema.index({ userId: 1, event: 1, timestamp: -1 });
+EmailAuditSchema.index({ email: 1, event: 1, timestamp: -1 });
+EmailAuditSchema.index({ status: 1, timestamp: -1 });
 
-module.exports = mongoose.model('EmailAudit', emailAuditSchema);
+// Static helper to record an audit entry
+EmailAuditSchema.statics.record = async function (entry = {}) {
+  const payload = {
+    event: entry.event,
+    userId: entry.userId || null,
+    email: entry.email || null,
+    ipAddress: entry.ipAddress || null,
+    userAgent: entry.userAgent || null,
+    status: entry.status || 'SUCCESS',
+    reason: entry.reason || null,
+    metadata: entry.metadata || {},
+    timestamp: new Date(),
+  };
+  return this.create(payload);
+};
+
+// Instance method to summarize
+EmailAuditSchema.methods.summary = function () {
+  return {
+    id: this._id.toString(),
+    event: this.event,
+    email: this.email,
+    status: this.status,
+    timestamp: this.timestamp,
+  };
+};
+
+module.exports = mongoose.model('EmailAudit', EmailAuditSchema);

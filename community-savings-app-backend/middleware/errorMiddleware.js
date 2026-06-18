@@ -1,66 +1,76 @@
 // middlewares/errorMiddleware.js
 
 /**
- * Global Error Handler Middleware
+ * Global Error Handler Middleware (Production-Grade)
  *
- * ✅ Handles all errors in one place
- * ✅ Supports Mongoose, validation, and custom errors
+ * ✅ Handles Mongoose, validation, and custom errors
+ * ✅ Structured logging (ELK / observability ready)
  * ✅ Prevents stack leaks in production
- * ✅ Standardizes API responses
+ * ✅ Standardized API response (enterprise format)
+ * ✅ Supports request tracing (requestId)
  */
 
+const logger = require("../utils/logger");
+
 module.exports = (err, req, res, next) => {
-  // ✅ Default error values
+  // ✅ Default values
   let statusCode = err.statusCode || 500;
   let message = err.message || "Internal Server Error";
+  let errorCode = err.errorCode || "ERR_INTERNAL";
 
-  // ✅ Clone error (avoid mutation issues)
-  let error = { ...err };
-  error.message = err.message;
-
-  // ✅ Mongoose: Invalid ObjectId
+  // ✅ --- MONGOOSE ERROR HANDLING ---
+  // Invalid ObjectId
   if (err.name === "CastError") {
     statusCode = 400;
     message = `Invalid resource ID: ${err.value}`;
+    errorCode = "ERR_INVALID_ID";
   }
 
-  // ✅ Mongoose: Duplicate key
+  // Duplicate key
   if (err.code && err.code === 11000) {
     statusCode = 400;
-    const field = Object.keys(err.keyValue)[0];
+    const field = Object.keys(err.keyValue || {})[0];
     message = `Duplicate value for field: ${field}`;
+    errorCode = "ERR_DUPLICATE";
   }
 
-  // ✅ Mongoose: Validation error
+  // Validation error
   if (err.name === "ValidationError") {
     statusCode = 400;
-    const errors = Object.values(err.errors).map((e) => e.message);
+    const errors = Object.values(err.errors).map(e => e.message);
     message = errors.join(", ");
+    errorCode = "ERR_VALIDATION";
   }
 
-  // ✅ Custom known errors (optional pattern)
+  // ✅ --- AUTHORIZATION ERRORS ---
   if (err.name === "UnauthorizedError") {
     statusCode = 401;
+    errorCode = "ERR_UNAUTHORIZED";
   }
 
   if (err.name === "ForbiddenError") {
     statusCode = 403;
+    errorCode = "ERR_FORBIDDEN";
   }
 
-  // ✅ Log error (important for MTN-grade systems)
-  console.error("❌ Error:", {
-    message: err.message,
-    stack: err.stack,
+  // ✅ --- STRUCTURED LOGGING ---
+  logger.error({
+    message,
+    errorCode,
+    statusCode,
     path: req.originalUrl,
     method: req.method,
+    requestId: req.requestId || null,
+    userId: req.user?.id || null,
+    stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
   });
 
-  // ✅ Production-safe response
+  // ✅ --- RESPONSE FORMAT (ENTERPRISE STANDARD) ---
   res.status(statusCode).json({
     success: false,
-    message,
-    ...(process.env.NODE_ENV === "development" && {
-      stack: err.stack,
-    }),
+    error: {
+      code: errorCode,
+      message,
+    }
   });
 };

@@ -29,20 +29,17 @@ import {
 // // ✅ FIXED: Single declaration using arrow function
 
 const AdminDashboard = () => {
-  const [data, setData] = useState({ loans: [], fraud: [] });
 
-  useEffect(() => {
-    axios.get('/api/admin/stats').then(res => {
-      setData(res.data);
-    });
-  }, []);
+  // const [data, setData] = useState({ loans: [], fraud: [] });
+
+  // useEffect(() => {
+   //  axios.get('/api/admin/stats').then(res => {
+      // setData(res.data);
+    // });
+  // }, []);
 
   return null; // keep if rendering handled elsewhere
-};
 
-
-
-const AdminDashboard = () => {
   return (
     <div style={{ padding: 20 }}>
       <h2>📊 TITech Admin Dashboard</h2>

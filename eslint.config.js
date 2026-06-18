@@ -1,9 +1,13 @@
 import js from "@eslint/js";
 import importPlugin from "eslint-plugin-import";
 import react from "eslint-plugin-react";
+import jsxA11y from "eslint-plugin-jsx-a11y";
+import security from "eslint-plugin-security";
+import prettier from "eslint-plugin-prettier";
+import tseslint from "@typescript-eslint/eslint-plugin";
+import tsparser from "@typescript-eslint/parser";
 
 export default [
-  // ✅ Base recommended rules
   js.configs.recommended,
 
   // ============================================================
@@ -11,11 +15,9 @@ export default [
   // ============================================================
   {
     files: ["community-savings-app-backend/**/*.js"],
-
     languageOptions: {
       ecmaVersion: "latest",
       sourceType: "commonjs",
-
       globals: {
         require: "readonly",
         module: "readonly",
@@ -24,77 +26,66 @@ export default [
         console: "readonly",
         Buffer: "readonly",
         setTimeout: "readonly",
-        clearTimeout: "readonly"
-      }
+        clearTimeout: "readonly",
+      },
     },
-
     plugins: {
-      import: importPlugin
+      import: importPlugin,
+      security,
+      prettier,
     },
-
     rules: {
-      "no-unused-vars": ["warn"],
+      "no-unused-vars": ["error"],
       "no-console": "off",
-
-      // ✅ Import validation
       "import/no-unresolved": "error",
-      "import/named": "error"
-    }
+      "import/named": "error",
+      "security/detect-object-injection": "warn",
+      "prettier/prettier": "error",
+    },
   },
 
   // ============================================================
-  // ✅ FRONTEND (React + Vite - ES Modules)
+  // ✅ FRONTEND (React + Vite - ES Modules + TS)
   // ============================================================
   {
     files: ["community-savings-app-frontend/src/**/*.{js,jsx,ts,tsx}"],
-
     languageOptions: {
       ecmaVersion: "latest",
       sourceType: "module",
-
+      parser: tsparser,
       globals: {
         window: "readonly",
         document: "readonly",
-        navigator: "readonly"
-      }
+        navigator: "readonly",
+      },
     },
-
     plugins: {
       react,
-      import: importPlugin
+      import: importPlugin,
+      "jsx-a11y": jsxA11y,
+      "@typescript-eslint": tseslint,
+      prettier,
     },
-
     settings: {
-      react: {
-        version: "detect"
-      }
+      react: { version: "detect" },
     },
-
     rules: {
       ...react.configs.recommended.rules,
-
-      // ✅ React 17+
       "react/react-in-jsx-scope": "off",
-
-      // ✅ General
-      "no-unused-vars": ["warn"],
-
-      // ✅ Import validation
+      "no-unused-vars": "error",
       "import/no-unresolved": "error",
-      "import/named": "error"
-    }
+      "import/named": "error",
+      "jsx-a11y/alt-text": "warn",
+      "@typescript-eslint/no-unused-vars": ["error"],
+      "prettier/prettier": "error",
+    },
   },
 
   // ============================================================
   // ✅ TEST FILES (Jest / Vitest)
   // ============================================================
   {
-    files: [
-      "**/*.test.js",
-      "**/*.spec.js",
-      "**/tests/**/*.js"
-    ],
-
+    files: ["**/*.test.{js,ts}", "**/*.spec.{js,ts}", "**/tests/**/*.js"],
     languageOptions: {
       globals: {
         describe: "readonly",
@@ -105,21 +96,18 @@ export default [
         beforeAll: "readonly",
         beforeEach: "readonly",
         afterAll: "readonly",
-        afterEach: "readonly"
-      }
-    }
+        afterEach: "readonly",
+      },
+    },
+    rules: {
+      "no-unused-expressions": "off", // allow chai-style assertions
+    },
   },
 
   // ============================================================
   // ✅ IGNORE FILES
   // ============================================================
   {
-    ignores: [
-      "node_modules",
-      "dist",
-      "build",
-      "coverage",
-      "logs"
-    ]
-  }
+    ignores: ["node_modules", "dist", "build", "coverage", "logs"],
+  },
 ];

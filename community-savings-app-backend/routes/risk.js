@@ -1,17 +1,5 @@
 // routes/risk.js
-/**
- * Risk routes
- * - Production-ready: input validation, rate limiting, structured responses, and auth
- * - Matches existing repo patterns: controllers/riskController.js, middleware/auth.js
- * - Add endpoints:
- *    POST /api/risk/score
- *    POST /api/risk/fraud-check
- *    GET  /api/risk/profile/:userId
- *    POST /api/risk/compliance/kyc
- *    GET  /api/risk/compliance/report/:id
- *
- * Drop this file into routes/ and wire it into your main router (e.g., app.use('/api/risk', require('./routes/risk')))
- */
+'use strict';
 
 const express = require('express');
 const { body, param, validationResult } = require('express-validator');
@@ -22,10 +10,10 @@ const router = express.Router();
 const riskController = require('../controllers/riskController');
 const auth = require('../middleware/auth');
 
-// Lightweight rate limiter for risk endpoints to protect from abuse
+// Lightweight rate limiter for risk endpoints
 const limiter = rateLimit({
   windowMs: 10 * 1000, // 10 seconds
-  max: 20, // max 20 requests per window per IP
+  max: 20,             // max 20 requests per window per IP
   standardHeaders: true,
   legacyHeaders: false
 });
@@ -44,7 +32,6 @@ const validate = (validations) => async (req, res, next) => {
 
 /**
  * POST /api/risk/score
- * Body: { features: { contributions, loanRepaymentHistory, missedPayments, momoInflows, momoOutflows, savingsConsistency, groupParticipation, guarantorStrength } }
  */
 router.post(
   '/score',
@@ -53,7 +40,7 @@ router.post(
   validate([
     body('features').exists().withMessage('features is required').isObject(),
     body('features.contributions').optional().isNumeric(),
-    body('features.loanRepaymentsOnTime').optional().isBoolean(),
+    body('features.loanRepaymentHistory').optional().isBoolean(),
     body('features.missedPayments').optional().isNumeric(),
     body('features.momoInflows').optional().isNumeric(),
     body('features.momoOutflows').optional().isNumeric(),
@@ -66,7 +53,6 @@ router.post(
 
 /**
  * POST /api/risk/fraud-check
- * Body: { transaction: { _id, type, amount, frequency, newDevice, locationMismatch, device, geo, metadata } }
  */
 router.post(
   '/fraud-check',
@@ -97,7 +83,6 @@ router.get(
 
 /**
  * POST /api/risk/compliance/kyc
- * Body: { nationalId, phone, address, userId? }
  */
 router.post(
   '/compliance/kyc',

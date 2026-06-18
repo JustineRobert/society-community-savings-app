@@ -1,4 +1,5 @@
 // services/momo.service.js
+'use strict';
 // Production-ready MTN MoMo Request-to-Pay integration (collection API)
 
 const axios = require("axios");
@@ -12,6 +13,48 @@ const DEFAULT_CURRENCY = process.env.DEFAULT_CURRENCY || "UGX";
 const REQUEST_TIMEOUT = parseInt(process.env.MTN_REQUEST_TIMEOUT_MS || "10000", 10);
 const MAX_RETRIES = parseInt(process.env.MTN_MAX_RETRIES || "3", 10);
 const RETRY_DELAY_MS = parseInt(process.env.MTN_RETRY_DELAY_MS || "500", 10);
+
+
+const momoServiceImpl = require('./momoServiceImpl'); // actual HTTP client to MoMo
+const circuitFactory = require('../utils/circuitBreaker');
+const logger = require('../middleware/logging');
+
+// Optional: fallback when MoMo is unavailable
+const fallback = async (payload) => {
+  logger.warn('MoMo fallback invoked', { reference: payload.reference, phone: payload.phone });
+  // return a safe response shape so callers can decide what to do
+  return { ok: false, reason: 'momo_unavailable', reference: payload.reference };
+};
+
+// Create a single breaker instance for requestToPay
+const { fire: safeRequestToPay, breaker: momoBreaker } = circuitFactory(
+  async (payload) => {
+    // delegate to the real implementation that calls MoMo API
+    return await momoServiceImpl.requestToPay(payload);
+  },
+  { timeout: 8000, errorThresholdPercentage: 60, resetTimeout: 30000 }, // optional overrides
+  fallback
+);
+
+// Export the safe wrapper and the raw breaker if you need metrics
+module.exports = {
+  requestToPay: async (payload) => {
+    // ensure phone default where applicable
+    payload.phone = payload.phone || '256772123546';
+
+    try {
+      const result = await safeRequestToPay(payload);
+      // result may be the real MoMo response or fallback response
+      return result;
+    } catch (err) {
+      // circuit threw (no fallback or fallback also failed)
+      logger.error('requestToPay failed', { error: err.message, reference: payload.reference });
+      throw err;
+    }
+  },
+  momoBreaker, // optional: expose for metrics/inspection
+};
+
 
 if (!TOKEN) {
   logger?.warn?.("MTN token is not set. Requests will likely fail until MTN_TOKEN is provided.");

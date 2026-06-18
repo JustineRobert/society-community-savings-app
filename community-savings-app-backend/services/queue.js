@@ -1,39 +1,23 @@
 // services/queue.js
-// centralized Bull queues for background jobs
+'use strict';
 
-const Queue = require('bull');
-const redis = require('./redis');
+const { Queue } = require('bullmq');
 
-// example notification queue
-const redisUrl = process.env.REDIS_URI || process.env.REDIS_URL || 'redis://localhost:6379';
-const notificationQueue = new Queue('notifications', {
-  redis: { url: redisUrl },
-});
+const redisUrl = process.env.REDIS_URL || process.env.REDIS_URI || null;
+const connection = redisUrl
+  ? { connection: { url: redisUrl } }
+  : {
+      connection: {
+        host: process.env.REDIS_HOST || '127.0.0.1',
+        port: parseInt(process.env.REDIS_PORT || '6379', 10),
+        password: process.env.REDIS_PASSWORD || undefined,
+      },
+    };
 
-// process jobs and emit via socket.io
-notificationQueue.process(async (job) => {
-  const { io } = require('../server');
-  let payload = job.data;
-  // enrich with a human-friendly message if not provided
-  if (!payload.message) {
-    switch (payload.type) {
-      case 'group-created':
-        payload.message = `A new group "${payload.name}" was created.`;
-        break;
-      case 'group-joined':
-        payload.message = `User joined group ${payload.groupId}`;
-        break;
-      default:
-        payload.message = 'You have a notification';
-    }
-  }
-  console.log('Processing notification job', payload);
-  if (io) {
-    io.emit('notification', payload);
-  }
-  return Promise.resolve();
-});
+// Primary transaction queue (BullMQ)
+const transactionQueue = new Queue('transactions', connection);
 
+// Export queues for use across the app
 module.exports = {
-  notificationQueue,
+  transactionQueue,
 };

@@ -1,60 +1,27 @@
-//Ledger Service (services/ledgerService.js)
-const Wallet = require("../models/Wallet");
-const LedgerEntry = require("../models/LedgerEntry");
+// Ledger Service (services/ledgerService.js)
 
-exports.processTransaction = async ({
-  fromWalletId,
-  toWalletId,
-  amount,
-  currency = "UGX",
-  transactionId,
-  description
-}) => {
-  const session = await Wallet.startSession();
-  session.startTransaction();
+const Ledger = require("../models/LedgerEntry");
 
-  try {
-    const fromWallet = await Wallet.findById(fromWalletId).session(session);
-    const toWallet = await Wallet.findById(toWalletId).session(session);
+/**
+ * Record a single double-entry ledger line
+ *
+ * @param {Object} params
+ * @param {String} params.tenantId - Tenant/SACCO isolation
+ * @param {String} params.debit - Debit account identifier
+ * @param {String} params.credit - Credit account identifier
+ * @param {Number} params.amount - Transaction amount
+ * @param {String} params.ref - External/internal reference
+ */
+exports.recordEntry = async ({ tenantId, debit, credit, amount, ref }) => {
+  if (!tenantId) throw new Error("tenantId is required");
+  if (!debit || !credit) throw new Error("Both debit and credit accounts are required");
+  if (!amount || amount <= 0) throw new Error("Amount must be a positive number");
 
-    if (!fromWallet || !toWallet) throw new Error("Wallet not found");
-    if (fromWallet.availableBalance < amount) throw new Error("Insufficient funds");
-
-    // 🔴 DEBIT
-    await LedgerEntry.create([{
-      transactionId,
-      walletId: fromWalletId,
-      type: "DEBIT",
-      amount,
-      currency,
-      reference: description,
-      status: "COMPLETED"
-    }], { session });
-
-    // 🟢 CREDIT
-    await LedgerEntry.create([{
-      transactionId,
-      walletId: toWalletId,
-      type: "CREDIT",
-      amount,
-      currency,
-      reference: description,
-      status: "COMPLETED"
-    }], { session });
-
-    // Update balances
-    fromWallet.availableBalance -= amount;
-    toWallet.availableBalance += amount;
-
-    await fromWallet.save({ session });
-    await toWallet.save({ session });
-
-    await session.commitTransaction();
-    return { success: true, transactionId };
-  } catch (err) {
-    await session.abortTransaction();
-    throw err;
-  } finally {
-    session.endSession();
-  }
+  return await Ledger.create({
+    tenantId,
+    debitAccount: debit,
+    creditAccount: credit,
+    amount,
+    reference: ref,
+  });
 };
