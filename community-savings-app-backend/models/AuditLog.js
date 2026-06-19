@@ -21,7 +21,7 @@ const AuditLogSchema = new Schema(
     // 🔹 Persist correlation ID for distributed tracing
     requestId: {
       type: String,
-      index: true,
+      //index: true,
       trim: true,
     },
 
@@ -33,37 +33,37 @@ const AuditLogSchema = new Schema(
     timestamp: {
       type: Date,
       default: Date.now,
-      index: true,
+      //index: true,
     },
 
     tenantId: {
       type: Schema.Types.ObjectId,
       ref: "Tenant",
-      index: true,
+      //index: true,
     },
 
     actor: {
       type: Schema.Types.ObjectId,
       ref: "User",
-      index: true,
+      //index: true,
     },
 
     resourceType: {
       type: String,
       trim: true,
       maxlength: 64,
-      index: true,
+      //index: true,
     },
 
     resourceId: {
       type: Schema.Types.ObjectId,
-      index: true,
+      //index: true,
     },
 
     success: {
       type: Boolean,
       default: true,
-      index: true,
+      //index: true,
     },
 
     error: {

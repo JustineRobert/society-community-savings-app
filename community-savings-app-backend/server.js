@@ -105,8 +105,30 @@ app.use((req, res, next) => {
 });
 
 // Logging
+//const morgan = require('morgan');
+//const logger = require('./lib/logger'); // adjust path if needed
+
 if (config.env !== 'production') {
-  app.use(morgan('dev', { stream: { write: (msg) => logger.info(msg.trim()) } }));
+  app.use(
+    morgan('dev', {
+      stream: {
+        write: (msg) => {
+          try {
+            const text = (msg || '').trim();
+            if (logger && typeof logger.info === 'function') {
+              logger.info(text);
+            } else {
+              // fallback so logging never crashes the app
+              console.log(text);
+            }
+          } catch (err) {
+            // swallow logging errors to avoid crashing the server
+            console.log('morgan log error:', err && err.message ? err.message : err);
+          }
+        }
+      }
+    })
+  );
 }
 
 // CORS

@@ -8,21 +8,21 @@ const LedgerEntrySchema = new Schema(
       type: Schema.Types.ObjectId,
       ref: "Tenant",
       required: [true, "tenantId is required"],
-      index: true,
+      //index: true,
     },
 
     debitAccount: {
       type: String,
       required: [true, "debitAccount is required"],
       trim: true,
-      index: true,
+      //index: true,
     },
 
     creditAccount: {
       type: String,
       required: [true, "creditAccount is required"],
       trim: true,
-      index: true,
+      //index: true,
     },
 
     amount: {
@@ -64,13 +64,13 @@ const LedgerEntrySchema = new Schema(
       type: String,
       trim: true,
       maxlength: 128,
-      index: true,
+      //index: true,
     },
 
     // 🔹 Persist correlation ID for distributed tracing
     requestId: {
       type: String,
-      index: true,
+      //index: true,
       trim: true,
     },
 
@@ -82,7 +82,7 @@ const LedgerEntrySchema = new Schema(
     deletedAt: {
       type: Date,
       default: null,
-      index: true,
+      //index: true,
     },
   },
   {

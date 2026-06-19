@@ -8,7 +8,7 @@ const TransactionSchema = new Schema(
       type: String,
       required: true,
       unique: true,
-      index: true,
+      //index: true,
     },
 
     fromWallet: {
@@ -54,7 +54,7 @@ const TransactionSchema = new Schema(
     // 🔹 Persist correlation ID for distributed tracing
     requestId: {
       type: String,
-      index: true,
+      // index: true,
       trim: true,
     },
 
