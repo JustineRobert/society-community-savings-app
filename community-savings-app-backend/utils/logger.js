@@ -13,7 +13,6 @@ const logger = createLogger({
   ),
   defaultMeta: { service: "titech-fintech-api" },
   transports: [
-    // ✅ Console transport (development + production fallback)
     new transports.Console({
       handleExceptions: true,
       format:
@@ -21,8 +20,6 @@ const logger = createLogger({
           ? format.combine(format.colorize(), format.simple())
           : format.json(),
     }),
-
-    // ✅ MongoDB transport (audit trail, only if AUDIT_LOG_URI is set)
     ...(process.env.AUDIT_LOG_URI
       ? [
           new transports.MongoDB({
@@ -35,6 +32,13 @@ const logger = createLogger({
   ],
   exitOnError: false,
 });
+
+// ✅ Add stream for Morgan
+logger.stream = {
+  write: (message) => {
+    logger.info(message.trim());
+  },
+};
 
 /**
  * Helper: log with correlation ID (requestId)

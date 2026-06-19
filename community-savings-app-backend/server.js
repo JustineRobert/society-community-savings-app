@@ -1,6 +1,5 @@
 'use strict';
 
-const path = require('path');
 const http = require('http');
 const express = require('express');
 const helmet = require('helmet');
@@ -18,234 +17,332 @@ const mongoose = require('mongoose');
 const crypto = require('crypto');
 
 const config = require('./config');
-const { logger, info, warn, error } = require('./utils/logger');
+const logger = require('./utils/logger');
 const { createSocketServer } = require('./services/socket');
-const redisClient = require('./services/redis'); // optional
+const redisClient = require('./services/redis');
 const { errorHandler } = require('./middleware/errorHandler');
-
-const apiGateway = require('./middleware/apiGateway'); // if folder is singular
-
+const apiGateway = require('./middleware/apiGateway');
 const initChatSocket = require('./realtime/chatSocket');
-// const io = initChatSocket(server); // pass HTTP server instance
 
-
-// ✅ Initialize app first
 const app = express();
 const server = http.createServer(app);
 
-// Basic app settings
 app.set('trust proxy', 1);
 
-// ✅ Use middleware after app is defined
-app.use("/api", apiGateway);
+/* -------------------------------------------------------------------------- */
+/*                               SECURITY                                      */
+/* -------------------------------------------------------------------------- */
 
-module.exports = { app, server };
+app.use(
+helmet({
+crossOriginResourcePolicy: {
+policy: 'cross-origin',
+},
+})
+);
 
-
-
-// Rate limiter setup (unchanged)
-let apiLimiter;
-try {
-  if (redisClient && redisClient.status === 'ready') {
-    apiLimiter = rateLimit({
-      windowMs: 15 * 60 * 1000,
-      max: config.rateLimitMax,
-      standardHeaders: true,
-      legacyHeaders: false,
-      keyGenerator: (req) => req.ip,
-      store: new RedisStore({ sendCommand: (...args) => redisClient.call(...args) }),
-      handler: (req, res) => res.status(429).json({ message: 'Too many requests, please try again later.' }),
-    });
-  } else {
-    info('Redis not ready; using in-memory rate limiter');
-    apiLimiter = rateLimit({
-      windowMs: 15 * 60 * 1000,
-      max: config.rateLimitMax,
-      standardHeaders: true,
-      legacyHeaders: false,
-      keyGenerator: (req) => req.ip,
-      handler: (req, res) => res.status(429).json({ message: 'Too many requests, please try again later.' }),
-    });
-  }
-} catch (err) {
-  warn('Failed to configure rate limiter; falling back to memory store', { error: err?.message });
-  apiLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: config.rateLimitMax,
-    standardHeaders: true,
-    legacyHeaders: false,
-    keyGenerator: (req) => req.ip,
-    handler: (req, res) => res.status(429).json({ message: 'Too many requests, please try again later.' }),
-  });
-}
-
-// Mount routers (add risk routes)
-const riskRoutes = require('./routes/risk');
-app.use('/api/risk', riskRoutes);
-
-app.use(require("./middleware/requestId"));
-
-app.use(apiLimiter);
-app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
-app.use(hpp());
 app.use(mongoSanitize());
 app.use(xss());
+app.use(hpp());
+
+/* -------------------------------------------------------------------------- */
+/*                              PERFORMANCE                                    */
+/* -------------------------------------------------------------------------- */
+
 app.use(compression());
-app.use(express.json({ limit: config.bodyLimit }));
-app.use(express.urlencoded({ extended: true, limit: config.bodyLimit }));
-app.use(cookieParser()); // ✅ required for refresh cookie
-app.disable('x-powered-by');
-
-// Request ID
-app.use((req, res, next) => {
-  const requestId = req.headers['x-request-id'] || crypto.randomUUID();
-  req.requestId = requestId;
-  res.setHeader('X-Request-Id', requestId);
-  next();
-});
-
-// Logging
-//const morgan = require('morgan');
-//const logger = require('./lib/logger'); // adjust path if needed
 
 if (config.env !== 'production') {
-  app.use(
-    morgan('dev', {
-      stream: {
-        write: (msg) => {
-          try {
-            const text = (msg || '').trim();
-            if (logger && typeof logger.info === 'function') {
-              logger.info(text);
-            } else {
-              // fallback so logging never crashes the app
-              console.log(text);
-            }
-          } catch (err) {
-            // swallow logging errors to avoid crashing the server
-            console.log('morgan log error:', err && err.message ? err.message : err);
-          }
-        }
-      }
-    })
-  );
+app.use(morgan('dev', { stream: logger.stream }));
+} else {
+app.use(morgan('combined', { stream: logger.stream }));
 }
 
-// CORS
-const allowedOrigins = config.corsOrigins.split(',').map((o) => o.trim()).filter(Boolean);
+/* -------------------------------------------------------------------------- */
+/*                               BODY PARSING                                 */
+/* -------------------------------------------------------------------------- */
+
+app.use(express.json({ limit: config.bodyLimit || '10kb' }));
+app.use(
+express.urlencoded({
+extended: true,
+limit: config.bodyLimit || '10kb',
+})
+);
+
+app.use(cookieParser());
+app.disable('x-powered-by');
+
+/* -------------------------------------------------------------------------- */
+/*                              REQUEST ID                                     */
+/* -------------------------------------------------------------------------- */
+
+app.use((req, res, next) => {
+const requestId =
+req.headers['x-request-id'] || crypto.randomUUID();
+
+req.requestId = requestId;
+res.setHeader('X-Request-Id', requestId);
+
+next();
+});
+
+/* -------------------------------------------------------------------------- */
+/*                                   CORS                                      */
+/* -------------------------------------------------------------------------- */
+
+const allowedOrigins = (config.corsOrigins || '')
+.split(',')
+.map((o) => o.trim())
+.filter(Boolean);
+
 app.use(
   cors({
-    origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
       return callback(new Error('Not allowed by CORS'));
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Request-Id',
+    ],
     optionsSuccessStatus: 204,
   })
 );
+
 app.options('*', cors());
 
-// Metrics
-client.collectDefaultMetrics({ timeout: 5000 });
-app.get('/metrics', async (req, res) => {
-  try {
-    res.set('Content-Type', client.register.contentType);
-    res.end(await client.register.metrics());
-  } catch (err) {
-    res.status(500).send(err.message);
-  }
+/* -------------------------------------------------------------------------- */
+/*                               RATE LIMITING                                 */
+/* -------------------------------------------------------------------------- */
+
+let apiLimiter;
+
+if (redisClient && redisClient.status === 'ready') {
+apiLimiter = rateLimit({
+windowMs: 15 * 60 * 1000,
+max: config.rateLimitMax,
+store: new RedisStore({
+sendCommand: (...args) => redisClient.call(...args),
+}),
+standardHeaders: true,
+legacyHeaders: false,
+handler: (req, res) =>
+res.status(429).json({
+message:
+'Too many requests, please try again later.',
+}),
 });
+} else {
+logger.info(
+'Redis not ready; using in-memory rate limiter'
+);
 
-// Health & readiness
-let isReady = false;
-mongoose.connection.once('open', () => {
-  isReady = true;
-  info('MongoDB connected and application marked ready');
+apiLimiter = rateLimit({
+windowMs: 15 * 60 * 1000,
+max: config.rateLimitMax,
+standardHeaders: true,
+legacyHeaders: false,
+handler: (req, res) =>
+res.status(429).json({
+message:
+'Too many requests, please try again later.',
+}),
 });
-
-app.get('/healthz', (req, res) => res.status(200).json({ status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() }));
-app.get('/readyz', (req, res) => (isReady ? res.status(200).json({ status: 'ready' }) : res.status(503).json({ status: 'not-ready' })));
-
-// ✅ Mount routers
-app.use('/api/auth', require('./routes/auth')); // <-- FIXED
-app.use('/api/momo', require('./routes/momoRoutes'));
-app.use('/api/webhook', require('./routes/webhook'));
-// ... other routers as before
-
-app.get('/', (req, res) => res.status(200).json({ message: '🚀 Community Savings App Backend is running!', version: process.env.APP_VERSION || '1.0.0', env: config.env, timestamp: new Date().toISOString() }));
-
-app.use((req, res) => res.status(404).json({ message: 'API route not found' }));
-app.use(errorHandler);
-
-// Socket.IO
-const io = createSocketServer(server);
-app.locals.io = io;
-
-// Initialize services (unchanged)
-try {
-  const SocketEmitter = require('./services/socketEmitter');
-  app.locals.socketEmitter = new SocketEmitter(io);
-
-  const PaymentService = require('./services/payment/PaymentService');
-  const mobileMoneyProvider = require('./services/mobileMoneyService');
-  app.locals.paymentService = new PaymentService({ providers: { mobileMoney: mobileMoneyProvider } });
-
-  const ChatService = require('./services/chatService');
-  app.locals.chatService = new ChatService();
-
-  const LoanWorkflowService = require('./services/loanWorkflowService');
-  app.locals.loanWorkflowService = new LoanWorkflowService();
-
-  info('Services initialized successfully');
-} catch (err) {
-  warn('Some services failed to initialize; continuing with degraded functionality', { error: err?.message });
 }
 
-// Server timeouts
-server.keepAliveTimeout = config.timeouts.keepAlive;
-server.headersTimeout = config.timeouts.headers;
-server.requestTimeout = config.timeouts.request;
+app.use(apiLimiter);
 
-// Start server
-server.listen(config.port, () => {
-  info(`Server running (${config.env}) at http://localhost:${config.port}`);
-  info('Metrics available at: /metrics');
-  info('Health check at: /healthz');
-  info('Readiness check at: /readyz');
+/* -------------------------------------------------------------------------- */
+/*                                  ROUTES                                     */
+/* -------------------------------------------------------------------------- */
+
+app.use('/api', apiGateway);
+app.use('/api/risk', require('./routes/risk'));
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/momo', require('./routes/momoRoutes'));
+app.use('/api/webhook', require('./routes/webhook'));
+
+/* -------------------------------------------------------------------------- */
+/*                                 METRICS                                     */
+/* -------------------------------------------------------------------------- */
+
+client.collectDefaultMetrics();
+
+app.get('/metrics', async (req, res) => {
+res.set('Content-Type', client.register.contentType);
+res.end(await client.register.metrics());
 });
 
-// Graceful shutdown (unchanged)
+/* -------------------------------------------------------------------------- */
+/*                           HEALTH / READINESS                               */
+/* -------------------------------------------------------------------------- */
+
+let isReady = false;
+
+mongoose.connection.once('open', () => {
+isReady = true;
+logger.info(
+'MongoDB connected and application marked ready'
+);
+});
+
+mongoose.connection.on('error', (err) => {
+isReady = false;
+logger.error('MongoDB connection error', {
+error: err.message,
+});
+});
+
+app.get('/healthz', (req, res) => {
+res.json({
+status: 'ok',
+uptime: process.uptime(),
+timestamp: new Date().toISOString(),
+});
+});
+
+app.get('/readyz', (req, res) => {
+if (!isReady) {
+return res.status(503).json({
+status: 'not-ready',
+});
+}
+
+return res.json({
+status: 'ready',
+});
+});
+
+/* -------------------------------------------------------------------------- */
+/*                                 ROOT                                        */
+/* -------------------------------------------------------------------------- */
+
+app.get('/', (req, res) => {
+res.json({
+message:
+'🚀 TITech Community Capital Fintech Platform Backend is running!',
+version: process.env.APP_VERSION || '1.0.0',
+env: config.env,
+timestamp: new Date().toISOString(),
+});
+});
+
+/* -------------------------------------------------------------------------- */
+/*                            ERROR HANDLING                                   */
+/* -------------------------------------------------------------------------- */
+
+app.use((req, res) => {
+res.status(404).json({
+message: 'API route not found',
+});
+});
+
+app.use(errorHandler);
+
+/* -------------------------------------------------------------------------- */
+/*                                SOCKET.IO                                    */
+/* -------------------------------------------------------------------------- */
+
+const io = createSocketServer(server);
+
+app.locals.io = io;
+
+initChatSocket(server);
+
+/* -------------------------------------------------------------------------- */
+/*                             SERVER SETTINGS                                 */
+/* -------------------------------------------------------------------------- */
+
+server.keepAliveTimeout =
+  config.timeouts?.keepAlive || 65000;
+
+server.headersTimeout =
+  config.timeouts?.headers || 66000;
+
+server.requestTimeout =
+  config.timeouts?.request || 120000;
+
+/* -------------------------------------------------------------------------- */
+/*                              START SERVER                                   */
+/* -------------------------------------------------------------------------- */
+
+if (!server.listening) {
+  server.listen(config.port, () => {
+    logger.info(
+      `Server running (${config.env}) at http://localhost:${config.port}`
+    );
+
+    logger.info('Metrics available at: /metrics');
+    logger.info('Health check at: /healthz');
+    logger.info('Readiness check at: /readyz');
+  });
+}
+
+server.on('error', (err) => {
+  logger.error('HTTP Server Error', {
+    error: err.message,
+    code: err.code,
+  });
+
+  process.exit(1);
+});
+
+/* -------------------------------------------------------------------------- */
+/*                           GRACEFUL SHUTDOWN                                */
+/* -------------------------------------------------------------------------- */
+
 const shutdown = async (code = 0) => {
-  warn('Gracefully shutting down...');
+  logger.warn('Gracefully shutting down...');
+
   server.close(async () => {
     try {
       await mongoose.connection.close(false);
-      info('MongoDB disconnected');
-    } catch (e) {
-      error('Error disconnecting MongoDB', { error: e?.message });
+
+      logger.info('MongoDB disconnected');
+    } catch (err) {
+      logger.error('MongoDB shutdown error', {
+        error: err.message,
+      });
     } finally {
-      info('Server closed');
+      logger.info('Server closed');
       process.exit(code);
     }
   });
 
   setTimeout(() => {
-    error('Forced shutdown due to timeout');
+    logger.error('Forced shutdown due to timeout');
     process.exit(1);
-  }, config.timeouts.shutdown).unref();
+  }, config.timeouts?.shutdown || 10000).unref();
 };
 
 process.on('SIGINT', () => shutdown(0));
 process.on('SIGTERM', () => shutdown(0));
+
 process.on('unhandledRejection', (reason) => {
-  error('Unhandled Rejection', { reason });
-  shutdown(1);
-});
-process.on('uncaughtException', (err) => {
-  error('Uncaught Exception', { error: err?.message, stack: err?.stack });
+  logger.error('Unhandled Rejection', {
+    reason,
+  });
+
   shutdown(1);
 });
 
-module.exports = { app, server, io };
+process.on('uncaughtException', (err) => {
+  logger.error('Uncaught Exception', {
+    error: err.message,
+    stack: err.stack,
+  });
+
+  shutdown(1);
+});
+
+module.exports = {
+  app,
+  server,
+  io,
+};

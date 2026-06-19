@@ -61,7 +61,8 @@ const ChatMessageSchema = new mongoose.Schema(
       userAgent: { type: String },
       edited: { type: Boolean, default: false },
       editedAt: { type: Date },
-      requestId: { type: String, index: true },
+      //requestId: { type: String, index: true },
+      requestId: { type: String, trim: true }
     },
   },
   {
@@ -75,7 +76,9 @@ const ChatMessageSchema = new mongoose.Schema(
 ChatMessageSchema.index({ conversation: 1, createdAt: -1 });
 ChatMessageSchema.index({ conversation: 1, replyTo: 1, createdAt: 1 });
 ChatMessageSchema.index({ sender: 1, createdAt: -1 });
+
 ChatMessageSchema.index({ 'metadata.requestId': 1 });
+
 ChatMessageSchema.index({ isDeleted: 1, createdAt: -1 });
 
 // Sanitize content before save
