@@ -522,7 +522,7 @@ const Dashboard = () => {
           {/* Groups List */}
           {!loading && groups.length > 0 && (
             <section className="groups-section">
-              <h2 className="section-title">Your Community Savings Groups</h2>
+              <h2 className="section-title">Your TITech Community Groups</h2>
               <p className="section-subtitle">
                 {groups.length} {groups.length === 1 ? 'group' : 'groups'} available
               </p>
@@ -596,7 +596,7 @@ const Dashboard = () => {
             <section className="empty-state">
               <div className="empty-state-icon">👥</div>
               <h2 className="empty-state-title">No Groups Yet</h2>
-              <p className="empty-state-text">You haven't joined any community savings groups.</p>
+              <p className="empty-state-text">You haven't joined any TITech community groups.</p>
               {isAdmin && (
                 <button onClick={handleCreateGroup} className="btn-primary" type="button">
                   <Plus size={18} />

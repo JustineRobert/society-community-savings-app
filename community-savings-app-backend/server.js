@@ -24,6 +24,8 @@ const { errorHandler } = require('./middleware/errorHandler');
 const apiGateway = require('./middleware/apiGateway');
 const initChatSocket = require('./realtime/chatSocket');
 
+const connectDB = require('./config/db');
+
 const app = express();
 const server = http.createServer(app);
 
@@ -272,17 +274,30 @@ server.requestTimeout =
 /*                              START SERVER                                   */
 /* -------------------------------------------------------------------------- */
 
-if (!server.listening) {
-  server.listen(config.port, () => {
-    logger.info(
-      `Server running (${config.env}) at http://localhost:${config.port}`
-    );
+(async () => {
+  try {
+    await connectDB();
 
-    logger.info('Metrics available at: /metrics');
-    logger.info('Health check at: /healthz');
-    logger.info('Readiness check at: /readyz');
-  });
-}
+    if (!server.listening) {
+      server.listen(config.port, () => {
+        logger.info(
+          `Server running (${config.env}) at http://localhost:${config.port}`
+        );
+
+        logger.info('Metrics available at: /metrics');
+        logger.info('Health check at: /healthz');
+        logger.info('Readiness check at: /readyz');
+      });
+    }
+  } catch (err) {
+    logger.error('Failed to start application', {
+      error: err.message,
+      stack: err.stack,
+    });
+
+    process.exit(1);
+  }
+})();
 
 server.on('error', (err) => {
   logger.error('HTTP Server Error', {

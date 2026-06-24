@@ -95,7 +95,8 @@ async function createRefreshToken(userId, deviceInfo = {}) {
 /**
  * POST /api/auth/register
  */
-async function register(req, res) {
+/**
+ * async function register(req, res) {
   try {
     const { email, password, name, deviceInfo } = req.body;
 
@@ -124,6 +125,24 @@ async function register(req, res) {
     return res.status(500).json({ message: 'Registration failed' });
   }
 }
+ */
+const normalizedEmail = email.trim().toLowerCase();
+
+const existing = await User.findOne({
+  email: normalizedEmail,
+}).lean();
+
+if (existing) {
+  return res.status(409).json({
+    message: 'Email already registered',
+  });
+}
+
+const user = await User.create({
+  name,
+  email: normalizedEmail,
+  password,
+});
 
 /**
  * POST /api/auth/login
@@ -132,7 +151,23 @@ async function login(req, res) {
   try {
     const { email, password, deviceInfo } = req.body;
 
-    const user = await User.findOne({ email }).select('+password');
+    const user = await User.findOne({
+      email: email.trim().toLowerCase(),
+    })
+      .select('+password')
+      .exec();
+
+    if (!user) {
+      return res.status(401).json({
+        message: 'Invalid credentials',
+      });
+    }
+
+    if (user.status === 'disabled') {
+      return res.status(403).json({
+        message: 'Account disabled',
+      });
+    }
     if (!user) return res.status(401).json({ message: 'Invalid credentials' });
 
     const isMatch = await user.matchPassword(password); // assumes schema method
@@ -207,6 +242,7 @@ async function refresh(req, res) {
     dbToken.replacedBy = newDb.id;
     await dbToken.save();
 
+
     const user = await User.findById(dbToken.userId);
     if (!user) return res.status(401).json({ message: 'User not found' });
 
@@ -232,9 +268,25 @@ async function logout(req, res) {
         const presentedHash = hashToken(presented);
         const dbToken = await RefreshToken.findOne({ tokenHash: presentedHash });
         if (dbToken && !dbToken.revokedAt) {
-          dbToken.revokedAt = new Date();
+          await RefreshToken.updateOne(
+            {
+              _id: dbToken._id,
+              revokedAt: null,
+            },
+            {
+              $set: {
+                revokedAt: new Date(),
+                revokedReason: 'logout',
+              },
+            }
+          );
+
+          /**
+           * dbToken.revokedAt = new Date();
           dbToken.revokedReason = 'logout';
           await dbToken.save();
+           */
+
         }
       } catch (_) {
         // ignore errors in token lookup
