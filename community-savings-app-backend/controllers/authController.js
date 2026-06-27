@@ -95,6 +95,72 @@ async function createRefreshToken(userId, deviceInfo = {}) {
 /**
  * POST /api/auth/register
  */
+async function register(req, res) {
+  try {
+    const {
+      email,
+      password,
+      name,
+      deviceInfo = {},
+    } = req.body;
+
+    if (!email || !password || !name) {
+      return res.status(400).json({
+        success: false,
+        message: 'Name, email and password are required',
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const existing = await User.findOne({
+      email: normalizedEmail,
+    });
+
+    if (existing) {
+      return res.status(409).json({
+        success: false,
+        message: 'Email already registered',
+      });
+    }
+
+    const user = await User.create({
+      name,
+      email: normalizedEmail,
+      password,
+    });
+
+    const accessToken = generateAccessToken(user);
+
+    const { token: refreshToken } =
+      await createRefreshToken(user._id, {
+        ip: req.ip,
+        ua: req.get('User-Agent'),
+        ...deviceInfo,
+      });
+
+    setRefreshCookie(res, refreshToken);
+
+    return res.status(201).json({
+      success: true,
+      message: 'User registered successfully',
+      token: accessToken,
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+      },
+    });
+  } catch (err) {
+    console.error('[AuthController] register error', err);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Registration failed',
+    });
+  }
+}
 /**
  * async function register(req, res) {
   try {
@@ -126,11 +192,13 @@ async function createRefreshToken(userId, deviceInfo = {}) {
   }
 }
  */
-const normalizedEmail = email.trim().toLowerCase();
+/**
+ * const normalizedEmail = email.trim().toLowerCase();
 
-const existing = await User.findOne({
-  email: normalizedEmail,
-}).lean();
+// ✅ Valid
+async function checkUser(email) {
+  return await User.findOne({ email });
+}
 
 if (existing) {
   return res.status(409).json({
@@ -143,6 +211,8 @@ const user = await User.create({
   email: normalizedEmail,
   password,
 });
+
+ */
 
 /**
  * POST /api/auth/login
@@ -198,64 +268,227 @@ async function login(req, res) {
 
 /**
  * POST /api/auth/refresh
- * Opaque refresh token rotation:
- * - If token is unknown: 401.
- * - If token is revoked: revoke all tokens for user (reuse protection), 401.
- * - If expired: 401.
- * - Else: rotate (revoke old, issue new), update cookie, return new access token.
+ *
+ * Enterprise Refresh Token Rotation
+ * ---------------------------------
+ * Features:
+ * - Opaque refresh tokens
+ * - Token rotation
+ * - Reuse detection
+ * - Session tracking
+ * - User validation
+ * - Audit logging
+ * - Transaction safety
+ * - Token family support
  */
+
 async function refresh(req, res) {
+  let session;
+
   try {
-    const presented = req.cookies?.[REFRESH_COOKIE_NAME] || req.body?.refreshToken;
-    if (!presented) return res.status(401).json({ message: 'Missing refresh token' });
+    const presentedToken =
+      req.cookies?.[REFRESH_COOKIE_NAME] ||
+      req.body?.refreshToken;
 
-    const presentedHash = hashToken(presented);
-    const dbToken = await RefreshToken.findOne({ tokenHash: presentedHash });
-
-    if (!dbToken) {
-      return res.status(401).json({ message: 'Invalid refresh token' });
-    }
-
-    if (dbToken.revokedAt) {
-      // Reuse detected; revoke all active tokens for user.
-      await RefreshToken.updateMany(
-        { userId: dbToken.userId, revokedAt: null },
-        { $set: { revokedAt: new Date(), revokedReason: 'reuse_detected' } }
-      );
+    if (!presentedToken) {
       return res.status(401).json({
-        message: 'Refresh token revoked (possible reuse). All sessions revoked.',
+        success: false,
+        message: 'Missing refresh token',
+        code: 'REFRESH_TOKEN_MISSING',
       });
     }
 
-    if (dbToken.expiresAt < new Date()) {
-      return res.status(401).json({ message: 'Refresh token expired' });
+    const presentedHash = hashToken(presentedToken);
+
+    session = await RefreshToken.startSession();
+    session.startTransaction();
+
+    const dbToken = await RefreshToken.findOne({
+      tokenHash: presentedHash,
+    }).session(session);
+
+    if (!dbToken) {
+      await session.abortTransaction();
+
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid refresh token',
+        code: 'REFRESH_TOKEN_INVALID',
+      });
     }
 
-    // Rotate: create new token; revoke old
-    const { token: newToken, dbEntry: newDb } = await createRefreshToken(
-      dbToken.userId,
+    /**
+     * Reuse Detection
+     */
+    if (dbToken.revokedAt) {
+      await RefreshToken.updateMany(
+        {
+          userId: dbToken.userId,
+          revokedAt: null,
+        },
+        {
+          $set: {
+            revokedAt: new Date(),
+            revokedReason: 'reuse_detected',
+          },
+        },
+        { session }
+      );
+
+      await session.commitTransaction();
+
+      console.warn(
+        `[SECURITY] Refresh token reuse detected for user ${dbToken.userId}`
+      );
+
+      return res.status(401).json({
+        success: false,
+        message:
+          'Refresh token reuse detected. All sessions have been revoked.',
+        code: 'TOKEN_REUSE_DETECTED',
+      });
+    }
+
+    /**
+     * Expiration Check
+     */
+    if (dbToken.expiresAt <= new Date()) {
+      dbToken.revokedAt = new Date();
+      dbToken.revokedReason = 'expired';
+
+      await dbToken.save({ session });
+
+      await session.commitTransaction();
+
+      return res.status(401).json({
+        success: false,
+        message: 'Refresh token expired',
+        code: 'REFRESH_TOKEN_EXPIRED',
+      });
+    }
+
+    /**
+     * User Validation
+     */
+    const user = await User.findById(
+      dbToken.userId
+    ).session(session);
+
+    if (!user) {
+      await session.abortTransaction();
+
+      return res.status(401).json({
+        success: false,
+        message: 'User not found',
+        code: 'USER_NOT_FOUND',
+      });
+    }
+
+    if (
+      user.status === 'disabled' ||
+      user.status === 'suspended'
+    ) {
+      await RefreshToken.updateMany(
+        {
+          userId: user._id,
+          revokedAt: null,
+        },
+        {
+          $set: {
+            revokedAt: new Date(),
+            revokedReason: 'account_disabled',
+          },
+        },
+        { session }
+      );
+
+      await session.commitTransaction();
+
+      return res.status(403).json({
+        success: false,
+        message: 'Account disabled',
+        code: 'ACCOUNT_DISABLED',
+      });
+    }
+
+    /**
+     * Create Replacement Token
+     */
+    const {
+      token: newRefreshToken,
+      dbEntry: newDbToken,
+    } = await createRefreshToken(
+      user._id,
       dbToken.deviceInfo
     );
 
+    /**
+     * Rotate Existing Token
+     */
     dbToken.revokedAt = new Date();
     dbToken.revokedReason = 'rotated';
-    dbToken.replacedBy = newDb.id;
-    await dbToken.save();
+    dbToken.replacedBy = newDbToken.id;
+    dbToken.lastUsedAt = new Date();
 
+    await dbToken.save({ session });
 
-    const user = await User.findById(dbToken.userId);
-    if (!user) return res.status(401).json({ message: 'User not found' });
+    /**
+     * Update New Session Metadata
+     */
+    newDbToken.lastUsedAt = new Date();
+    await newDbToken.save({ session });
 
-    setRefreshCookie(res, newToken);
+    await session.commitTransaction();
+
+    /**
+     * Issue New Access Token
+     */
     const accessToken = generateAccessToken(user);
 
-    return res.status(200).json({ token: accessToken });
-  } catch (err) {
-    console.error('[AuthController] refresh error', err);
-    return res.status(500).json({ message: 'Refresh failed' });
+    /**
+     * Set Cookie
+     */
+    setRefreshCookie(res, newRefreshToken);
+
+    /**
+     * Security Audit Event
+     */
+    console.info(
+      `[AUTH] Refresh token rotated successfully`,
+      {
+        userId: user._id,
+        sessionId: newDbToken.id,
+        ip: req.ip,
+        userAgent: req.get('User-Agent'),
+      }
+    );
+
+    return res.status(200).json({
+      success: true,
+      token: accessToken,
+      expiresIn: ACCESS_TOKEN_EXP,
+    });
+  } catch (error) {
+    console.error(
+      '[AuthController] refresh error',
+      error
+    );
+
+    if (session?.inTransaction()) {
+      await session.abortTransaction();
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: 'Refresh failed',
+      code: 'REFRESH_FAILED',
+    });
+  } finally {
+    if (session) {
+      session.endSession();
+    }
   }
 }
-
 /**
  * POST /api/auth/logout
  * Revokes current refresh token, clears cookie.

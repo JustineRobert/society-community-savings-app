@@ -1,3 +1,9 @@
+// ============================================================================
+// TITech Community Capital – Main Entry Point
+// File: frontend/src/main.jsx
+// Production-grade
+// ============================================================================
+
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
@@ -11,24 +17,30 @@ console.error = (...args) => {
   try {
     const first = String(args[0] || '');
     if (first.includes('WebSocket connection to') && first.includes('failed')) {
-      return;
+      return; // swallow non-actionable dev-tooling errors
     }
-  } catch (e) {}
+  } catch (_) {
+    // ignore parsing errors
+  }
   originalConsoleError.apply(console, args);
 };
 
 const container = document.getElementById('root');
+if (!container) {
+  throw new Error('Root container #root not found in index.html');
+}
+
 const root = createRoot(container);
 
 root.render(
   <React.StrictMode>
-    <BrowserRouter> {/* ✅ ONLY ROUTER HERE */}
+    <BrowserRouter>
       <App />
     </BrowserRouter>
   </React.StrictMode>
 );
 
-// restore console.error after mount
+// Restore console.error after mount to avoid suppressing real errors
 setTimeout(() => {
   console.error = originalConsoleError;
 }, 3000);

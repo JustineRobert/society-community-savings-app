@@ -1,76 +1,17 @@
-// src/components/ErrorBoundary.jsx
+// ============================================================================
+// TITech Community Capital – Error Boundary Component
+// File: frontend/src/components/ErrorBoundary.jsx
+// ============================================================================
+
 import React from 'react';
 
-/**
- * ErrorFallback:
- * - Lightweight, user-friendly fallback UI.
- * - Receives the error, a reset handler, and optional context.
- */
-export function ErrorFallback({ error, resetErrorBoundary, context }) {
-  // Avoid leaking potentially sensitive info in production; show minimal details.
-  const isDev = process.env.NODE_ENV !== 'production';
-  return (
-    <div
-      role="alert"
-      style={{
-        padding: '2rem',
-        margin: '2rem',
-        borderRadius: 8,
-        border: '1px solid #f5c2c7',
-        background: '#f8d7da',
-        color: '#58151c',
-      }}
-    >
-      <h2 style={{ marginTop: 0 }}>Something went wrong</h2>
-      <p>We couldn’t load this page. Please try again.</p>
-
-      {isDev && error && (
-        <pre
-          style={{
-            background: '#fff',
-            color: '#222',
-            padding: '1rem',
-            borderRadius: 6,
-            overflow: 'auto',
-            maxHeight: 240,
-            border: '1px solid #eee',
-          }}
-        >
-          {String(error?.stack || error)}
-        </pre>
-      )}
-
-      {context && <p style={{ fontSize: 12, opacity: 0.8 }}>Context: {context}</p>}
-
-      <button
-        type="button"
-        onClick={resetErrorBoundary}
-        style={{
-          marginTop: '1rem',
-          background: '#0d6efd',
-          color: '#fff',
-          border: 'none',
-          borderRadius: 4,
-          padding: '0.5rem 1rem',
-          cursor: 'pointer',
-        }}
-      >
-        Try again
-      </button>
-    </div>
-  );
-}
-
-/**
- * ErrorBoundary:
- * - Catches render/runtime errors in child tree.
- * - Supports reset via `resetKeys` changes (e.g., on route change).
- * - Optionally calls `onError` and `onReset` handlers.
- */
-export class ErrorBoundary extends React.Component {
+// ---------------------------------------------------------------------------
+// ErrorBoundary Component
+// ---------------------------------------------------------------------------
+class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false, error: null, errorInfo: null };
   }
 
   static getDerivedStateFromError(error) {
@@ -78,52 +19,71 @@ export class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, errorInfo) {
-    const { onError } = this.props;
-    // Report error to your logging/observability tool (Sentry/Datadog/etc.)
-    if (typeof onError === 'function') {
-      onError(error, errorInfo);
-    } else {
-      // Default console.warn to avoid noisy logs in production
-      if (process.env.NODE_ENV !== 'production') {
-        // eslint-disable-next-line no-console
-        console.warn('ErrorBoundary caught an error:', error, errorInfo);
-      }
+    console.error('ErrorBoundary caught an error:', error, errorInfo);
+    this.setState({ error, errorInfo });
+
+    if (typeof this.props.onError === 'function') {
+      this.props.onError(error, errorInfo);
     }
   }
 
-  componentDidUpdate(prevProps) {
-    const { resetKeys = [] } = this.props;
-    // If any reset key changed, clear the error state
-    const hasReset =
-      Array.isArray(resetKeys) &&
-      resetKeys.length > 0 &&
-      resetKeys.some((key, i) => !Object.is(key, prevProps.resetKeys?.[i]));
-    if (hasReset && this.state.hasError) {
-      this.reset();
+  handleReset = () => {
+    this.setState({ hasError: false, error: null, errorInfo: null });
+    if (typeof this.props.onReset === 'function') {
+      this.props.onReset();
     }
-  }
-
-  reset = () => {
-    const { onReset } = this.props;
-    if (typeof onReset === 'function') {
-      onReset();
-    }
-    this.setState({ hasError: false, error: null });
   };
 
   render() {
-    const { hasError, error } = this.state;
-    const { FallbackComponent = ErrorFallback, fallbackProps, children } = this.props;
-
-    if (hasError) {
+    if (this.state.hasError) {
       return (
-        <FallbackComponent
-          error={error}
-          resetErrorBoundary={this.reset}
-          {...(fallbackProps || {})}
-        />
+        <div
+          role="alert"
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            minHeight: '100vh',
+            padding: 24,
+            textAlign: 'center',
+          }}
+        >
+          <h2 className="text-xl font-bold mb-2">Something went wrong.</h2>
+          <p className="mb-4">
+            An unexpected error occurred. Please try again or contact support.
+          </p>
+          {process.env.NODE_ENV === 'development' && this.state.error && (
+            <pre
+              style={{
+                background: '#f5f5f5',
+                padding: '12px',
+                borderRadius: '4px',
+                maxWidth: '80%',
+                overflowX: 'auto',
+                textAlign: 'left',
+              }}
+            >
+              {this.state.error.toString()}
+              {'\n'}
+              {this.state.errorInfo?.componentStack}
+            </pre>
+          )}
+          <button
+            onClick={this.handleReset}
+            className="bg-blue-600 text-white px-4 py-2 rounded mt-4"
+          >
+            Try Again
+          </button>
+        </div>
       );
     }
-    return children;
+
+    return this.props.children;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Default Export
+// ---------------------------------------------------------------------------
+export default ErrorBoundary;

@@ -1,136 +1,235 @@
-// src/pages/Register.jsx
+// ============================================================================
+// TITech Community Capital
+// Production Grade Register Page
+// File: src/pages/Register.jsx
+// ============================================================================
+
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { toast } from 'react-toastify';
+import { Link, useNavigate } from 'react-router-dom';
 import { Formik, Form, Field } from 'formik';
 import * as Yup from 'yup';
-import { Eye, EyeOff, Mail, Lock, User, AlertCircle, Check } from 'lucide-react';
-import api from '../services/api';
-import './Register.css';
-import { useAuth } from '../context/AuthContext';
+import { toast } from 'react-toastify';
 
-// Validation Schema
-const RegisterSchema = Yup.object().shape({
+import {
+  Eye,
+  EyeOff,
+  Mail,
+  Lock,
+  User,
+  Phone,
+  AlertCircle,
+  CheckCircle,
+} from 'lucide-react';
+
+import { useAuth } from '../context/AuthContext';
+import './Register.css';
+
+// ============================================================================
+// VALIDATION
+// ============================================================================
+
+const RegisterSchema = Yup.object({
   name: Yup.string()
+    .trim()
     .min(2, 'Name must be at least 2 characters')
-    .max(100, 'Name must be less than 100 characters')
-    .required('Full name is required')
-    .matches(/^[a-zA-Z\s'-]+$/, 'Name contains invalid characters'),
+    .max(100, 'Name cannot exceed 100 characters')
+    .required('Full name is required'),
 
   email: Yup.string()
-    .email('Invalid email address')
-    .required('Email is required')
-    .matches(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'Please enter a valid email address'),
+    .trim()
+    .email('Please enter a valid email address')
+    .required('Email is required'),
 
   phone: Yup.string()
-    .optional()
-    .matches(/^\+?[1-9]\d{1,14}$/, 'Phone number must be in E.164 format (e.g., +256772123546)'),
+    .nullable()
+    .test(
+      'phone-format',
+      'Phone number must be in international format',
+      (value) => {
+        if (!value) return true;
+        return /^\+?[1-9]\d{1,14}$/.test(value);
+      }
+    ),
 
   password: Yup.string()
+    .required('Password is required')
     .min(8, 'Password must be at least 8 characters')
+    .matches(/[A-Z]/, 'Must contain an uppercase letter')
+    .matches(/[a-z]/, 'Must contain a lowercase letter')
+    .matches(/\d/, 'Must contain a number')
     .matches(
-      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/,
-      'Password must contain uppercase, lowercase, number, and special character'
-    )
-    .required('Password is required'),
+      /[@$!%*?&^#()_+\-=]/,
+      'Must contain a special character'
+    ),
 
   confirmPassword: Yup.string()
-    .oneOf([Yup.ref('password'), null], 'Passwords must match')
-    .required('Please confirm your password'),
+    .required('Please confirm password')
+    .oneOf([Yup.ref('password')], 'Passwords do not match'),
 
   agreeTerms: Yup.boolean()
-    .oneOf([true], 'You must agree to the Terms of Service')
-    .required('You must agree to the Terms of Service'),
+    .oneOf([true], 'You must accept the Terms & Conditions'),
 });
 
-const Register = () => {
+// ============================================================================
+// PASSWORD STRENGTH
+// ============================================================================
+
+const calculateStrength = (password) => {
+  let score = 0;
+
+  if (password.length >= 8) score++;
+  if (/[A-Z]/.test(password)) score++;
+  if (/[a-z]/.test(password)) score++;
+  if (/\d/.test(password)) score++;
+  if (/[@$!%*?&^#()_+\-=]/.test(password)) score++;
+
+  return score;
+};
+
+const strengthLabel = (score) => {
+  if (score <= 1) return 'Weak';
+  if (score === 2) return 'Fair';
+  if (score === 3) return 'Good';
+  if (score === 4) return 'Strong';
+  return 'Very Strong';
+};
+
+const strengthColor = (score) => {
+  if (score <= 1) return '#ef4444';
+  if (score === 2) return '#f97316';
+  if (score === 3) return '#eab308';
+  if (score === 4) return '#22c55e';
+  return '#16a34a';
+};
+
+// ============================================================================
+// COMPONENT
+// ============================================================================
+
+export default function Register() {
   const navigate = useNavigate();
-  const { login } = useAuth();
+
+  const { register } = useAuth();
+
+  const [showPassword, setShowPassword] =
+    useState(false);
+
+  const [showConfirmPassword, setShowConfirmPassword] =
+    useState(false);
+
   const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [passwordStrength, setPasswordStrength] = useState(0);
 
-  // Calculate password strength
-  const calculatePasswordStrength = (password) => {
-    let strength = 0;
-    if (password.length >= 8) strength++;
-    if (password.match(/[a-z]/) && password.match(/[A-Z]/)) strength++;
-    if (password.match(/\d/)) strength++;
-    if (password.match(/[@$!%*?&]/)) strength++;
-    return strength;
-  };
+  // ==========================================================================
+  // SUBMIT
+  // ==========================================================================
 
-  const handleRegister = async (values, { setSubmitting }) => {
-    setLoading(true);
+  const handleRegister = async (
+    values,
+    { setSubmitting }
+  ) => {
     try {
-      // Register user
-      await api.post('/api/auth/register', {
-        name: values.name,
-        email: values.email,
+      setLoading(true);
+
+      await register({
+        name: values.name.trim(),
+        email: values.email.trim().toLowerCase(),
         password: values.password,
-        phone: values.phone || undefined,
+        phone: values.phone?.trim() || undefined,
       });
 
-      toast.success('Account created successfully!');
+      toast.success(
+        'Account created successfully'
+      );
 
-      // Automatically log the user in after registration
-      await login(values.email, values.password);
       navigate('/dashboard');
-    } catch (err) {
+    } catch (error) {
+      console.error(error);
+
+      const status =
+        error?.response?.status;
+
       const message =
-        err?.response?.data?.message || err?.message || 'Registration failed. Please try again.';
-      toast.error(message);
-      console.error('Registration error:', err);
+        error?.response?.data?.message ||
+        error?.message ||
+        'Registration failed';
+
+      if (status === 429) {
+        toast.error(
+          'Too many requests. Please wait a moment and try again.'
+        );
+      } else {
+        toast.error(message);
+      }
     } finally {
       setLoading(false);
       setSubmitting(false);
     }
   };
 
-  const getPasswordStrengthLabel = (strength) => {
-    const labels = ['Weak', 'Fair', 'Good', 'Strong', 'Very Strong'];
-    return labels[strength - 1] || 'Too Weak';
-  };
-
-  const getPasswordStrengthColor = (strength) => {
-    const colors = ['#ef4444', '#f97316', '#eab308', '#84cc16', '#22c55e'];
-    return colors[strength - 1] || '#ef4444';
-  };
+  // ==========================================================================
+  // UI
+  // ==========================================================================
 
   return (
     <div className="register-page">
       <div className="register-wrapper">
-        {/* Left side - Features */}
+
+        {/* LEFT PANEL */}
+
         <div className="register-features">
-          <h1 className="features-title">Join Our Community</h1>
-          <p className="features-subtitle">Start saving and growing together</p>
+          <h1 className="features-title">
+            TITech Community Capital
+          </h1>
+
+          <p className="features-subtitle">
+            Build wealth together through
+            community savings and lending.
+          </p>
 
           <div className="feature-list">
+
             <div className="feature-item">
-              <div className="feature-icon">✓</div>
-              <p>Secure savings platform</p>
+              <CheckCircle size={18} />
+              <span>
+                Secure Savings Accounts
+              </span>
             </div>
+
             <div className="feature-item">
-              <div className="feature-icon">✓</div>
-              <p>Community-driven growth</p>
+              <CheckCircle size={18} />
+              <span>
+                Group Contributions
+              </span>
             </div>
+
             <div className="feature-item">
-              <div className="feature-icon">✓</div>
-              <p>Mobile money integration</p>
+              <CheckCircle size={18} />
+              <span>
+                Mobile Money Integration
+              </span>
             </div>
+
             <div className="feature-item">
-              <div className="feature-icon">✓</div>
-              <p>Group lending options</p>
+              <CheckCircle size={18} />
+              <span>
+                Community Loans
+              </span>
             </div>
+
           </div>
         </div>
 
-        {/* Right side - Registration Form */}
+        {/* FORM */}
+
         <div className="register-container">
+
           <div className="register-card">
-            <h2 className="register-heading">Create Account</h2>
-            <p className="register-subtitle">Join thousands of savers worldwide</p>
+
+            <h2>Create Account</h2>
+
+            <p className="register-subtitle">
+              Start your financial journey today
+            </p>
 
             <Formik
               initialValues={{
@@ -141,263 +240,278 @@ const Register = () => {
                 confirmPassword: '',
                 agreeTerms: false,
               }}
-              validationSchema={RegisterSchema}
-              onSubmit={handleRegister}
-              validateOnChange={true}
-              validateOnBlur={true}
+              validationSchema={
+                RegisterSchema
+              }
+              onSubmit={
+                handleRegister
+              }
             >
-              {({ isSubmitting, errors, touched, values }) => (
-                <Form className="register-form">
-                  {/* Name Field */}
-                  <div className="form-group">
-                    <label htmlFor="name" className="form-label">
-                      <User className="form-icon" size={16} />
-                      Full Name
-                    </label>
-                    <Field
-                      id="name"
-                      name="name"
-                      type="text"
-                      placeholder="John Doe"
-                      className={`form-input ${touched.name && errors.name ? 'error' : ''}`}
-                    />
-                    {touched.name && errors.name && (
-                      <div className="field-error">
-                        <AlertCircle size={14} />
-                        {errors.name}
-                      </div>
-                    )}
-                  </div>
+              {({
+                values,
+                errors,
+                touched,
+                isSubmitting,
+              }) => {
+                const strength =
+                  calculateStrength(
+                    values.password
+                  );
 
-                  {/* Email Field */}
-                  <div className="form-group">
-                    <label htmlFor="email" className="form-label">
-                      <Mail className="form-icon" size={16} />
-                      Email Address
-                    </label>
-                    <Field
-                      id="email"
-                      name="email"
-                      type="email"
-                      placeholder="your@email.com"
-                      className={`form-input ${touched.email && errors.email ? 'error' : ''}`}
-                    />
-                    {touched.email && errors.email && (
-                      <div className="field-error">
-                        <AlertCircle size={14} />
-                        {errors.email}
-                      </div>
-                    )}
-                  </div>
+                return (
+                  <Form className="register-form">
 
-                  {/* Phone Field (Optional) */}
-                  <div className="form-group">
-                    <label htmlFor="phone" className="form-label">
-                      <User className="form-icon" size={16} />
-                      Phone Number (Optional)
-                    </label>
-                    <Field
-                      id="phone"
-                      name="phone"
-                      type="tel"
-                      placeholder="+256772123546"
-                      className={`form-input ${touched.phone && errors.phone ? 'error' : ''}`}
-                    />
-                    {touched.phone && errors.phone && (
-                      <div className="field-error">
-                        <AlertCircle size={14} />
-                        {errors.phone}
-                      </div>
-                    )}
-                  </div>
+                    {/* NAME */}
 
-                  {/* Password Field */}
-                  <div className="form-group">
-                    <label htmlFor="password" className="form-label">
-                      <Lock className="form-icon" size={16} />
-                      Password
-                    </label>
-                    <div className="password-input-wrapper">
-                      <Field name="password">
-                        {({ field }) => (
-                          <input
-                            {...field}
-                            id="password"
-                            type={showPassword ? 'text' : 'password'}
-                            placeholder="••••••••"
-                            className={`form-input ${touched.password && errors.password ? 'error' : ''}`}
-                            onChange={(e) => {
-                              // First, update Formik's internal state
-                              field.onChange(e);
-                              // Then update password strength indicator
-                              const value = e.target.value;
-                              if (value) {
-                                setPasswordStrength(calculatePasswordStrength(value));
-                              } else {
-                                setPasswordStrength(0);
-                              }
-                            }}
-                            onBlur={field.onBlur}
-                          />
+                    <div className="form-group">
+                      <label>
+                        <User size={16} />
+                        Full Name
+                      </label>
+
+                      <Field
+                        name="name"
+                        className="form-input"
+                        placeholder="Igune Justine Robert"
+                      />
+
+                      {touched.name &&
+                        errors.name && (
+                          <div className="field-error">
+                            <AlertCircle size={14} />
+                            {errors.name}
+                          </div>
                         )}
-                      </Field>
-                      <button
-                        type="button"
-                        className="password-toggle"
-                        onClick={() => setShowPassword(!showPassword)}
-                      >
-                        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                      </button>
                     </div>
 
-                    {/* Password Strength Indicator */}
-                    {values.password && (
-                      <div className="password-strength">
-                        <div className="strength-meter">
-                          <div
-                            className="strength-bar"
-                            style={{
-                              width: `${(passwordStrength / 4) * 100}%`,
-                              backgroundColor: getPasswordStrengthColor(passwordStrength),
-                            }}
-                          ></div>
-                        </div>
-                        <span
-                          className="strength-text"
-                          style={{ color: getPasswordStrengthColor(passwordStrength) }}
-                        >
-                          {getPasswordStrengthLabel(passwordStrength)}
-                        </span>
-                      </div>
-                    )}
+                    {/* EMAIL */}
 
-                    {touched.password && errors.password && (
-                      <div className="field-error">
-                        <AlertCircle size={14} />
-                        {errors.password}
-                      </div>
-                    )}
+                    <div className="form-group">
+                      <label>
+                        <Mail size={16} />
+                        Email
+                      </label>
 
-                    {/* Password Requirements */}
-                    <div className="password-requirements">
-                      <p className="requirements-title">Password must contain:</p>
-                      <ul>
-                        <li className={values.password?.length >= 8 ? 'met' : ''}>
-                          <Check size={12} />
-                          At least 8 characters
-                        </li>
-                        <li
-                          className={
-                            values.password?.match(/[a-z]/) && values.password?.match(/[A-Z]/)
-                              ? 'met'
-                              : ''
+                      <Field
+                        type="email"
+                        name="email"
+                        className="form-input"
+                        placeholder="justinerobert@example.com"
+                      />
+
+                      {touched.email &&
+                        errors.email && (
+                          <div className="field-error">
+                            <AlertCircle size={14} />
+                            {errors.email}
+                          </div>
+                        )}
+                    </div>
+
+                    {/* PHONE */}
+
+                    <div className="form-group">
+                      <label>
+                        <Phone size={16} />
+                        Phone (Optional)
+                      </label>
+
+                      <Field
+                        name="phone"
+                        className="form-input"
+                        placeholder="+256782397907"
+                      />
+
+                      {touched.phone &&
+                        errors.phone && (
+                          <div className="field-error">
+                            <AlertCircle size={14} />
+                            {errors.phone}
+                          </div>
+                        )}
+                    </div>
+
+                    {/* PASSWORD */}
+
+                    <div className="form-group">
+
+                      <label>
+                        <Lock size={16} />
+                        Password
+                      </label>
+
+                      <div className="password-input-wrapper">
+                        <Field
+                          type={
+                            showPassword
+                              ? 'text'
+                              : 'password'
+                          }
+                          name="password"
+                          className="form-input"
+                          placeholder="Enter password"
+                        />
+
+                        <button
+                          type="button"
+                          className="password-toggle"
+                          onClick={() =>
+                            setShowPassword(
+                              !showPassword
+                            )
                           }
                         >
-                          <Check size={12} />
-                          Uppercase and lowercase letters
-                        </li>
-                        <li className={values.password?.match(/\d/) ? 'met' : ''}>
-                          <Check size={12} />
-                          At least one number
-                        </li>
-                        <li className={values.password?.match(/[@$!%*?&]/) ? 'met' : ''}>
-                          <Check size={12} />
-                          One special character (@$!%*?&)
-                        </li>
-                      </ul>
-                    </div>
-                  </div>
-
-                  {/* Confirm Password Field */}
-                  <div className="form-group">
-                    <label htmlFor="confirmPassword" className="form-label">
-                      <Lock className="form-icon" size={16} />
-                      Confirm Password
-                    </label>
-                    <div className="password-input-wrapper">
-                      <Field
-                        id="confirmPassword"
-                        name="confirmPassword"
-                        type={showConfirmPassword ? 'text' : 'password'}
-                        placeholder="••••••••"
-                        className={`form-input ${
-                          touched.confirmPassword && errors.confirmPassword ? 'error' : ''
-                        }`}
-                      />
-                      <button
-                        type="button"
-                        className="password-toggle"
-                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                      >
-                        {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                      </button>
-                    </div>
-                    {touched.confirmPassword && errors.confirmPassword && (
-                      <div className="field-error">
-                        <AlertCircle size={14} />
-                        {errors.confirmPassword}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Terms Agreement */}
-                  <div className="form-group">
-                    <label className="checkbox-label">
-                      <Field type="checkbox" name="agreeTerms" />
-                      <span>
-                        I agree to the{' '}
-                        <button
-                          type="button"
-                          className="link"
-                          onClick={() => window.open('/terms', '_blank')}
-                        >
-                          Terms of Service
-                        </button>{' '}
-                        and{' '}
-                        <button
-                          type="button"
-                          className="link"
-                          onClick={() => window.open('/privacy', '_blank')}
-                        >
-                          Privacy Policy
+                          {showPassword ? (
+                            <EyeOff size={18} />
+                          ) : (
+                            <Eye size={18} />
+                          )}
                         </button>
-                      </span>
-                    </label>
-                    {touched.agreeTerms && errors.agreeTerms && (
-                      <div className="field-error">
-                        <AlertCircle size={14} />
-                        {errors.agreeTerms}
                       </div>
-                    )}
-                  </div>
 
-                  {/* Submit Button */}
-                  <button type="submit" disabled={loading || isSubmitting} className="submit-btn">
-                    {loading ? (
-                      <span className="btn-loading">
-                        <span className="spinner"></span>
-                        Creating account...
-                      </span>
-                    ) : (
-                      'Create Account'
-                    )}
-                  </button>
+                      {values.password && (
+                        <div
+                          className="password-strength"
+                        >
+                          <div
+                            className="strength-meter"
+                          >
+                            <div
+                              className="strength-bar"
+                              style={{
+                                width: `${(strength / 5) * 100}%`,
+                                backgroundColor:
+                                  strengthColor(
+                                    strength
+                                  ),
+                              }}
+                            />
+                          </div>
 
-                  {/* Login Link */}
-                  <p className="login-link">
-                    Already have an account?{' '}
-                    <Link to="/login" className="link-highlight">
-                      Sign in here
-                    </Link>
-                  </p>
-                </Form>
-              )}
+                          <span
+                            style={{
+                              color:
+                                strengthColor(
+                                  strength
+                                ),
+                            }}
+                          >
+                            {strengthLabel(
+                              strength
+                            )}
+                          </span>
+                        </div>
+                      )}
+
+                      {touched.password &&
+                        errors.password && (
+                          <div className="field-error">
+                            <AlertCircle size={14} />
+                            {errors.password}
+                          </div>
+                        )}
+                    </div>
+
+                    {/* CONFIRM PASSWORD */}
+
+                    <div className="form-group">
+                      <label>
+                        <Lock size={16} />
+                        Confirm Password
+                      </label>
+
+                      <div className="password-input-wrapper">
+                        <Field
+                          type={
+                            showConfirmPassword
+                              ? 'text'
+                              : 'password'
+                          }
+                          name="confirmPassword"
+                          className="form-input"
+                          placeholder="Confirm password"
+                        />
+
+                        <button
+                          type="button"
+                          className="password-toggle"
+                          onClick={() =>
+                            setShowConfirmPassword(
+                              !showConfirmPassword
+                            )
+                          }
+                        >
+                          {showConfirmPassword ? (
+                            <EyeOff size={18} />
+                          ) : (
+                            <Eye size={18} />
+                          )}
+                        </button>
+                      </div>
+
+                      {touched.confirmPassword &&
+                        errors.confirmPassword && (
+                          <div className="field-error">
+                            <AlertCircle size={14} />
+                            {errors.confirmPassword}
+                          </div>
+                        )}
+                    </div>
+
+                    {/* TERMS */}
+
+                    <div className="form-group">
+                      <label className="checkbox-label">
+                        <Field
+                          type="checkbox"
+                          name="agreeTerms"
+                        />
+
+                        <span>
+                          I agree to the Terms
+                          and Privacy Policy
+                        </span>
+                      </label>
+
+                      {touched.agreeTerms &&
+                        errors.agreeTerms && (
+                          <div className="field-error">
+                            <AlertCircle size={14} />
+                            {errors.agreeTerms}
+                          </div>
+                        )}
+                    </div>
+
+                    {/* BUTTON */}
+
+                    <button
+                      type="submit"
+                      className="submit-btn"
+                      disabled={
+                        loading ||
+                        isSubmitting
+                      }
+                    >
+                      {loading
+                        ? 'Creating Account...'
+                        : 'Create Account'}
+                    </button>
+
+                    <div className="login-link">
+                      Already have an account?{' '}
+                      <Link to="/login">
+                        Sign In
+                      </Link>
+                    </div>
+
+                  </Form>
+                );
+              }}
             </Formik>
+
           </div>
         </div>
       </div>
     </div>
   );
-};
-
-export default Register;
+}

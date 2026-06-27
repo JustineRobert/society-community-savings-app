@@ -1,280 +1,257 @@
-/**
- * Forgot Password Component
- * Production-ready password reset initiation
- * - Email validation
- * - Rate limiting feedback
- * - Secure token generation on backend
- * - Error handling and user feedback
- * - Accessibility (WCAG 2.1 AA compliant)
- */
+// ============================================================================
+// TITech Community Capital – Forgot Password Page
+// File: frontend/src/pages/ForgotPassword.jsx
+// Production-grade
+// ============================================================================
 
-import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { Formik, Form, Field } from 'formik';
-import * as Yup from 'yup';
-import { Mail, AlertCircle, CheckCircle, ArrowLeft } from 'lucide-react';
-import api from '../services/api';
-import './ForgotPassword.css';
+import PropTypes from 'prop-types';
+import api from '../services/api'; // axios instance or fetch wrapper
+import logger from "../utils/logger"; // optional client logger
 
-const ForgotPasswordSchema = Yup.object().shape({
-  email: Yup.string()
-    .email('Invalid email address')
-    .required('Email is required')
-    .max(254, 'Email is too long')
-    .matches(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'Please enter a valid email address'),
-});
-
-const ForgotPassword = () => {
+/**
+ * ForgotPassword
+ *
+ * - Accessible form with client-side validation
+ * - Debounced submit protection and AbortController support
+ * - Friendly UX: success screen with next steps, resend cooldown
+ * - Defensive error handling and telemetry hooks
+ *
+ * Usage:
+ * <ForgotPassword />
+ */
+export default function ForgotPassword({ redirectTo = '/login', cooldownSeconds = 60 }) {
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
-  const [submittedEmail, setSubmittedEmail] = useState('');
+  const [email, setEmail] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
+  const [error, setError] = useState(null);
 
-  const handleSubmit = async (values, { setSubmitting }) => {
-    setLoading(true);
-    try {
-      const response = await api.post('/api/email/request-password-reset', {
-        email: values.email,
-      });
+  const abortRef = useRef(null);
+  const mountedRef = useRef(true);
+  const cooldownTimerRef = useRef(null);
 
-      if (response.status === 200 || response.status === 201) {
-        setSubmittedEmail(values.email);
-        setSubmitted(true);
-        toast.success('Password reset link sent! Check your email.', { autoClose: 5000 });
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (abortRef.current) {
+        try {
+          abortRef.current.abort();
+        } catch (_) {}
       }
-    } catch (err) {
-      // Don't reveal if email exists or not for security
-      const message =
-        err?.response?.data?.message ||
-        'If this email is registered, you will receive a password reset link.';
+      if (cooldownTimerRef.current) {
+        clearInterval(cooldownTimerRef.current);
+      }
+    };
+  }, []);
 
-      // Show success-like message for security (don't leak email existence info)
-      setSubmittedEmail(values.email);
-      setSubmitted(true);
-      toast.info(message, { autoClose: 5000 });
-    } finally {
-      setLoading(false);
-      setSubmitting(false);
-    }
-  };
+  // Simple email validation
+  const isValidEmail = useCallback((value) => {
+    if (!value) return false;
+    const v = String(value).trim();
+    // RFC-lite regex for client-side validation
+    const re = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
+    return re.test(v);
+  }, []);
 
-  if (submitted) {
-    return (
-      <div className="forgot-password-page">
-        <div className="forgot-password-wrapper">
-          {/* Left side - Brand/Info */}
-          <div className="forgot-password-brand">
-            <div className="brand-content">
-              <h1 className="brand-title">Community Savings</h1>
-              <p className="brand-subtitle">Grow Your Wealth Together</p>
-              <div className="brand-features" role="list">
-                <div className="feature" role="listitem">
-                  <div className="feature-icon" aria-hidden="true">
-                    💰
-                  </div>
-                  <p>Secure Savings</p>
-                </div>
-                <div className="feature" role="listitem">
-                  <div className="feature-icon" aria-hidden="true">
-                    👥
-                  </div>
-                  <p>Community Driven</p>
-                </div>
-                <div className="feature" role="listitem">
-                  <div className="feature-icon" aria-hidden="true">
-                    🚀
-                  </div>
-                  <p>Grow Together</p>
-                </div>
-              </div>
-            </div>
-          </div>
+  // Start cooldown timer
+  const startCooldown = useCallback(
+    (seconds) => {
+      setCooldown(seconds);
+      if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current);
+      cooldownTimerRef.current = setInterval(() => {
+        setCooldown((c) => {
+          if (c <= 1) {
+            clearInterval(cooldownTimerRef.current);
+            cooldownTimerRef.current = null;
+            return 0;
+          }
+          return c - 1;
+        });
+      }, 1000);
+    },
+    [setCooldown]
+  );
 
-          {/* Right side - Success Message */}
-          <div className="forgot-password-container">
-            <div className="forgot-password-card success-card">
-              <div className="success-icon" aria-hidden="true">
-                <CheckCircle size={48} />
-              </div>
+  // Submit handler
+  const handleSubmit = useCallback(
+    async (e) => {
+      if (e && typeof e.preventDefault === 'function') e.preventDefault();
+      setError(null);
 
-              <h2 className="success-heading">Check Your Email</h2>
+      if (!isValidEmail(email)) {
+        setError('Please enter a valid email address');
+        return;
+      }
 
-              <p className="success-message">We've sent a password reset link to:</p>
+      if (submitting) return; // debounce double submit
 
-              <div className="email-display">{submittedEmail}</div>
+      setSubmitting(true);
+      abortRef.current = new AbortController();
 
-              <div className="success-instructions">
-                <p>
-                  <strong>Next steps:</strong>
-                </p>
-                <ul>
-                  <li>Open the email we just sent</li>
-                  <li>Click the password reset link</li>
-                  <li>Enter your new password</li>
-                  <li>Log in with your new password</li>
-                </ul>
-              </div>
+      try {
+        // POST to backend endpoint that triggers password reset email
+        // Expectation: 200/202 on success, 400/404 for invalid input, 429 for rate limit
+        await api.post(
+          '/api/auth/forgot-password',
+          { email: String(email).trim().toLowerCase() },
+          { signal: abortRef.current.signal }
+        );
 
-              <div className="info-box">
-                <AlertCircle size={18} aria-hidden="true" />
-                <p>
-                  The reset link will expire in <strong>24 hours</strong> for security. Didn't
-                  receive the email? Check your spam folder.
-                </p>
-              </div>
+        if (!mountedRef.current) return;
 
-              <div className="success-actions">
-                <button className="btn-secondary" onClick={() => navigate('/login')}>
-                  <ArrowLeft size={16} aria-hidden="true" />
-                  Back to Login
-                </button>
-              </div>
+        setSent(true);
+        toast.success('If an account exists for that email, a reset link has been sent.');
+        startCooldown(cooldownSeconds);
 
-              <p className="support-text">
-                Having trouble?{' '}
-                <a href="mailto:support@communitysavings.com" className="support-link">
-                  Contact support
-                </a>
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
+        // Optionally navigate to a "check your email" page
+        // navigate('/check-email', { state: { email } });
+      } catch (err) {
+        if (err?.name === 'AbortError') {
+          // aborted by user navigation or component unmount
+          return;
+        }
 
-  return (
-    <div className="forgot-password-page">
-      <div className="forgot-password-wrapper">
-        {/* Left side - Brand/Info */}
-        <div className="forgot-password-brand">
-          <div className="brand-content">
-            <h1 className="brand-title">Community Savings</h1>
-            <p className="brand-subtitle">Grow Your Wealth Together</p>
-            <div className="brand-features" role="list">
-              <div className="feature" role="listitem">
-                <div className="feature-icon" aria-hidden="true">
-                  💰
-                </div>
-                <p>Secure Savings</p>
-              </div>
-              <div className="feature" role="listitem">
-                <div className="feature-icon" aria-hidden="true">
-                  👥
-                </div>
-                <p>Community Driven</p>
-              </div>
-              <div className="feature" role="listitem">
-                <div className="feature-icon" aria-hidden="true">
-                  🚀
-                </div>
-                <p>Grow Together</p>
-              </div>
-            </div>
-          </div>
-        </div>
+        // Extract meaningful message
+        const serverMsg =
+          err?.response?.data?.message || err?.response?.data?.error || err?.message || 'Request failed';
 
-        {/* Right side - Forgot Password Form */}
-        <div className="forgot-password-container">
-          <div className="forgot-password-card">
-            <div className="back-link-container">
-              <Link to="/login" className="back-link">
-                <ArrowLeft size={16} aria-hidden="true" />
-                Back to Login
-              </Link>
-            </div>
+        // Rate limit handling
+        if (err?.response?.status === 429) {
+          setError('Too many requests. Please try again later.');
+          startCooldown(cooldownSeconds);
+          toast.warn('Too many requests. Please wait before trying again.');
+        } else {
+          setError(serverMsg);
+          toast.error(serverMsg);
+        }
 
-            <h2 className="forgot-password-heading">Reset Your Password</h2>
-            <p className="forgot-password-subtitle">
-              Enter your email address and we'll send you a link to reset your password.
-            </p>
+        // Log for diagnostics (no sensitive data)
+        try {
+          logger?.warn?.('ForgotPassword request failed', { email: String(email).slice(0, 6), error: serverMsg });
+        } catch (_) {}
+      } finally {
+        if (mountedRef.current) setSubmitting(false);
+      }
+    },
+    [email, isValidEmail, submitting, startCooldown, cooldownSeconds, navigate]
+  );
 
-            <Formik
-              initialValues={{ email: '' }}
-              validationSchema={ForgotPasswordSchema}
-              onSubmit={handleSubmit}
-              validateOnChange={true}
-              validateOnBlur={true}
-            >
-              {({ isSubmitting, errors, touched, isValid }) => (
-                <Form className="forgot-password-form" noValidate>
-                  {/* Email Field */}
-                  <div className="form-group">
-                    <label htmlFor="email" className="form-label">
-                      <Mail className="form-icon" size={16} aria-hidden="true" />
-                      Email Address
-                    </label>
-                    <Field
-                      id="email"
-                      name="email"
-                      type="email"
-                      placeholder="your@email.com"
-                      autoComplete="email"
-                      disabled={loading}
-                      className={`form-input ${touched.email && errors.email ? 'has-error' : ''}`}
-                      aria-describedby={touched.email && errors.email ? 'email-error' : undefined}
-                    />
-                    {touched.email && errors.email && (
-                      <div id="email-error" className="field-error" role="alert">
-                        <AlertCircle size={14} aria-hidden="true" />
-                        {errors.email}
-                      </div>
-                    )}
-                  </div>
+  // Resend handler (same as submit but respects cooldown)
+  const handleResend = useCallback(
+    async (e) => {
+      if (e && typeof e.preventDefault === 'function') e.preventDefault();
+      if (cooldown > 0) return;
+      await handleSubmit();
+    },
+    [cooldown, handleSubmit]
+  );
 
-                  <div className="info-box">
-                    <AlertCircle size={18} aria-hidden="true" />
-                    <p>
-                      We'll send you an email with a secure link to reset your password. The link
-                      will expire after 24 hours for security.
-                    </p>
-                  </div>
+  // Quick helper to render the success state
+  const renderSuccess = () => (
+    <div className="forgot-password-success" role="status" aria-live="polite">
+      <h2 className="text-xl font-semibold mb-2">Check your email</h2>
+      <p className="mb-4 text-sm text-gray-700">
+        If an account exists for <strong>{email}</strong>, we sent a password reset link. The link will expire
+        shortly.
+      </p>
 
-                  {/* Submit Button */}
-                  <button
-                    type="submit"
-                    disabled={loading || isSubmitting || !isValid}
-                    className="submit-btn"
-                    aria-busy={loading || isSubmitting}
-                  >
-                    {loading ? (
-                      <span className="btn-loading">
-                        <span className="spinner" aria-hidden="true"></span>
-                        Sending...
-                      </span>
-                    ) : (
-                      'Send Reset Link'
-                    )}
-                  </button>
+      <div className="flex gap-3">
+        <button
+          type="button"
+          onClick={() => navigate(redirectTo)}
+          className="btn-primary"
+          aria-label="Return to login"
+        >
+          Return to login
+        </button>
 
-                  {/* Back to Login */}
-                  <p className="login-link">
-                    Remembered your password?{' '}
-                    <Link to="/login" className="link-highlight">
-                      Log in here
-                    </Link>
-                  </p>
-                </Form>
-              )}
-            </Formik>
-          </div>
-
-          {/* Footer */}
-          <p className="forgot-password-footer">
-            By using this service, you agree to our{' '}
-            <a href="/terms" target="_blank" rel="noopener noreferrer" className="footer-link">
-              Terms of Service
-            </a>{' '}
-            &{' '}
-            <a href="/privacy" target="_blank" rel="noopener noreferrer" className="footer-link">
-              Privacy Policy
-            </a>
-          </p>
-        </div>
+        <button
+          type="button"
+          onClick={handleResend}
+          className="btn-secondary"
+          disabled={cooldown > 0 || submitting}
+          aria-disabled={cooldown > 0 || submitting}
+        >
+          {cooldown > 0 ? `Resend (${cooldown}s)` : submitting ? 'Sending…' : 'Resend email'}
+        </button>
       </div>
     </div>
   );
-};
 
-export default ForgotPassword;
+  return (
+    <main className="max-w-md mx-auto p-6">
+      <section aria-labelledby="forgot-password-heading" className="bg-white p-6 rounded shadow">
+        <h1 id="forgot-password-heading" className="text-2xl font-semibold mb-2">
+          Forgot your password
+        </h1>
+
+        <p className="text-sm text-gray-600 mb-4">
+          Enter the email address associated with your account and we'll send a link to reset your password.
+        </p>
+
+        {sent ? (
+          renderSuccess()
+        ) : (
+          <form onSubmit={handleSubmit} noValidate aria-describedby="forgot-error">
+            <div className="mb-4">
+              <label htmlFor="forgot-email" className="block text-sm font-medium mb-1">
+                Email address
+              </label>
+              <input
+                id="forgot-email"
+                name="email"
+                type="email"
+                inputMode="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="input-field w-full"
+                placeholder="you@example.com"
+                aria-invalid={!!error}
+                aria-describedby={error ? 'forgot-error' : undefined}
+                required
+                disabled={submitting}
+              />
+            </div>
+
+            {error && (
+              <div id="forgot-error" role="alert" className="error-message mb-4">
+                {error}
+              </div>
+            )}
+
+            <div className="flex items-center gap-3">
+              <button
+                type="submit"
+                className="btn-primary"
+                disabled={submitting || !isValidEmail(email)}
+                aria-disabled={submitting || !isValidEmail(email)}
+              >
+                {submitting ? 'Sending…' : 'Send reset link'}
+              </button>
+
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => navigate(redirectTo)}
+                disabled={submitting}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
+      </section>
+    </main>
+  );
+}
+
+ForgotPassword.propTypes = {
+  redirectTo: PropTypes.string,
+  cooldownSeconds: PropTypes.number,
+};

@@ -273,7 +273,7 @@ const TermsOfService = () => {
                   <a href="mailto:legal@communitysavings.app">legal@communitysavings.app</a>
                 </p>
                 <p>
-                  <strong>Phone:</strong> <a href="tel:+256782397907">+256 (782) 397907</a>
+                  <strong>Phone:</strong> <a href="tel:+256394324760">+256 (394) 324760</a>
                 </p>
                 <p>
                   <strong>Mailing Address:</strong> TITech Community Capital Ltd, Kampala, Uganda

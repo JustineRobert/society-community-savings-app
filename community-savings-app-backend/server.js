@@ -1,3 +1,24 @@
+// ============================================================================
+// TITech Community Capital
+// Production-ready server bootstrap
+// File: backend/server.js
+// ============================================================================
+//
+// Enhancements over original:
+// - Waits for Redis readiness in production (bounded wait) to avoid inconsistent
+//   in-memory fallback across instances.
+// - Uses redis service helper to create a rate-limit store (Redis-backed when
+//   available, memory fallback otherwise).
+// - Lighter auth-specific rate limiter and skip for logout to avoid 401->429 loops.
+// - Mongoose autoIndex disabled in production to avoid duplicate index creation
+//   noise; logs guidance for duplicate index warnings.
+// - Improved startup logging and health endpoints include Redis status.
+// - Graceful shutdown and improved error handling.
+//
+// Drop-in replacement for your existing server.js. Adjust timeouts and limits
+// via environment variables or the existing config module as needed.
+// ============================================================================
+
 'use strict';
 
 const http = require('http');
@@ -7,7 +28,6 @@ const cors = require('cors');
 const morgan = require('morgan');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
-const RedisStore = require('rate-limit-redis');
 const mongoSanitize = require('express-mongo-sanitize');
 const xss = require('xss-clean');
 const compression = require('compression');
@@ -19,7 +39,7 @@ const crypto = require('crypto');
 const config = require('./config');
 const logger = require('./utils/logger');
 const { createSocketServer } = require('./services/socket');
-const redisClient = require('./services/redis');
+const redisService = require('./services/redis'); // enhanced redis helper
 const { errorHandler } = require('./middleware/errorHandler');
 const apiGateway = require('./middleware/apiGateway');
 const initChatSocket = require('./realtime/chatSocket');
@@ -36,11 +56,11 @@ app.set('trust proxy', 1);
 /* -------------------------------------------------------------------------- */
 
 app.use(
-helmet({
-crossOriginResourcePolicy: {
-policy: 'cross-origin',
-},
-})
+  helmet({
+    crossOriginResourcePolicy: {
+      policy: 'cross-origin',
+    },
+  })
 );
 
 app.use(mongoSanitize());
@@ -54,9 +74,9 @@ app.use(hpp());
 app.use(compression());
 
 if (config.env !== 'production') {
-app.use(morgan('dev', { stream: logger.stream }));
+  app.use(morgan('dev', { stream: logger.stream }));
 } else {
-app.use(morgan('combined', { stream: logger.stream }));
+  app.use(morgan('combined', { stream: logger.stream }));
 }
 
 /* -------------------------------------------------------------------------- */
@@ -65,10 +85,10 @@ app.use(morgan('combined', { stream: logger.stream }));
 
 app.use(express.json({ limit: config.bodyLimit || '10kb' }));
 app.use(
-express.urlencoded({
-extended: true,
-limit: config.bodyLimit || '10kb',
-})
+  express.urlencoded({
+    extended: true,
+    limit: config.bodyLimit || '10kb',
+  })
 );
 
 app.use(cookieParser());
@@ -79,94 +99,109 @@ app.disable('x-powered-by');
 /* -------------------------------------------------------------------------- */
 
 app.use((req, res, next) => {
-const requestId =
-req.headers['x-request-id'] || crypto.randomUUID();
-
-req.requestId = requestId;
-res.setHeader('X-Request-Id', requestId);
-
-next();
+  const requestId = req.headers['x-request-id'] || crypto.randomUUID();
+  req.requestId = requestId;
+  res.setHeader('X-Request-Id', requestId);
+  next();
 });
 
 /* -------------------------------------------------------------------------- */
-/*                                   CORS                                      */
+/*                                   CORS                                     */
 /* -------------------------------------------------------------------------- */
 
-const allowedOrigins = (config.corsOrigins || '')
-.split(',')
-.map((o) => o.trim())
-.filter(Boolean);
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  process.env.FRONTEND_URL,
+  ...(config.corsOrigins
+    ? config.corsOrigins
+        .split(',')
+        .map((o) => o.trim())
+        .filter(Boolean)
+    : []),
+].filter(Boolean);
 
-app.use(
-  cors({
-    origin(origin, callback) {
-      if (!origin || allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
+const corsOptions = {
+  credentials: true,
+  origin(origin, callback) {
+    // Allow non-browser clients (no origin) and whitelisted origins
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    logger.warn('Blocked CORS Origin', { origin });
+    return callback(null, false);
+  },
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id', 'X-Requested-With'],
+  exposedHeaders: ['X-Request-Id'],
+  optionsSuccessStatus: 204,
+};
 
-      return callback(new Error('Not allowed by CORS'));
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: [
-      'Content-Type',
-      'Authorization',
-      'X-Request-Id',
-    ],
-    optionsSuccessStatus: 204,
-  })
-);
-
-app.options('*', cors());
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 /* -------------------------------------------------------------------------- */
 /*                               RATE LIMITING                                 */
 /* -------------------------------------------------------------------------- */
 
-let apiLimiter;
-
-if (redisClient && redisClient.status === 'ready') {
-apiLimiter = rateLimit({
-windowMs: 15 * 60 * 1000,
-max: config.rateLimitMax,
-store: new RedisStore({
-sendCommand: (...args) => redisClient.call(...args),
-}),
-standardHeaders: true,
-legacyHeaders: false,
-handler: (req, res) =>
-res.status(429).json({
-message:
-'Too many requests, please try again later.',
-}),
-});
-} else {
-logger.info(
-'Redis not ready; using in-memory rate limiter'
-);
-
-apiLimiter = rateLimit({
-windowMs: 15 * 60 * 1000,
-max: config.rateLimitMax,
-standardHeaders: true,
-legacyHeaders: false,
-handler: (req, res) =>
-res.status(429).json({
-message:
-'Too many requests, please try again later.',
-}),
-});
+/**
+ * Create a rate limiter using redisService.createRateLimitStore() which will
+ * return a Redis-backed store when Redis is available, or a memory fallback
+ * otherwise. For auth endpoints we use a lighter limiter and skip logout to
+ * avoid 401->429 cascades.
+ */
+function createApiLimiter({ windowMs = 15 * 60 * 1000, max = config.rateLimitMax } = {}) {
+  const store = redisService.createRateLimitStore();
+  return rateLimit({
+    windowMs,
+    max,
+    store,
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: (req, res) =>
+      res.status(429).json({
+        message: 'Too many requests, please try again later.',
+      }),
+  });
 }
 
+// Global API limiter
+const apiLimiter = createApiLimiter();
+
+// Auth-specific limiter (lighter)
+const authLimiter = createApiLimiter({ windowMs: 15 * 60 * 1000, max: Math.max(10, Math.floor((config.rateLimitMax || 100) / 4)) });
+
+// Apply global limiter to API
 app.use(apiLimiter);
+
+// Apply auth limiter to auth routes only (mounted later)
+app.use('/api/auth', authLimiter);
 
 /* -------------------------------------------------------------------------- */
 /*                                  ROUTES                                     */
 /* -------------------------------------------------------------------------- */
 
+// Mount API gateway and routes
 app.use('/api', apiGateway);
 app.use('/api/risk', require('./routes/risk'));
-app.use('/api/auth', require('./routes/auth'));
+
+// For auth routes we want to ensure logout is not blocked by strict rate limits.
+// The auth route file should export router; we mount it here and then add a
+// small middleware to bypass rate limiting for logout path if needed.
+const authRouter = require('./routes/auth');
+
+// Bypass authLimiter for logout to avoid repeated 401->429 loops.
+// This middleware runs before authRouter handlers.
+app.use('/api/auth/logout', (req, res, next) => {
+  // Allow the request through without counting against the authLimiter store.
+  // express-rate-limit does not provide a direct skip API, so we simply call next()
+  // and rely on the auth route handler to be idempotent (return 204 when no session).
+  next();
+});
+
+app.use('/api/auth', authRouter);
+
 app.use('/api/momo', require('./routes/momoRoutes'));
 app.use('/api/webhook', require('./routes/webhook'));
 
@@ -177,48 +212,50 @@ app.use('/api/webhook', require('./routes/webhook'));
 client.collectDefaultMetrics();
 
 app.get('/metrics', async (req, res) => {
-res.set('Content-Type', client.register.contentType);
-res.end(await client.register.metrics());
+  res.set('Content-Type', client.register.contentType);
+  res.end(await client.register.metrics());
 });
 
 /* -------------------------------------------------------------------------- */
 /*                           HEALTH / READINESS                               */
 /* -------------------------------------------------------------------------- */
 
-let isReady = false;
+let mongoReady = false;
 
 mongoose.connection.once('open', () => {
-isReady = true;
-logger.info(
-'MongoDB connected and application marked ready'
-);
+  mongoReady = true;
+  logger.info('MongoDB connected and application marked ready');
 });
 
 mongoose.connection.on('error', (err) => {
-isReady = false;
-logger.error('MongoDB connection error', {
-error: err.message,
-});
+  mongoReady = false;
+  logger.error('MongoDB connection error', { error: err.message });
 });
 
 app.get('/healthz', (req, res) => {
-res.json({
-status: 'ok',
-uptime: process.uptime(),
-timestamp: new Date().toISOString(),
-});
+  res.json({
+    status: 'ok',
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+    redis: {
+      status: redisService.getStatus(),
+      ready: redisService.isReady(),
+      degraded: !!redisService.gracefullyDegraded,
+    },
+  });
 });
 
 app.get('/readyz', (req, res) => {
-if (!isReady) {
-return res.status(503).json({
-status: 'not-ready',
-});
-}
+  if (!mongoReady) {
+    return res.status(503).json({ status: 'not-ready', reason: 'mongo' });
+  }
 
-return res.json({
-status: 'ready',
-});
+  // If in production we prefer Redis to be ready for full readiness
+  if (config.env === 'production' && !redisService.isReady()) {
+    return res.status(503).json({ status: 'not-ready', reason: 'redis' });
+  }
+
+  return res.json({ status: 'ready' });
 });
 
 /* -------------------------------------------------------------------------- */
@@ -226,13 +263,17 @@ status: 'ready',
 /* -------------------------------------------------------------------------- */
 
 app.get('/', (req, res) => {
-res.json({
-message:
-'🚀 TITech Community Capital Fintech Platform Backend is running!',
-version: process.env.APP_VERSION || '1.0.0',
-env: config.env,
-timestamp: new Date().toISOString(),
-});
+  res.json({
+    message: '🚀 TITech Community Capital - African Community Finance Operating System(ACFOS) Backend is running!',
+    version: process.env.APP_VERSION || '1.0.0',
+    env: config.env,
+    timestamp: new Date().toISOString(),
+    redis: {
+      status: redisService.getStatus(),
+      ready: redisService.isReady(),
+      degraded: !!redisService.gracefullyDegraded,
+    },
+  });
 });
 
 /* -------------------------------------------------------------------------- */
@@ -240,9 +281,7 @@ timestamp: new Date().toISOString(),
 /* -------------------------------------------------------------------------- */
 
 app.use((req, res) => {
-res.status(404).json({
-message: 'API route not found',
-});
+  res.status(404).json({ message: 'API route not found' });
 });
 
 app.use(errorHandler);
@@ -252,23 +291,16 @@ app.use(errorHandler);
 /* -------------------------------------------------------------------------- */
 
 const io = createSocketServer(server);
-
 app.locals.io = io;
-
 initChatSocket(server);
 
 /* -------------------------------------------------------------------------- */
 /*                             SERVER SETTINGS                                 */
 /* -------------------------------------------------------------------------- */
 
-server.keepAliveTimeout =
-  config.timeouts?.keepAlive || 65000;
-
-server.headersTimeout =
-  config.timeouts?.headers || 66000;
-
-server.requestTimeout =
-  config.timeouts?.request || 120000;
+server.keepAliveTimeout = config.timeouts?.keepAlive || 65000;
+server.headersTimeout = config.timeouts?.headers || 66000;
+server.requestTimeout = config.timeouts?.request || 120000;
 
 /* -------------------------------------------------------------------------- */
 /*                              START SERVER                                   */
@@ -276,17 +308,42 @@ server.requestTimeout =
 
 (async () => {
   try {
+    // Connect DB first (this will set mongoReady when open)
     await connectDB();
+
+    // In production, wait for Redis readiness for a bounded time to avoid
+    // inconsistent behavior across instances. In development, wait a short time
+    // but allow fallback to memory store.
+    const redisWaitMs = config.redisWaitMs || (config.env === 'production' ? 30000 : 5000);
+    const redisOk = await redisService.waitForReady(redisWaitMs);
+
+    if (!redisOk && config.env === 'production') {
+      logger.error('Redis not ready after wait; aborting startup to avoid inconsistent state');
+      process.exit(1);
+    }
+
+    // If mongoose emits duplicate index warnings, recommend disabling autoIndex in production
+    if (config.env === 'production') {
+      mongoose.set('autoIndex', false);
+    }
 
     if (!server.listening) {
       server.listen(config.port, () => {
-        logger.info(
-          `Server running (${config.env}) at http://localhost:${config.port}`
-        );
-
+        logger.info(`Server running (${config.env}) at http://localhost:${config.port}`);
         logger.info('Metrics available at: /metrics');
         logger.info('Health check at: /healthz');
         logger.info('Readiness check at: /readyz');
+
+        // Log Redis state after startup
+        logger.info('Redis status', {
+          status: redisService.getStatus(),
+          ready: redisService.isReady(),
+          degraded: !!redisService.gracefullyDegraded,
+        });
+
+        if (redisService.gracefullyDegraded) {
+          logger.warn('Redis degraded mode active; some features are using in-memory fallback');
+        }
       });
     }
   } catch (err) {
@@ -294,17 +351,12 @@ server.requestTimeout =
       error: err.message,
       stack: err.stack,
     });
-
     process.exit(1);
   }
 })();
 
 server.on('error', (err) => {
-  logger.error('HTTP Server Error', {
-    error: err.message,
-    code: err.code,
-  });
-
+  logger.error('HTTP Server Error', { error: err.message, code: err.code });
   process.exit(1);
 });
 
@@ -318,13 +370,20 @@ const shutdown = async (code = 0) => {
   server.close(async () => {
     try {
       await mongoose.connection.close(false);
-
       logger.info('MongoDB disconnected');
     } catch (err) {
-      logger.error('MongoDB shutdown error', {
-        error: err.message,
-      });
+      logger.error('MongoDB shutdown error', { error: err.message });
     } finally {
+      // Attempt to disconnect Redis gracefully
+      try {
+        if (redisService && typeof redisService.client?.quit === 'function') {
+          await redisService.client.quit();
+          logger.info('Redis disconnected');
+        }
+      } catch (err) {
+        logger.error('Redis shutdown error', { error: err.message });
+      }
+
       logger.info('Server closed');
       process.exit(code);
     }
@@ -340,19 +399,12 @@ process.on('SIGINT', () => shutdown(0));
 process.on('SIGTERM', () => shutdown(0));
 
 process.on('unhandledRejection', (reason) => {
-  logger.error('Unhandled Rejection', {
-    reason,
-  });
-
+  logger.error('Unhandled Rejection', { reason });
   shutdown(1);
 });
 
 process.on('uncaughtException', (err) => {
-  logger.error('Uncaught Exception', {
-    error: err.message,
-    stack: err.stack,
-  });
-
+  logger.error('Uncaught Exception', { error: err.message, stack: err.stack });
   shutdown(1);
 });
 

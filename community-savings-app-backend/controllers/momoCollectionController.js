@@ -1,105 +1,367 @@
 // controllers/momoCollectionController.js
-// Request-to-Pay (deposit / collection) controller for MTN MoMo
-// - Generates X-Reference-Id (UUID)
-// - Sends POST to /collection/v1_0/requesttopay
-// - Persists a PENDING Transaction record for later reconciliation
-// - Returns referenceId and initial status to caller
+// ============================================================================
+// MTN MOMO COLLECTION CONTROLLER
+// ============================================================================
+//
+// TITech Community Capital
+//
+// Responsibilities
+//  - Request To Pay (Collection)
+//  - Deposit Initiation
+//  - Transaction Persistence
+//  - MTN MoMo API Integration
+//  - Audit Metadata
+//  - Correlation Tracking
+//  - Reconciliation Support
+//
+// Production Grade
+// ============================================================================
+
+"use strict";
 
 const axios = require("axios");
-const { v4: uuidv4 } = require("uuid");
+const crypto = require("crypto");
 
-const Transaction = require("../models/Transaction");
+let logger;
 
-/**
- * POST /collection/requesttopay
- * Body: { amount: "10000", phone: "2567XXXXXXXX", externalId?: "..." }
- */
-exports.requestToPay = async (req, res) => {
+try {
+  logger = require("../utils/logger");
+} catch {
+  logger = console;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                              MODEL RESOLUTION                              */
+/* -------------------------------------------------------------------------- */
+
+let Transaction = null;
+
+const candidateModels = [
+  "../models/Transaction",
+  "../models/transaction",
+  "../models/FinancialTransaction",
+  "../models/MobileMoneyTransaction",
+];
+
+for (const modelPath of candidateModels) {
   try {
-    // Basic validation
-    const { amount, phone } = req.body;
-    if (!amount || !phone) {
-      return res.status(400).json({ error: "Missing required fields: amount, phone" });
+    Transaction = require(modelPath);
+    logger.info(
+      `[MoMo Collection] Transaction model loaded: ${modelPath}`
+    );
+    break;
+  } catch (_) {}
+}
+
+if (!Transaction) {
+  logger.warn(
+    "[MoMo Collection] No transaction model found. Running in degraded mode."
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                 HELPERS                                    */
+/* -------------------------------------------------------------------------- */
+
+const generateReferenceId = () => crypto.randomUUID();
+
+const getEnvironment = () =>
+  process.env.MOMO_ENV ||
+  process.env.MTN_ENV ||
+  "sandbox";
+
+const getCurrency = () =>
+  process.env.MOMO_CURRENCY || "UGX";
+
+const getBaseUrl = () =>
+  (process.env.MOMO_BASE_URL || "").replace(/\/$/, "");
+
+const buildHeaders = ({
+  token,
+  referenceId,
+}) => ({
+  Authorization: `Bearer ${token}`,
+  "X-Reference-Id": referenceId,
+  "X-Target-Environment": getEnvironment(),
+  "Ocp-Apim-Subscription-Key":
+    process.env.COLLECTION_KEY,
+  "Content-Type": "application/json",
+});
+
+const createTransactionRecord = async ({
+  referenceId,
+  amount,
+  phone,
+  currency,
+  payload,
+}) => {
+  if (!Transaction) {
+    return null;
+  }
+
+  return Transaction.create({
+    externalId: referenceId,
+    referenceId,
+
+    amount: Number(amount),
+
+    currency,
+
+    phone,
+
+    provider: "MTN_MOMO",
+
+    channel: "MOBILE_MONEY",
+
+    transactionType: "DEPOSIT",
+
+    flow: "CREDIT",
+
+    status: "PENDING",
+
+    metadata: {
+      requestPayload: payload,
+      source: "requestToPay",
+    },
+  });
+};
+
+const markTransactionFailed = async (
+  referenceId,
+  error
+) => {
+  try {
+    if (!Transaction) {
+      return;
     }
 
-    // Generate reference id for idempotency / tracking
-    const referenceId = uuidv4();
+    await Transaction.updateOne(
+      {
+        $or: [
+          { externalId: referenceId },
+          { referenceId },
+        ],
+      },
+      {
+        $set: {
+          status: "FAILED",
+          failureReason:
+            error?.message ||
+            "Unknown Error",
 
-    // Build request body for MTN MoMo Collection API
-    const body = {
+          "metadata.providerError":
+            error?.response?.data ||
+            error?.message,
+
+          updatedAt: new Date(),
+        },
+      }
+    );
+  } catch (updateError) {
+    logger.error(
+      "[MoMo Collection] Failed to update transaction",
+      {
+        error: updateError.message,
+      }
+    );
+  }
+};
+
+/* -------------------------------------------------------------------------- */
+/*                           REQUEST TO PAY                                   */
+/* -------------------------------------------------------------------------- */
+
+exports.requestToPay = async (
+  req,
+  res,
+  next
+) => {
+  let referenceId;
+
+  try {
+    const {
+      amount,
+      phone,
+      payerMessage,
+      payeeNote,
+    } = req.body;
+
+    /* ---------------------------------------------------------------------- */
+    /* VALIDATION                                                             */
+    /* ---------------------------------------------------------------------- */
+
+    if (!amount) {
+      return res.status(400).json({
+        success: false,
+        message: "Amount is required",
+      });
+    }
+
+    if (!phone) {
+      return res.status(400).json({
+        success: false,
+        message: "Phone number is required",
+      });
+    }
+
+    if (Number(amount) <= 0) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Amount must be greater than zero",
+      });
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* TOKEN                                                                   */
+    /* ---------------------------------------------------------------------- */
+
+    const token =
+      req.token ||
+      process.env.MOMO_BEARER_TOKEN;
+
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message:
+          "MoMo access token not available",
+      });
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* REFERENCE ID                                                            */
+    /* ---------------------------------------------------------------------- */
+
+    referenceId = generateReferenceId();
+
+    /* ---------------------------------------------------------------------- */
+    /* PAYLOAD                                                                 */
+    /* ---------------------------------------------------------------------- */
+
+    const payload = {
       amount: String(amount),
-      currency: process.env.MOMO_CURRENCY || "UGX",
+
+      currency: getCurrency(),
+
       externalId: referenceId,
+
       payer: {
         partyIdType: "MSISDN",
-        partyId: phone,
+        partyId: String(phone),
       },
-      payerMessage: req.body.payerMessage || "SACCO Deposit",
-      payeeNote: req.body.payeeNote || "Community Savings",
+
+      payerMessage:
+        payerMessage ||
+        "TITech Community Capital Deposit",
+
+      payeeNote:
+        payeeNote ||
+        "Community Savings Deposit",
     };
 
-    // Resolve bearer token (expected to be set by auth middleware as req.token)
-    const token = req.token || process.env.MOMO_BEARER_TOKEN;
-    if (!token) {
-      return res.status(401).json({ error: "Missing MoMo bearer token. Ensure auth middleware sets req.token or set MOMO_BEARER_TOKEN." });
-    }
+    /* ---------------------------------------------------------------------- */
+    /* PERSIST TRANSACTION                                                     */
+    /* ---------------------------------------------------------------------- */
 
-    // Prepare headers
-    const headers = {
-      Authorization: `Bearer ${token}`,
-      "X-Reference-Id": referenceId,
-      "X-Target-Environment": process.env.MOMO_ENV || "sandbox",
-      "Ocp-Apim-Subscription-Key": process.env.COLLECTION_KEY,
-      "Content-Type": "application/json",
-    };
+    const transaction =
+      await createTransactionRecord({
+        referenceId,
+        amount,
+        phone,
+        currency: payload.currency,
+        payload,
+      });
 
-    // Persist initial transaction record (PENDING)
-    const tx = await Transaction.create({
-      externalId: referenceId,
-      amount: Number(amount),
-      currency: body.currency,
-      phone,
-      flow: "credit", // deposit -> credit to user's wallet
-      provider: "mtn_momo",
-      status: "PENDING",
-      metadata: {
-        requestBody: body,
-      },
-      createdAt: new Date(),
-    });
+    /* ---------------------------------------------------------------------- */
+    /* API REQUEST                                                             */
+    /* ---------------------------------------------------------------------- */
 
-    // Send request to MTN MoMo Collection API
-    const url = `${process.env.MOMO_BASE_URL.replace(/\/$/, "")}/collection/v1_0/requesttopay`;
+    const url =
+      `${getBaseUrl()}` +
+      "/collection/v1_0/requesttopay";
 
-    // Fire the request but keep the API response handling simple:
-    // MTN typically returns 202 Accepted with no body; the provider will call webhook later.
-    await axios.post(url, body, { headers, timeout: 15000 });
-
-    // Return the reference to the caller for tracking
-    return res.status(202).json({
+    const headers = buildHeaders({
+      token,
       referenceId,
-      status: tx.status,
-      message: "Request to Pay initiated. Await webhook callback for final status.",
     });
-  } catch (err) {
-    console.error("requestToPay error:", err && err.response ? err.response.data || err.response.statusText : err.message);
 
-    // Attempt to mark transaction as FAILED if it was created
-    try {
-      if (typeof referenceId !== "undefined") {
-        await Transaction.updateOne(
-          { externalId: referenceId },
-          {
-            status: "FAILED",
-            "metadata.requestError": err && err.response ? err.response.data : err.message,
-            updatedAt: new Date(),
-          }
-        );
+    logger.info(
+      "[MoMo Collection] Initiating RequestToPay",
+      {
+        referenceId,
+        amount,
+        phone,
       }
-    } catch (uErr) {
-      console.error("Failed to update transaction after requestToPay error:", uErr);
+    );
+
+    await axios.post(
+      url,
+      payload,
+      {
+        headers,
+        timeout: 20000,
+      }
+    );
+
+    logger.info(
+      "[MoMo Collection] RequestToPay Accepted",
+      {
+        referenceId,
+      }
+    );
+
+    return res.status(202).json({
+      success: true,
+
+      referenceId,
+
+      transactionId:
+        transaction?._id || null,
+
+      status: "PENDING",
+
+      message:
+        "Request To Pay initiated successfully",
+    });
+  } catch (error) {
+    logger.error(
+      "[MoMo Collection] RequestToPay Failed",
+      {
+        referenceId,
+        error: error.message,
+        providerError:
+          error?.response?.data,
+      }
+    );
+
+    if (referenceId) {
+      await markTransactionFailed(
+        referenceId,
+        error
+      );
     }
 
-    return res.status(500).json({ error: "Failed to initiate RequestToPay", details: err && err.response ? err.response.data : err.message });
+    return res.status(
+      error?.response?.status || 500
+    ).json({
+      success: false,
+
+      message:
+        "Failed to initiate Request To Pay",
+
+      referenceId,
+
+      error:
+        process.env.NODE_ENV ===
+        "development"
+          ? error.message
+          : undefined,
+
+      providerError:
+        process.env.NODE_ENV ===
+        "development"
+          ? error?.response?.data
+          : undefined,
+    });
   }
 };

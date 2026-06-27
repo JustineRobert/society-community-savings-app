@@ -1,187 +1,327 @@
-/* global window */
-// services/api.js
+/* eslint-disable no-console */
+// ============================================================================
+// TITech Community Capital
+// Enterprise API Client
+// Production Grade
+// ============================================================================
 
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 
-// =============================
-// ✅ BASE CONFIG
-// =============================
-const API_BASE =
-  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) ||
-  'https://api.titechcapital.com';
+// ============================================================================
+// CONFIG
+// ============================================================================
 
-// =============================
-// ✅ AXIOS INSTANCE
-// =============================
+const API_BASE =
+  import.meta.env.VITE_API_URL ||
+  'http://localhost:5000';
+
+const TOKEN_KEY = 'token';
+
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 1000;
+
+const IS_DEV = import.meta.env.DEV;
+
+// ============================================================================
+// AXIOS INSTANCE
+// ============================================================================
+
 const api = axios.create({
   baseURL: API_BASE,
-  withCredentials: true,
   timeout: 30000,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
+    Accept: 'application/json',
   },
 });
 
-// =============================
-// ✅ TENANT SUPPORT
-// =============================
-export const setTenant = (tenantId) => {
-  if (tenantId) {
-    api.defaults.headers['x-tenant-id'] = tenantId;
-  } else {
-    delete api.defaults.headers['x-tenant-id'];
-  }
-};
+// ============================================================================
+// TOKEN HELPERS
+// ============================================================================
 
-// =============================
-// ✅ TOKEN HELPERS
-// =============================
-const getToken = () => {
+export const getToken = () => {
   try {
-    return window.localStorage.getItem('token');
+    return localStorage.getItem(TOKEN_KEY);
   } catch {
     return null;
   }
 };
 
-const setToken = (token) => {
+export const setToken = (token) => {
   try {
-    window.localStorage.setItem('token', token);
+    if (token) {
+      localStorage.setItem(TOKEN_KEY, token);
+    } else {
+      localStorage.removeItem(TOKEN_KEY);
+    }
+  } catch (err) {
+    console.error('Token storage error', err);
+  }
+};
+
+export const clearToken = () => {
+  try {
+    localStorage.removeItem(TOKEN_KEY);
   } catch {}
 };
 
-const clearToken = () => {
-  try {
-    window.localStorage.removeItem('token');
-  } catch {}
+// ============================================================================
+// TENANT SUPPORT
+// ============================================================================
+
+export const setTenant = (tenantId) => {
+  if (tenantId) {
+    api.defaults.headers.common['x-tenant-id'] = tenantId;
+  } else {
+    delete api.defaults.headers.common['x-tenant-id'];
+  }
 };
 
-// =============================
-// ✅ REQUEST INTERCEPTOR
-// =============================
-api.interceptors.request.use((config) => {
-  const token = getToken();
-
-  if (token && !config.headers.Authorization) {
-    config.headers['x-auth-token'] = token;
-  }
-
-  // Prevent caching
-  config.headers['Cache-Control'] = 'no-cache';
-  config.headers['Pragma'] = 'no-cache';
-
-  // =============================
-  // ✅ IDEMPOTENCY + LEDGER CONTEXT
-  // =============================
-  const isFinancial =
-    config.url?.includes('/payments') ||
-    config.url?.includes('/momo') ||
-    config.url?.includes('/transactions') ||
-    config.url?.includes('/loans');
-
-  if (isFinancial && config.method !== 'get') {
-    config.headers['Idempotency-Key'] =
-      config.headers['Idempotency-Key'] || uuidv4();
-
-    // Ledger trace correlation
-    config.headers['x-transaction-id'] =
-      config.headers['x-transaction-id'] || uuidv4();
-  }
-
-  // ✅ AUDIT LOG
-  console.info('[API REQUEST]', {
-    method: config.method,
-    url: config.url,
-    tenant: config.headers['x-tenant-id'],
-    idempotencyKey: config.headers['Idempotency-Key'],
-    transactionId: config.headers['x-transaction-id'],
-    timestamp: new Date().toISOString(),
-  });
-
-  return config;
-});
-
-// =============================
-// ✅ TOKEN REFRESH + RETRY
-// =============================
-let isRefreshing = false;
-let subscribers = [];
-
-const subscribe = (cb) => subscribers.push(cb);
-const notify = (token) => {
-  subscribers.forEach((cb) => cb(token));
-  subscribers = [];
+export const clearTenant = () => {
+  delete api.defaults.headers.common['x-tenant-id'];
 };
 
-const MAX_RETRIES = 3;
+// ============================================================================
+// REQUEST INTERCEPTOR
+// ============================================================================
 
-api.interceptors.response.use(
-  (res) => res.data,
-  async (error) => {
-    const original = error.config;
-    const status = error.response?.status;
+api.interceptors.request.use(
+  (config) => {
+    const token = getToken();
 
-    // ✅ SAFE RETRY
-    if (
-      (!error.response || [500, 502, 503, 504].includes(status)) &&
-      (original._retryCount || 0) < MAX_RETRIES
-    ) {
-      original._retryCount = (original._retryCount || 0) + 1;
-      console.warn(`[RETRY] Attempt ${original._retryCount}`);
-      return api(original);
+    if (token) {
+      config.headers.Authorization =
+        config.headers.Authorization ||
+        `Bearer ${token}`;
+
+      config.headers['x-auth-token'] =
+        config.headers['x-auth-token'] || token;
     }
 
-    // ✅ TOKEN REFRESH
-    if (status === 401 && !original._retryAuth) {
+    config.headers['Cache-Control'] = 'no-cache';
+    config.headers.Pragma = 'no-cache';
+
+    const correlationId = uuidv4();
+
+    config.headers['x-correlation-id'] =
+      config.headers['x-correlation-id'] ||
+      correlationId;
+
+    const isFinancialOperation =
+      config.url?.includes('/payments') ||
+      config.url?.includes('/momo') ||
+      config.url?.includes('/transactions') ||
+      config.url?.includes('/loans') ||
+      config.url?.includes('/withdrawals') ||
+      config.url?.includes('/deposits') ||
+      config.url?.includes('/ledger');
+
+    if (
+      isFinancialOperation &&
+      config.method?.toLowerCase() !== 'get'
+    ) {
+      config.headers['Idempotency-Key'] =
+        config.headers['Idempotency-Key'] ||
+        uuidv4();
+
+      config.headers['x-transaction-id'] =
+        config.headers['x-transaction-id'] ||
+        uuidv4();
+    }
+
+    if (IS_DEV) {
+      console.info('[API REQUEST]', {
+        method: config.method,
+        url: config.url,
+        correlationId,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+// ============================================================================
+// TOKEN REFRESH MANAGEMENT
+// ============================================================================
+
+let isRefreshing = false;
+let refreshSubscribers = [];
+
+const subscribeTokenRefresh = (callback) => {
+  refreshSubscribers.push(callback);
+};
+
+const notifySubscribers = (token) => {
+  refreshSubscribers.forEach((callback) => callback(token));
+  refreshSubscribers = [];
+};
+
+// ============================================================================
+// RETRY HELPERS
+// ============================================================================
+
+const sleep = (ms) =>
+  new Promise((resolve) =>
+    setTimeout(resolve, ms)
+  );
+
+const shouldRetry = (status) =>
+  !status ||
+  [500, 502, 503, 504].includes(status);
+
+// ============================================================================
+// RESPONSE INTERCEPTOR
+// ============================================================================
+
+api.interceptors.response.use(
+  (response) => response,
+
+  async (error) => {
+    const originalRequest = error.config;
+    const status = error.response?.status;
+
+    // =========================================================================
+    // NETWORK + SERVER RETRIES
+    // =========================================================================
+
+    if (
+      shouldRetry(status) &&
+      (originalRequest._retryCount || 0) <
+        MAX_RETRIES
+    ) {
+      originalRequest._retryCount =
+        (originalRequest._retryCount || 0) + 1;
+
+      const delay =
+        RETRY_DELAY_MS *
+        originalRequest._retryCount;
+
+      if (IS_DEV) {
+        console.warn(
+          `[API RETRY] Attempt ${originalRequest._retryCount}`
+        );
+      }
+
+      await sleep(delay);
+
+      return api(originalRequest);
+    }
+
+    // =========================================================================
+    // TOKEN REFRESH
+    // =========================================================================
+
+    if (
+      status === 401 &&
+      !originalRequest._retryAuth &&
+      !originalRequest.url?.includes('/api/auth/refresh')
+    ) {
       if (isRefreshing) {
         return new Promise((resolve) => {
-          subscribe((token) => {
-            original.headers['x-auth-token'] = token;
-            resolve(api(original));
+          subscribeTokenRefresh((token) => {
+            originalRequest.headers.Authorization =
+              `Bearer ${token}`;
+
+            resolve(api(originalRequest));
           });
         });
       }
 
-      original._retryAuth = true;
+      originalRequest._retryAuth = true;
       isRefreshing = true;
 
       try {
-        const res = await axios.post(
-          `${API_BASE}/api/auth/refresh`,
-          {},
-          { withCredentials: true }
-        );
+        const refreshResponse =
+          await axios.post(
+            `${API_BASE}/api/auth/refresh`,
+            {},
+            {
+              withCredentials: true,
+            }
+          );
 
-        const newToken = res.data.token;
+        const newToken =
+          refreshResponse.data.token ||
+          refreshResponse.data.accessToken;
+
+        if (!newToken) {
+          throw new Error(
+            'Refresh endpoint returned no token'
+          );
+        }
+
         setToken(newToken);
 
-        notify(newToken);
+        api.defaults.headers.common.Authorization =
+          `Bearer ${newToken}`;
+
+        notifySubscribers(newToken);
+
         isRefreshing = false;
 
-        return api(original);
-      } catch {
+        originalRequest.headers.Authorization =
+          `Bearer ${newToken}`;
+
+        return api(originalRequest);
+      } catch (refreshError) {
         isRefreshing = false;
+
         clearToken();
-        window.location.href = '/login';
+
+        delete api.defaults.headers.common
+          .Authorization;
+
+        if (
+          window.location.pathname !== '/login'
+        ) {
+          window.location.href = '/login';
+        }
+
+        return Promise.reject(refreshError);
       }
     }
 
-    console.error('[API ERROR]', {
-      url: original?.url,
-      status,
-      message: error.message,
-    });
+    // =========================================================================
+    // LOGGING
+    // =========================================================================
+
+    if (IS_DEV) {
+      console.error('[API ERROR]', {
+        url: originalRequest?.url,
+        method: originalRequest?.method,
+        status,
+        message: error.message,
+        response: error.response?.data,
+      });
+    }
 
     return Promise.reject(error);
   }
 );
 
-// =============================
-// ✅ AUTH API
-// =============================
+// ============================================================================
+// AUTH HELPERS
+// ============================================================================
+
 export const login = (credentials) =>
   api.post('/api/auth/login', credentials);
 
-// =============================
+export const register = (payload) =>
+  api.post('/api/auth/register', payload);
+
+export const logout = () =>
+  api.post('/api/auth/logout');
+
+export const refreshToken = () =>
+  api.post('/api/auth/refresh');
+
+// ============================================================================
+// EXPORTS
+// ============================================================================
+
 export default api;
