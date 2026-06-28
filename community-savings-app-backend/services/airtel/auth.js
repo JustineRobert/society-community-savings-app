@@ -1,126 +1,152 @@
 // backend/services/airtel/auth.js
-/**
- * ============================================================================
- * AIRTEL MONEY AUTH SERVICE
- * ============================================================================
- *
- * Responsibilities
- *  - OAuth Authentication
- *  - Token Refresh
- *  - Token Caching
- *  - Expiry Management
- *  - Retry Logic
- *  - Circuit Breaker
- *  - Health Monitoring
- *
- * ============================================================================
- */
 
-const axios = require("axios");
-const crypto = require("crypto");
+'use strict';
 
-let logger;
-let redisClient;
+const axios = require('axios');
+const crypto = require('crypto');
+const EventEmitter = require('events');
+const https = require('https');
+
+let logger = console;
+let redisClient = null;
 
 try {
-  logger = require("../../modules/logger");
-} catch {
-  logger = console;
-}
+  logger = require('../../modules/logger');
+} catch {}
 
 try {
-  redisClient = require("../../config/redis");
-} catch {
-  redisClient = null;
-}
+  redisClient =
+    require('../../config/redis');
+} catch {}
 
-class AirtelAuthService {
-  constructor() {
-    this.provider = "AIRTEL_MONEY";
+class AirtelAuthService extends EventEmitter {
+  constructor(config = {}) {
+    super();
 
-    this.baseUrl =
-      process.env.AIRTEL_BASE_URL ||
-      "https://openapi.airtel.africa";
+    this.provider =
+      'AIRTEL_MONEY';
 
-    this.clientId =
-      process.env.AIRTEL_CLIENT_ID;
+    this.config = {
+      baseUrl:
+        process.env
+          .AIRTEL_BASE_URL ||
+        'https://openapi.airtel.africa',
 
-    this.clientSecret =
-      process.env.AIRTEL_CLIENT_SECRET;
+      clientId:
+        process.env
+          .AIRTEL_CLIENT_ID,
 
-    this.cacheKey =
-      "airtel:oauth:token";
+      clientSecret:
+        process.env
+          .AIRTEL_CLIENT_SECRET,
+
+      tokenCacheKey:
+        'airtel:oauth:token',
+
+      lockKey:
+        'airtel:oauth:lock',
+
+      requestTimeout:
+        Number(
+          process.env
+            .AIRTEL_AUTH_TIMEOUT
+        ) || 30000,
+
+      retryAttempts:
+        Number(
+          process.env
+            .AIRTEL_AUTH_RETRIES
+        ) || 3,
+
+      retryDelay:
+        Number(
+          process.env
+            .AIRTEL_AUTH_RETRY_DELAY
+        ) || 1000,
+
+      tokenRefreshBuffer:
+        Number(
+          process.env
+            .AIRTEL_AUTH_REFRESH_BUFFER
+        ) || 60,
+
+      circuitThreshold:
+        Number(
+          process.env
+            .AIRTEL_AUTH_CIRCUIT_THRESHOLD
+        ) || 5,
+
+      circuitTimeout:
+        Number(
+          process.env
+            .AIRTEL_AUTH_CIRCUIT_TIMEOUT
+        ) || 60000,
+
+      ...config,
+    };
 
     this.memoryCache = {
       token: null,
       expiresAt: null,
     };
 
+    this.refreshPromise =
+      null;
+
     this.metrics = {
       tokenRequests: 0,
       cacheHits: 0,
       refreshes: 0,
       failures: 0,
+      retries: 0,
+      circuitTrips: 0,
     };
 
-    this.circuitBreaker = {
+    this.circuit = {
       failures: 0,
-      threshold: 5,
       openedAt: null,
-      timeout: 60000,
     };
+
+    this.http =
+      axios.create({
+        timeout:
+          this.config
+            .requestTimeout,
+        httpsAgent:
+          new https.Agent({
+            keepAlive: true,
+            maxSockets: 100,
+          }),
+      });
   }
 
-  /**
-   * ==========================================================================
-   * HEALTH
-   * ==========================================================================
-   */
-
-  healthCheck() {
-    return {
-      provider: this.provider,
-      service: "AUTH",
-      healthy: true,
-      circuitOpen:
-        this.isCircuitOpen(),
-      timestamp:
-        new Date().toISOString(),
-    };
-  }
-
-  getMetrics() {
-    return {
-      provider: this.provider,
-      ...this.metrics,
-      timestamp:
-        new Date().toISOString(),
-    };
-  }
-
-  /**
-   * ==========================================================================
-   * CIRCUIT BREAKER
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Circuit Breaker
+   |--------------------------------------------------------------------------
    */
 
   isCircuitOpen() {
     if (
-      !this.circuitBreaker.openedAt
+      !this.circuit
+        .openedAt
     ) {
       return false;
     }
 
     const elapsed =
       Date.now() -
-      this.circuitBreaker.openedAt;
+      this.circuit
+        .openedAt;
 
     if (
       elapsed >
-      this.circuitBreaker.timeout
+      this.config
+        .circuitTimeout
     ) {
-      this.circuitBreaker.failures = 0;
-      this.circuitBreaker.openedAt =
+      this.circuit.failures =
+        0;
+      this.circuit.openedAt =
         null;
 
       return false;
@@ -130,73 +156,81 @@ class AirtelAuthService {
   }
 
   registerFailure() {
-    this.circuitBreaker.failures++;
+    this.circuit.failures++;
 
     if (
-      this.circuitBreaker.failures >=
-      this.circuitBreaker.threshold
+      this.circuit
+        .failures >=
+      this.config
+        .circuitThreshold
     ) {
-      this.circuitBreaker.openedAt =
+      this.metrics
+        .circuitTrips++;
+
+      this.circuit.openedAt =
         Date.now();
 
       logger.error(
-        "[AIRTEL AUTH] Circuit breaker opened"
+        '[AIRTEL AUTH] Circuit breaker opened.'
       );
     }
   }
 
   registerSuccess() {
-    this.circuitBreaker.failures = 0;
-    this.circuitBreaker.openedAt =
+    this.circuit.failures =
+      0;
+
+    this.circuit.openedAt =
       null;
   }
 
-  /**
-   * ==========================================================================
-   * CACHE HELPERS
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Cache Helpers
+   |--------------------------------------------------------------------------
    */
 
   async getCachedToken() {
     try {
-      /**
-       * Redis Cache
-       */
-
       if (
         redisClient?.get
       ) {
         const token =
           await redisClient.get(
-            this.cacheKey
+            this.config
+              .tokenCacheKey
           );
 
         if (token) {
-          this.metrics.cacheHits++;
+          this.metrics
+            .cacheHits++;
 
           return token;
         }
       }
 
-      /**
-       * Memory Cache
-       */
+      const {
+        token,
+        expiresAt,
+      } =
+        this.memoryCache;
 
       if (
-        this.memoryCache.token &&
-        this.memoryCache.expiresAt &&
+        token &&
+        expiresAt &&
         Date.now() <
-          this.memoryCache.expiresAt
+          expiresAt
       ) {
-        this.metrics.cacheHits++;
+        this.metrics
+          .cacheHits++;
 
-        return this.memoryCache.token;
+        return token;
       }
 
       return null;
     } catch (error) {
       logger.error(
-        "[AIRTEL AUTH] Cache retrieval failed",
+        '[AIRTEL AUTH] Cache read failure',
         error
       );
 
@@ -208,67 +242,162 @@ class AirtelAuthService {
     token,
     expiresIn
   ) {
-    try {
-      const ttl =
-        Math.max(
-          Number(expiresIn) - 60,
-          60
-        );
+    const ttl =
+      Math.max(
+        Number(
+          expiresIn
+        ) -
+          this.config
+            .tokenRefreshBuffer,
+        60
+      );
 
-      this.memoryCache.token =
-        token;
-
-      this.memoryCache.expiresAt =
+    this.memoryCache = {
+      token,
+      expiresAt:
         Date.now() +
-        ttl * 1000;
+        ttl * 1000,
+    };
 
+    try {
       if (
         redisClient?.setEx
       ) {
         await redisClient.setEx(
-          this.cacheKey,
+          this.config
+            .tokenCacheKey,
           ttl,
           token
         );
       }
-
-      return true;
     } catch (error) {
       logger.error(
-        "[AIRTEL AUTH] Cache store failed",
+        '[AIRTEL AUTH] Cache store failure',
         error
       );
-
-      return false;
     }
   }
 
   async invalidateCache() {
-    try {
-      this.memoryCache = {
-        token: null,
-        expiresAt: null,
-      };
+    this.memoryCache = {
+      token: null,
+      expiresAt: null,
+    };
 
+    try {
       if (
         redisClient?.del
       ) {
         await redisClient.del(
-          this.cacheKey
+          this.config
+            .tokenCacheKey
         );
       }
     } catch (error) {
       logger.error(
-        "[AIRTEL AUTH] Cache invalidation failed",
+        '[AIRTEL AUTH] Cache invalidation failure',
         error
       );
     }
   }
 
-  /**
-   * ==========================================================================
-   * TOKEN REQUEST
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Retry Helper
+   |--------------------------------------------------------------------------
+   */
+
+  async retry(fn) {
+    let lastError;
+
+    for (
+      let i = 1;
+      i <=
+      this.config
+        .retryAttempts;
+      i++
+    ) {
+      try {
+        return await fn();
+      } catch (error) {
+        lastError = error;
+
+        this.metrics
+          .retries++;
+
+        if (
+          i <
+          this.config
+            .retryAttempts
+        ) {
+          const delay =
+            this.config
+              .retryDelay *
+            Math.pow(
+              2,
+              i - 1
+            );
+
+          await new Promise(
+            resolve =>
+              setTimeout(
+                resolve,
+                delay
+              )
+          );
+        }
+      }
+    }
+
+    throw lastError;
+  }
+
+  /*
+   |--------------------------------------------------------------------------
+   | Distributed Lock
+   |--------------------------------------------------------------------------
+   */
+
+  async acquireLock() {
+    if (
+      !redisClient?.set
+    ) {
+      return true;
+    }
+
+    try {
+      const result =
+        await redisClient.set(
+          this.config.lockKey,
+          '1',
+          {
+            NX: true,
+            PX: 15000,
+          }
+        );
+
+      return result === 'OK';
+    } catch {
+      return true;
+    }
+  }
+
+  async releaseLock() {
+    try {
+      if (
+        redisClient?.del
+      ) {
+        await redisClient.del(
+          this.config.lockKey
+        );
+      }
+    } catch {}
+  }
+
+  /*
+   |--------------------------------------------------------------------------
+   | Request Token
+   |--------------------------------------------------------------------------
    */
 
   async requestToken() {
@@ -276,47 +405,59 @@ class AirtelAuthService {
       this.isCircuitOpen()
     ) {
       throw new Error(
-        "Authentication service temporarily unavailable"
+        'Airtel authentication circuit breaker is open.'
       );
     }
 
-    this.metrics.tokenRequests++;
+    this.metrics
+      .tokenRequests++;
+
+    const correlationId =
+      crypto.randomUUID();
 
     try {
       const response =
-        await axios.post(
-          `${this.baseUrl}/auth/oauth2/token`,
-          {
-            client_id:
-              this.clientId,
-            client_secret:
-              this.clientSecret,
-            grant_type:
-              "client_credentials",
-          },
-          {
-            headers: {
-              Accept:
-                "application/json",
-              "Content-Type":
-                "application/json",
-              "X-Correlation-ID":
-                crypto.randomUUID(),
-            },
-            timeout: 30000,
-          }
+        await this.retry(
+          () =>
+            this.http.post(
+              `${this.config.baseUrl}/auth/oauth2/token`,
+              {
+                client_id:
+                  this.config
+                    .clientId,
+                client_secret:
+                  this.config
+                    .clientSecret,
+                grant_type:
+                  'client_credentials',
+              },
+              {
+                headers: {
+                  Accept:
+                    'application/json',
+                  'Content-Type':
+                    'application/json',
+                  'X-Correlation-ID':
+                    correlationId,
+                },
+              }
+            )
         );
 
       const token =
-        response.data?.access_token;
+        response.data
+          ?.access_token;
 
       const expiresIn =
-        response.data?.expires_in ||
-        3600;
+        Number(
+          response.data
+            ?.expires_in ||
+            3600
+        );
 
       if (!token) {
         throw new Error(
-          "No access token returned"
+          'No access token returned.'
         );
       }
 
@@ -327,19 +468,29 @@ class AirtelAuthService {
 
       this.registerSuccess();
 
+      this.emit(
+        'token.created',
+        {
+          provider:
+            this.provider,
+        }
+      );
+
       logger.info(
-        "[AIRTEL AUTH] Token acquired"
+        '[AIRTEL AUTH] OAuth token acquired.'
       );
 
       return token;
     } catch (error) {
-      this.metrics.failures++;
+      this.metrics
+        .failures++;
 
       this.registerFailure();
 
       logger.error(
-        "[AIRTEL AUTH] Token request failed",
-        error.response?.data ||
+        '[AIRTEL AUTH] Token request failed',
+        error.response
+          ?.data ||
           error.message
       );
 
@@ -347,50 +498,101 @@ class AirtelAuthService {
     }
   }
 
-  /**
-   * ==========================================================================
-   * PUBLIC API
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Authentication
+   |--------------------------------------------------------------------------
    */
 
   async authenticate() {
-    const cachedToken =
+    const cached =
       await this.getCachedToken();
 
-    if (cachedToken) {
-      return cachedToken;
+    if (cached) {
+      return cached;
     }
 
-    return this.requestToken();
+    if (
+      this.refreshPromise
+    ) {
+      return this.refreshPromise;
+    }
+
+    this.refreshPromise =
+      (async () => {
+        const lock =
+          await this.acquireLock();
+
+        try {
+          if (!lock) {
+            await new Promise(
+              r =>
+                setTimeout(
+                  r,
+                  500
+                )
+            );
+
+            const token =
+              await this.getCachedToken();
+
+            if (token) {
+              return token;
+            }
+          }
+
+          return this.requestToken();
+        } finally {
+          await this.releaseLock();
+          this.refreshPromise =
+            null;
+        }
+      })();
+
+    return this.refreshPromise;
   }
 
+  /*
+   |--------------------------------------------------------------------------
+   | Refresh
+   |--------------------------------------------------------------------------
+   */
+
   async refreshToken() {
-    this.metrics.refreshes++;
+    this.metrics
+      .refreshes++;
 
     await this.invalidateCache();
 
-    return this.requestToken();
+    return this.authenticate();
   }
+
+  /*
+   |--------------------------------------------------------------------------
+   | Headers
+   |--------------------------------------------------------------------------
+   */
 
   async getAuthorizationHeaders() {
     const token =
       await this.authenticate();
 
     return {
-      Authorization: `Bearer ${token}`,
+      Authorization:
+        `Bearer ${token}`,
       Accept:
-        "application/json",
-      "Content-Type":
-        "application/json",
-      "X-Correlation-ID":
+        'application/json',
+      'Content-Type':
+        'application/json',
+      'X-Correlation-ID':
         crypto.randomUUID(),
     };
   }
 
-  /**
-   * ==========================================================================
-   * VERIFY TOKEN
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Verification
+   |--------------------------------------------------------------------------
    */
 
   async verifyToken() {
@@ -399,22 +601,68 @@ class AirtelAuthService {
         await this.authenticate();
 
       return {
-        valid: !!token,
         provider:
           this.provider,
+        valid: !!token,
         expiresAt:
           this.memoryCache
             .expiresAt,
       };
     } catch (error) {
       return {
+        provider:
+          this.provider,
         valid: false,
         error:
           error.message,
       };
     }
   }
+
+  /*
+   |--------------------------------------------------------------------------
+   | Health
+   |--------------------------------------------------------------------------
+   */
+
+  healthCheck() {
+    return {
+      provider:
+        this.provider,
+      service: 'AUTH',
+      healthy:
+        !this.isCircuitOpen(),
+      circuitOpen:
+        this.isCircuitOpen(),
+      tokenCached:
+        !!this.memoryCache
+          .token,
+      expiresAt:
+        this.memoryCache
+          .expiresAt,
+      metrics:
+        this.metrics,
+      timestamp:
+        new Date().toISOString(),
+    };
+  }
+
+  getMetrics() {
+    return {
+      provider:
+        this.provider,
+      service: 'AUTH',
+      ...this.metrics,
+      circuitOpen:
+        this.isCircuitOpen(),
+      timestamp:
+        new Date().toISOString(),
+    };
+  }
 }
 
 module.exports =
   new AirtelAuthService();
+
+module.exports.AirtelAuthService =
+  AirtelAuthService;

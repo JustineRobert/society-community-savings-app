@@ -1,83 +1,139 @@
 // backend/services/mtn/reconciliation.js
-/**
- * ============================================================================
- * MTN MOMO RECONCILIATION SERVICE
- * ============================================================================
- *
- * Responsibilities
- *  - Daily Settlement Matching
- *  - Ledger Matching
- *  - Variance Detection
- *  - Missing Transaction Detection
- *  - Duplicate Detection
- *  - Settlement Verification
- *  - Reconciliation Reporting
- *  - Audit Logging
- *
- * ============================================================================
- */
 
-const crypto = require("crypto");
+'use strict';
 
-let logger;
-let Transaction;
-let LedgerEntry;
-let AuditLog;
+const crypto = require('crypto');
+const EventEmitter = require('events');
+
+let logger = console;
+let Transaction = null;
+let LedgerEntry = null;
+let AuditLog = null;
+let queueService = null;
+let notificationService = null;
+let regulatoryReportingService = null;
+let executiveDashboardService = null;
+let reportExportService = null;
 
 try {
-  logger = require("../../modules/logger");
-} catch {
-  logger = console;
-}
+  logger = require('../../modules/logger');
+} catch {}
 
 try {
-  Transaction = require("../../models/Transaction");
-} catch {
-  Transaction = null;
-}
+  Transaction =
+    require('../../models/Transaction');
+} catch {}
 
 try {
-  LedgerEntry = require("../../models/LedgerEntry");
-} catch {
-  LedgerEntry = null;
-}
+  LedgerEntry =
+    require('../../models/LedgerEntry');
+} catch {}
 
 try {
-  AuditLog = require("../../models/AuditLog");
-} catch {
-  AuditLog = null;
-}
+  AuditLog =
+    require('../../models/AuditLog');
+} catch {}
 
-class MTNReconciliationService {
-  constructor() {
-    this.provider = "MTN_MOMO";
+try {
+  queueService =
+    require('../../modules/queueService');
+} catch {}
 
-    this.toleranceAmount =
-      Number(
-        process.env.RECON_TOLERANCE_AMOUNT
-      ) || 1;
+try {
+  notificationService =
+    require('../../modules/notificationService');
+} catch {}
 
-    this.currency =
-      process.env.DEFAULT_CURRENCY || "UGX";
+try {
+  regulatoryReportingService =
+    require(
+      '../../modules/regulatoryReportingService'
+    );
+} catch {}
+
+try {
+  executiveDashboardService =
+    require(
+      '../../modules/executiveDashboardService'
+    );
+} catch {}
+
+try {
+  reportExportService =
+    require(
+      '../../modules/reportExportService'
+    );
+} catch {}
+
+class MTNReconciliationService extends EventEmitter {
+  constructor(config = {}) {
+    super();
+
+    this.provider = 'MTN_MOMO';
+
+    this.config = {
+      toleranceAmount:
+        Number(
+          process.env
+            .RECON_TOLERANCE_AMOUNT
+        ) || 1,
+
+      batchSize:
+        Number(
+          process.env
+            .RECON_BATCH_SIZE
+        ) || 5000,
+
+      currency:
+        process.env
+          .DEFAULT_CURRENCY ||
+        'UGX',
+
+      autoRepair:
+        process.env
+          .RECON_AUTO_REPAIR ===
+        'true',
+
+      ...config,
+    };
+
+    this.metrics = {
+      runs: 0,
+      matched: 0,
+      variances: 0,
+      missingInternal: 0,
+      missingProvider: 0,
+      duplicates: 0,
+      autoRepaired: 0,
+      failures: 0,
+      lastRunAt: null,
+    };
   }
 
-  /**
-   * ==========================================================================
-   * AUDIT
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Audit
+   |--------------------------------------------------------------------------
    */
 
-  async recordAudit(action, payload = {}) {
+  async recordAudit(
+    action,
+    payload = {}
+  ) {
     try {
-      const auditEntry = {
-        provider: this.provider,
+      const entry = {
+        provider:
+          this.provider,
         action,
         payload,
-        timestamp: new Date(),
+        timestamp:
+          new Date(),
       };
 
       if (AuditLog?.create) {
-        await AuditLog.create(auditEntry);
+        await AuditLog.create(
+          entry
+        );
       }
 
       logger.info(
@@ -86,86 +142,126 @@ class MTNReconciliationService {
       );
     } catch (error) {
       logger.error(
-        "[MTN RECON] Audit Error",
+        '[MTN RECON] Audit failure',
         error
       );
     }
   }
 
-  /**
-   * ==========================================================================
-   * DATE RANGE
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Date Utilities
+   |--------------------------------------------------------------------------
    */
 
   buildDayRange(date) {
-    const targetDate = new Date(date);
+    const target =
+      new Date(date);
 
-    const start = new Date(targetDate);
-    start.setHours(0, 0, 0, 0);
+    const start =
+      new Date(target);
 
-    const end = new Date(targetDate);
-    end.setHours(23, 59, 59, 999);
+    start.setHours(
+      0,
+      0,
+      0,
+      0
+    );
 
-    return { start, end };
+    const end =
+      new Date(target);
+
+    end.setHours(
+      23,
+      59,
+      59,
+      999
+    );
+
+    return {
+      start,
+      end,
+    };
   }
 
-  /**
-   * ==========================================================================
-   * LOAD INTERNAL TRANSACTIONS
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Data Loaders
+   |--------------------------------------------------------------------------
    */
 
-  async loadTransactions(date) {
+  async loadTransactions({
+    date,
+    tenantId,
+  }) {
     if (!Transaction) {
       return [];
     }
 
-    const { start, end } =
-      this.buildDayRange(date);
+    const {
+      start,
+      end,
+    } =
+      this.buildDayRange(
+        date
+      );
 
-    return Transaction.find({
-      provider: this.provider,
+    const query = {
+      provider:
+        this.provider,
       createdAt: {
         $gte: start,
         $lte: end,
       },
-    }).lean();
+    };
+
+    if (tenantId) {
+      query.tenantId =
+        tenantId;
+    }
+
+    return Transaction.find(
+      query
+    ).lean();
   }
 
-  /**
-   * ==========================================================================
-   * LOAD LEDGER ENTRIES
-   * ==========================================================================
-   */
-
-  async loadLedgerEntries(date) {
+  async loadLedgerEntries({
+    date,
+    tenantId,
+  }) {
     if (!LedgerEntry) {
       return [];
     }
 
-    const { start, end } =
-      this.buildDayRange(date);
+    const {
+      start,
+      end,
+    } =
+      this.buildDayRange(
+        date
+      );
 
-    return LedgerEntry.find({
+    const query = {
       createdAt: {
         $gte: start,
         $lte: end,
       },
-    }).lean();
+    };
+
+    if (tenantId) {
+      query.tenantId =
+        tenantId;
+    }
+
+    return LedgerEntry.find(
+      query
+    ).lean();
   }
 
-  /**
-   * ==========================================================================
-   * LOAD MTN SETTLEMENT FILE
-   * ==========================================================================
-   *
-   * Replace with:
-   *  - MTN Settlement API
-   *  - CSV Import
-   *  - SFTP Import
-   *
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Settlement Import Hooks
+   |--------------------------------------------------------------------------
    */
 
   async loadProviderTransactions(
@@ -174,97 +270,113 @@ class MTNReconciliationService {
     return providerTransactions;
   }
 
-  /**
-   * ==========================================================================
-   * MATCH BY REFERENCE
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Matching Helpers
+   |--------------------------------------------------------------------------
    */
 
-  buildReferenceMap(items) {
-    const map = new Map();
+  buildReferenceMap(
+    records
+  ) {
+    const map =
+      new Map();
 
-    for (const item of items) {
-      const reference =
+    for (const item of records) {
+      const ref =
         item.reference ||
         item.providerReference ||
         item.externalId;
 
-      if (reference) {
-        map.set(reference, item);
+      if (ref) {
+        map.set(
+          ref,
+          item
+        );
       }
     }
 
     return map;
   }
 
-  /**
-   * ==========================================================================
-   * VARIANCE DETECTION
-   * ==========================================================================
-   */
-
   detectVariance(
-    internalAmount,
-    providerAmount
+    internal,
+    provider
   ) {
     return (
       Math.abs(
-        Number(internalAmount) -
-          Number(providerAmount)
-      ) > this.toleranceAmount
+        Number(
+          internal
+        ) -
+          Number(
+            provider
+          )
+      ) >
+      this.config
+        .toleranceAmount
     );
   }
 
-  /**
-   * ==========================================================================
-   * DUPLICATE DETECTION
-   * ==========================================================================
-   */
+  detectDuplicates(
+    records
+  ) {
+    const seen =
+      new Set();
 
-  detectDuplicates(records) {
-    const seen = new Set();
-    const duplicates = [];
+    const duplicates =
+      [];
 
-    for (const record of records) {
-      const reference =
-        record.reference ||
-        record.providerReference;
+    for (const r of records) {
+      const ref =
+        r.reference ||
+        r.providerReference;
 
-      if (!reference) continue;
+      if (!ref) continue;
 
-      if (seen.has(reference)) {
-        duplicates.push(record);
-      } else {
-        seen.add(reference);
+      if (
+        seen.has(ref)
+      ) {
+        duplicates.push(
+          r
+        );
       }
+
+      seen.add(ref);
     }
 
     return duplicates;
   }
 
-  /**
-   * ==========================================================================
-   * MATCH INTERNAL VS PROVIDER
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Reconcile Transactions
+   |--------------------------------------------------------------------------
    */
 
   reconcileTransactions(
-    internalTransactions,
-    providerTransactions
+    internal,
+    provider
   ) {
-    const matched = [];
-    const missingInternal = [];
-    const missingProvider = [];
-    const variances = [];
+    const matched =
+      [];
+
+    const missingInternal =
+      [];
+
+    const missingProvider =
+      [];
+
+    const variances =
+      [];
 
     const internalMap =
       this.buildReferenceMap(
-        internalTransactions
+        internal
       );
 
     const providerMap =
       this.buildReferenceMap(
-        providerTransactions
+        provider
       );
 
     for (const [
@@ -272,22 +384,25 @@ class MTNReconciliationService {
       internalTx,
     ] of internalMap.entries()) {
       const providerTx =
-        providerMap.get(reference);
+        providerMap.get(
+          reference
+        );
 
-      if (!providerTx) {
+      if (
+        !providerTx
+      ) {
         missingProvider.push(
           internalTx
         );
         continue;
       }
 
-      const amountMismatch =
+      if (
         this.detectVariance(
           internalTx.amount,
           providerTx.amount
-        );
-
-      if (amountMismatch) {
+        )
+      ) {
         variances.push({
           reference,
           internalAmount:
@@ -306,8 +421,10 @@ class MTNReconciliationService {
 
       matched.push({
         reference,
-        internal: internalTx,
-        provider: providerTx,
+        internal:
+          internalTx,
+        provider:
+          providerTx,
       });
     }
 
@@ -316,7 +433,9 @@ class MTNReconciliationService {
       providerTx,
     ] of providerMap.entries()) {
       if (
-        !internalMap.has(reference)
+        !internalMap.has(
+          reference
+        )
       ) {
         missingInternal.push(
           providerTx
@@ -332,10 +451,10 @@ class MTNReconciliationService {
     };
   }
 
-  /**
-   * ==========================================================================
-   * LEDGER MATCHING
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Ledger Reconciliation
+   |--------------------------------------------------------------------------
    */
 
   reconcileLedger(
@@ -344,17 +463,29 @@ class MTNReconciliationService {
   ) {
     const transactionTotal =
       transactions.reduce(
-        (sum, tx) =>
+        (
+          sum,
+          tx
+        ) =>
           sum +
-          Number(tx.amount || 0),
+          Number(
+            tx.amount ||
+              0
+          ),
         0
       );
 
     const ledgerTotal =
       ledgerEntries.reduce(
-        (sum, entry) =>
+        (
+          sum,
+          entry
+        ) =>
           sum +
-          Number(entry.amount || 0),
+          Number(
+            entry.amount ||
+              0
+          ),
         0
       );
 
@@ -367,141 +498,297 @@ class MTNReconciliationService {
       ledgerTotal,
       difference,
       balanced:
-        Math.abs(difference) <=
-        this.toleranceAmount,
+        Math.abs(
+          difference
+        ) <=
+        this.config
+          .toleranceAmount,
     };
   }
 
-  /**
-   * ==========================================================================
-   * DAILY RECONCILIATION
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Auto Repair
+   |--------------------------------------------------------------------------
+   */
+
+  async autoRepair(
+    report
+  ) {
+    if (
+      !this.config
+        .autoRepair
+    ) {
+      return;
+    }
+
+    for (const item of report
+      .exceptions
+      .missingProvider) {
+      if (
+        queueService
+          ?.enqueue
+      ) {
+        await queueService.enqueue(
+          'reconciliation-repair',
+          {
+            type:
+              'MISSING_PROVIDER',
+            reference:
+              item.reference,
+          }
+        );
+
+        this.metrics
+          .autoRepaired++;
+      }
+    }
+  }
+
+  /*
+   |--------------------------------------------------------------------------
+   | Main Reconciliation
+   |--------------------------------------------------------------------------
    */
 
   async reconcileDaily({
-    date = new Date(),
-    providerTransactions = [],
+    tenantId,
+    date =
+      new Date(),
+    providerTransactions =
+      [],
   } = {}) {
     const runId =
       crypto.randomUUID();
 
+    this.metrics
+      .runs++;
+    this.metrics
+      .lastRunAt =
+      new Date();
+
     await this.recordAudit(
-      "RECON_STARTED",
+      'RECON_STARTED',
       {
         runId,
+        tenantId,
         date,
       }
     );
 
-    const internalTransactions =
-      await this.loadTransactions(
-        date
-      );
+    try {
+      const internal =
+        await this.loadTransactions(
+          {
+            date,
+            tenantId,
+          }
+        );
 
-    const ledgerEntries =
-      await this.loadLedgerEntries(
-        date
-      );
+      const ledger =
+        await this.loadLedgerEntries(
+          {
+            date,
+            tenantId,
+          }
+        );
 
-    const providerData =
-      await this.loadProviderTransactions(
-        providerTransactions
-      );
+      const provider =
+        await this.loadProviderTransactions(
+          providerTransactions
+        );
 
-    const transactionResults =
-      this.reconcileTransactions(
-        internalTransactions,
-        providerData
-      );
+      const txReport =
+        this.reconcileTransactions(
+          internal,
+          provider
+        );
 
-    const ledgerResults =
-      this.reconcileLedger(
-        internalTransactions,
-        ledgerEntries
-      );
+      const ledgerReport =
+        this.reconcileLedger(
+          internal,
+          ledger
+        );
 
-    const duplicateInternal =
-      this.detectDuplicates(
-        internalTransactions
-      );
+      const duplicateInternal =
+        this.detectDuplicates(
+          internal
+        );
 
-    const duplicateProvider =
-      this.detectDuplicates(
-        providerData
-      );
+      const duplicateProvider =
+        this.detectDuplicates(
+          provider
+        );
 
-    const report = {
-      runId,
-      provider: this.provider,
-      date,
-
-      summary: {
-        internalTransactions:
-          internalTransactions.length,
-
-        providerTransactions:
-          providerData.length,
-
-        matched:
-          transactionResults
-            .matched.length,
-
-        missingInternal:
-          transactionResults
-            .missingInternal.length,
-
-        missingProvider:
-          transactionResults
-            .missingProvider.length,
-
-        variances:
-          transactionResults
-            .variances.length,
-
-        duplicateInternal:
-          duplicateInternal.length,
-
-        duplicateProvider:
-          duplicateProvider.length,
-      },
-
-      ledger: ledgerResults,
-
-      exceptions: {
-        missingInternal:
-          transactionResults.missingInternal,
-
-        missingProvider:
-          transactionResults.missingProvider,
-
-        variances:
-          transactionResults.variances,
-
-        duplicateInternal,
-
-        duplicateProvider,
-      },
-
-      generatedAt:
-        new Date().toISOString(),
-    };
-
-    await this.recordAudit(
-      "RECON_COMPLETED",
-      {
+      const report = {
         runId,
-        summary:
-          report.summary,
-      }
-    );
+        provider:
+          this.provider,
+        tenantId,
+        date,
 
-    return report;
+        summary: {
+          internalTransactions:
+            internal.length,
+
+          providerTransactions:
+            provider.length,
+
+          matched:
+            txReport
+              .matched
+              .length,
+
+          missingInternal:
+            txReport
+              .missingInternal
+              .length,
+
+          missingProvider:
+            txReport
+              .missingProvider
+              .length,
+
+          variances:
+            txReport
+              .variances
+              .length,
+
+          duplicateInternal:
+            duplicateInternal.length,
+
+          duplicateProvider:
+            duplicateProvider.length,
+        },
+
+        ledger:
+          ledgerReport,
+
+        exceptions: {
+          missingInternal:
+            txReport
+              .missingInternal,
+
+          missingProvider:
+            txReport
+              .missingProvider,
+
+          variances:
+            txReport
+              .variances,
+
+          duplicateInternal,
+
+          duplicateProvider,
+        },
+
+        generatedAt:
+          new Date().toISOString(),
+      };
+
+      this.metrics
+        .matched +=
+        report.summary
+          .matched;
+
+      this.metrics
+        .variances +=
+        report.summary
+          .variances;
+
+      this.metrics
+        .missingInternal +=
+        report.summary
+          .missingInternal;
+
+      this.metrics
+        .missingProvider +=
+        report.summary
+          .missingProvider;
+
+      this.metrics
+        .duplicates +=
+        duplicateInternal.length +
+        duplicateProvider.length;
+
+      await this.autoRepair(
+        report
+      );
+
+      if (
+        notificationService
+          ?.send
+      ) {
+        await notificationService.send(
+          {
+            type:
+              'RECON_COMPLETED',
+            tenantId,
+            payload:
+              report.summary,
+          }
+        );
+      }
+
+      if (
+        executiveDashboardService
+          ?.recordMetric
+      ) {
+        await executiveDashboardService.recordMetric(
+          {
+            metric:
+              'mtn_reconciliation',
+            value:
+              report.summary,
+          }
+        );
+      }
+
+      if (
+        regulatoryReportingService
+          ?.recordReconciliation
+      ) {
+        await regulatoryReportingService.recordReconciliation(
+          report
+        );
+      }
+
+      await this.recordAudit(
+        'RECON_COMPLETED',
+        {
+          runId,
+          summary:
+            report.summary,
+        }
+      );
+
+      this.emit(
+        'reconciliation.completed',
+        report
+      );
+
+      return report;
+    } catch (error) {
+      this.metrics
+        .failures++;
+
+      await this.recordAudit(
+        'RECON_FAILED',
+        {
+          runId,
+          error:
+            error.message,
+        }
+      );
+
+      throw error;
+    }
   }
 
-  /**
-   * ==========================================================================
-   * SETTLEMENT VALIDATION
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Settlement Validation
+   |--------------------------------------------------------------------------
    */
 
   async validateSettlement({
@@ -509,13 +796,20 @@ class MTNReconciliationService {
     settledAmount,
   }) {
     const difference =
-      Number(settledAmount) -
-      Number(expectedAmount);
+      Number(
+        settledAmount
+      ) -
+      Number(
+        expectedAmount
+      );
 
     return {
       valid:
-        Math.abs(difference) <=
-        this.toleranceAmount,
+        Math.abs(
+          difference
+        ) <=
+        this.config
+          .toleranceAmount,
 
       expectedAmount,
       settledAmount,
@@ -525,20 +819,64 @@ class MTNReconciliationService {
     };
   }
 
-  /**
-   * ==========================================================================
-   * RECON HEALTH
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Report Export
+   |--------------------------------------------------------------------------
+   */
+
+  async exportReport(
+    report,
+    format = 'pdf'
+  ) {
+    if (
+      !reportExportService
+        ?.export
+    ) {
+      return null;
+    }
+
+    return reportExportService.export(
+      {
+        type:
+          'MTN_RECONCILIATION',
+        format,
+        data:
+          report,
+      }
+    );
+  }
+
+  /*
+   |--------------------------------------------------------------------------
+   | Health
+   |--------------------------------------------------------------------------
    */
 
   healthCheck() {
     return {
       service:
-        "MTN_RECONCILIATION",
-      provider: this.provider,
+        'MTN_RECONCILIATION',
+      provider:
+        this.provider,
+      currency:
+        this.config
+          .currency,
       toleranceAmount:
-        this.toleranceAmount,
-      currency: this.currency,
+        this.config
+          .toleranceAmount,
+      metrics:
+        this.metrics,
+      timestamp:
+        new Date().toISOString(),
+    };
+  }
+
+  getMetrics() {
+    return {
+      ...this.metrics,
+      provider:
+        this.provider,
       timestamp:
         new Date().toISOString(),
     };
@@ -547,3 +885,6 @@ class MTNReconciliationService {
 
 module.exports =
   new MTNReconciliationService();
+
+module.exports.MTNReconciliationService =
+  MTNReconciliationService;

@@ -1,22 +1,6 @@
 // backend/services/airtel/webhooks.js
-/**
- * ============================================================================
- * AIRTEL MONEY WEBHOOK SERVICE
- * ============================================================================
- *
- * Responsibilities
- *  - Callback Validation
- *  - Signature Verification
- *  - HMAC Validation
- *  - Idempotency Protection
- *  - Replay Protection
- *  - Transaction Updates
- *  - Settlement Triggering
- *  - Audit Logging
- *  - Event Persistence
- *
- * ============================================================================
- */
+
+"use strict";
 
 const crypto = require("crypto");
 
@@ -25,6 +9,7 @@ let Transaction;
 let AuditLog;
 let WebhookEvent;
 let settlementService;
+let redisClient;
 
 try {
   logger = require("../../modules/logger");
@@ -51,9 +36,17 @@ try {
 }
 
 try {
-  settlementService = require("../../modules/mobileMoneySettlementService");
+  settlementService = require(
+    "../../modules/mobileMoneySettlementService"
+  );
 } catch {
   settlementService = null;
+}
+
+try {
+  redisClient = require("../../config/redis");
+} catch {
+  redisClient = null;
 }
 
 class AirtelWebhookService {
@@ -65,28 +58,51 @@ class AirtelWebhookService {
       process.env.AIRTEL_CALLBACK_SECRET ||
       "";
 
+    this.allowedIPs = (
+      process.env.AIRTEL_WEBHOOK_IPS || ""
+    )
+      .split(",")
+      .map((v) => v.trim())
+      .filter(Boolean);
+
     this.allowedClockSkew =
       Number(
-        process.env.WEBHOOK_CLOCK_SKEW_MS ||
-          300000
-      ); // 5 minutes
+        process.env.WEBHOOK_CLOCK_SKEW_MS
+      ) || 300000;
+
+    this.replayWindow =
+      Number(
+        process.env.WEBHOOK_REPLAY_WINDOW_MS
+      ) || 300000;
+
+    this.replayCache =
+      new Map();
 
     this.metrics = {
       received: 0,
       processed: 0,
       duplicates: 0,
-      invalidSignatures: 0,
       failures: 0,
+      invalidSignatures: 0,
+      unauthorizedIPs: 0,
+      settlementsTriggered: 0,
     };
+
+    setInterval(() => {
+      this.cleanupReplayCache();
+    }, 60000).unref();
   }
 
-  /**
-   * ==========================================================================
-   * AUDIT LOGGING
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | AUDIT
+   |--------------------------------------------------------------------------
    */
 
-  async recordAudit(action, payload = {}) {
+  async recordAudit(
+    action,
+    payload = {}
+  ) {
     try {
       const record = {
         provider: this.provider,
@@ -111,31 +127,28 @@ class AirtelWebhookService {
     }
   }
 
-  /**
-   * ==========================================================================
-   * EVENT STORAGE
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | IP VALIDATION
+   |--------------------------------------------------------------------------
    */
 
-  async storeWebhookEvent(event) {
-    try {
-      if (!WebhookEvent?.create) {
-        return null;
-      }
-
-      return WebhookEvent.create(event);
-    } catch (error) {
-      logger.error(
-        "[AIRTEL WEBHOOK] Event Storage Error",
-        error
-      );
+  validateSourceIP(ip) {
+    if (
+      this.allowedIPs.length === 0
+    ) {
+      return true;
     }
+
+    return this.allowedIPs.includes(
+      ip
+    );
   }
 
-  /**
-   * ==========================================================================
-   * SIGNATURE VALIDATION
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | SIGNATURE
+   |--------------------------------------------------------------------------
    */
 
   generateSignature(rawBody) {
@@ -144,7 +157,7 @@ class AirtelWebhookService {
         "sha256",
         this.webhookSecret
       )
-      .update(rawBody)
+      .update(rawBody || "")
       .digest("hex");
   }
 
@@ -153,9 +166,6 @@ class AirtelWebhookService {
     signature,
   }) {
     if (!this.webhookSecret) {
-      logger.warn(
-        "[AIRTEL WEBHOOK] Secret not configured"
-      );
       return true;
     }
 
@@ -163,10 +173,12 @@ class AirtelWebhookService {
       return false;
     }
 
-    const expected =
-      this.generateSignature(rawBody);
-
     try {
+      const expected =
+        this.generateSignature(
+          rawBody
+        );
+
       return crypto.timingSafeEqual(
         Buffer.from(expected),
         Buffer.from(signature)
@@ -176,93 +188,202 @@ class AirtelWebhookService {
     }
   }
 
-  /**
-   * ==========================================================================
-   * REPLAY PROTECTION
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | TIMESTAMP VALIDATION
+   |--------------------------------------------------------------------------
    */
 
-  validateTimestamp(timestamp) {
+  validateTimestamp(
+    timestamp
+  ) {
     if (!timestamp) {
       return true;
     }
 
-    const eventTime =
+    const value =
       new Date(timestamp).getTime();
 
-    const now = Date.now();
+    if (Number.isNaN(value)) {
+      return false;
+    }
 
     return (
-      Math.abs(now - eventTime) <=
-      this.allowedClockSkew
+      Math.abs(
+        Date.now() - value
+      ) <= this.allowedClockSkew
     );
   }
 
-  /**
-   * ==========================================================================
-   * IDEMPOTENCY
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | EVENT HELPERS
+   |--------------------------------------------------------------------------
    */
 
-  async isDuplicateEvent(eventId) {
+  extractReference(payload = {}) {
+    return (
+      payload.reference ||
+      payload.transactionId ||
+      payload.externalId ||
+      payload.providerReference ||
+      payload.id
+    );
+  }
+
+  extractEventId(payload = {}) {
+    return (
+      payload.eventId ||
+      payload.notificationId ||
+      payload.callbackId ||
+      payload.id ||
+      crypto.randomUUID()
+    );
+  }
+
+  /*
+   |--------------------------------------------------------------------------
+   | REPLAY PROTECTION
+   |--------------------------------------------------------------------------
+   */
+
+  async isDuplicateEvent(
+    eventId
+  ) {
     if (!eventId) {
       return false;
     }
 
-    if (!WebhookEvent?.findOne) {
+    try {
+      if (
+        redisClient?.set
+      ) {
+        const key =
+          `airtel:webhook:${eventId}`;
+
+        const result =
+          await redisClient.set(
+            key,
+            "1",
+            {
+              NX: true,
+              PX: this.replayWindow,
+            }
+          );
+
+        return result !== "OK";
+      }
+
+      const existing =
+        this.replayCache.get(
+          eventId
+        );
+
+      if (
+        existing &&
+        Date.now() - existing <
+          this.replayWindow
+      ) {
+        return true;
+      }
+
+      this.replayCache.set(
+        eventId,
+        Date.now()
+      );
+
+      return false;
+    } catch {
       return false;
     }
-
-    const existing =
-      await WebhookEvent.findOne({
-        eventId,
-      });
-
-    return !!existing;
   }
 
-  /**
-   * ==========================================================================
-   * STATUS MAPPING
-   * ==========================================================================
+  cleanupReplayCache() {
+    const now = Date.now();
+
+    for (const [
+      key,
+      value,
+    ] of this.replayCache) {
+      if (
+        now - value >
+        this.replayWindow
+      ) {
+        this.replayCache.delete(
+          key
+        );
+      }
+    }
+  }
+
+  /*
+   |--------------------------------------------------------------------------
+   | EVENT STORAGE
+   |--------------------------------------------------------------------------
    */
 
-  normalizeStatus(status) {
+  async storeWebhookEvent(
+    event
+  ) {
+    try {
+      if (
+        WebhookEvent?.create
+      ) {
+        return WebhookEvent.create(
+          event
+        );
+      }
+    } catch (error) {
+      logger.error(
+        "[AIRTEL WEBHOOK] Event Storage Error",
+        error
+      );
+    }
+
+    return null;
+  }
+
+  /*
+   |--------------------------------------------------------------------------
+   | STATUS NORMALIZATION
+   |--------------------------------------------------------------------------
+   */
+
+  normalizeStatus(
+    status
+  ) {
     const value =
       String(status || "")
         .trim()
         .toUpperCase();
 
-    const mappings = {
+    const map = {
       SUCCESS: "SUCCESS",
       SUCCESSFUL: "SUCCESS",
       COMPLETED: "SUCCESS",
-
       FAILED: "FAILED",
-      REJECTED: "FAILED",
       ERROR: "FAILED",
-
+      REJECTED: "FAILED",
       PENDING: "PENDING",
       PROCESSING: "PENDING",
-
       CANCELLED: "CANCELLED",
       EXPIRED: "EXPIRED",
     };
 
     return (
-      mappings[value] || value
+      map[value] || value
     );
   }
 
-  /**
-   * ==========================================================================
-   * TRANSACTION UPDATE
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | TRANSACTION UPDATE
+   |--------------------------------------------------------------------------
    */
 
   async updateTransaction(
     reference,
-    webhookData
+    payload
   ) {
     if (
       !Transaction?.findOneAndUpdate
@@ -270,9 +391,9 @@ class AirtelWebhookService {
       return null;
     }
 
-    const normalizedStatus =
+    const status =
       this.normalizeStatus(
-        webhookData.status
+        payload.status
       );
 
     return Transaction.findOneAndUpdate(
@@ -291,13 +412,12 @@ class AirtelWebhookService {
       },
       {
         providerStatus:
-          normalizedStatus,
-        status:
-          normalizedStatus,
+          status,
+        status,
         webhookReceivedAt:
           new Date(),
         webhookPayload:
-          webhookData,
+          payload,
         updatedAt:
           new Date(),
       },
@@ -307,10 +427,10 @@ class AirtelWebhookService {
     );
   }
 
-  /**
-   * ==========================================================================
-   * SETTLEMENT POSTING
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | SETTLEMENT
+   |--------------------------------------------------------------------------
    */
 
   async processSettlement(
@@ -331,6 +451,9 @@ class AirtelWebhookService {
         await settlementService.processTransaction(
           transaction
         );
+
+        this.metrics
+          .settlementsTriggered++;
       }
     } catch (error) {
       logger.error(
@@ -340,35 +463,10 @@ class AirtelWebhookService {
     }
   }
 
-  /**
-   * ==========================================================================
-   * PAYLOAD EXTRACTION
-   * ==========================================================================
-   */
-
-  extractReference(payload) {
-    return (
-      payload.reference ||
-      payload.transactionId ||
-      payload.externalId ||
-      payload.providerReference ||
-      payload.id
-    );
-  }
-
-  extractEventId(payload) {
-    return (
-      payload.eventId ||
-      payload.notificationId ||
-      payload.callbackId ||
-      payload.id
-    );
-  }
-
-  /**
-   * ==========================================================================
-   * WEBHOOK PROCESSING
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | MAIN HANDLER
+   |--------------------------------------------------------------------------
    */
 
   async processWebhook({
@@ -384,18 +482,31 @@ class AirtelWebhookService {
         payload
       );
 
+    const correlationId =
+      crypto.randomUUID();
+
     try {
       await this.recordAudit(
         "WEBHOOK_RECEIVED",
         {
-          sourceIP,
           eventId,
+          sourceIP,
+          correlationId,
         }
       );
 
-      /**
-       * Signature Validation
-       */
+      if (
+        !this.validateSourceIP(
+          sourceIP
+        )
+      ) {
+        this.metrics
+          .unauthorizedIPs++;
+
+        throw new Error(
+          "Unauthorized source IP"
+        );
+      }
 
       const validSignature =
         this.validateSignature({
@@ -404,16 +515,13 @@ class AirtelWebhookService {
         });
 
       if (!validSignature) {
-        this.metrics.invalidSignatures++;
+        this.metrics
+          .invalidSignatures++;
 
         throw new Error(
-          "Invalid webhook signature"
+          "Invalid signature"
         );
       }
-
-      /**
-       * Replay Protection
-       */
 
       const timestamp =
         payload.timestamp ||
@@ -425,13 +533,9 @@ class AirtelWebhookService {
         )
       ) {
         throw new Error(
-          "Webhook timestamp validation failed"
+          "Invalid webhook timestamp"
         );
       }
-
-      /**
-       * Idempotency Check
-       */
 
       const duplicate =
         await this.isDuplicateEvent(
@@ -439,7 +543,8 @@ class AirtelWebhookService {
         );
 
       if (duplicate) {
-        this.metrics.duplicates++;
+        this.metrics
+          .duplicates++;
 
         return {
           success: true,
@@ -448,21 +553,14 @@ class AirtelWebhookService {
         };
       }
 
-      /**
-       * Persist Event
-       */
-
       await this.storeWebhookEvent({
         provider: this.provider,
         eventId,
+        correlationId,
         payload,
         receivedAt:
           new Date(),
       });
-
-      /**
-       * Update Transaction
-       */
 
       const reference =
         this.extractReference(
@@ -474,10 +572,6 @@ class AirtelWebhookService {
           reference,
           payload
         );
-
-      /**
-       * Settlement Posting
-       */
 
       if (
         transaction &&
@@ -495,6 +589,7 @@ class AirtelWebhookService {
         "WEBHOOK_PROCESSED",
         {
           eventId,
+          correlationId,
           reference,
           status:
             transaction?.status,
@@ -504,6 +599,7 @@ class AirtelWebhookService {
       return {
         success: true,
         provider: this.provider,
+        correlationId,
         eventId,
         reference,
         status:
@@ -519,6 +615,7 @@ class AirtelWebhookService {
         "WEBHOOK_FAILED",
         {
           eventId,
+          correlationId,
           error: error.message,
         }
       );
@@ -527,28 +624,31 @@ class AirtelWebhookService {
     }
   }
 
-  /**
-   * ==========================================================================
-   * HEALTH CHECK
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | HEALTH
+   |--------------------------------------------------------------------------
    */
 
   healthCheck() {
     return {
+      provider: this.provider,
       service:
         "AIRTEL_WEBHOOKS",
-      provider:
-        this.provider,
       healthy: true,
+      replayCacheSize:
+        this.replayCache.size,
+      allowedIPs:
+        this.allowedIPs.length,
       timestamp:
         new Date().toISOString(),
     };
   }
 
-  /**
-   * ==========================================================================
-   * METRICS
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | METRICS
+   |--------------------------------------------------------------------------
    */
 
   getMetrics() {
@@ -556,7 +656,25 @@ class AirtelWebhookService {
       provider:
         this.provider,
       ...this.metrics,
+      replayCacheSize:
+        this.replayCache.size,
       generatedAt:
+        new Date().toISOString(),
+    };
+  }
+
+  /*
+   |--------------------------------------------------------------------------
+   | MAINTENANCE
+   |--------------------------------------------------------------------------
+   */
+
+  clearReplayCache() {
+    this.replayCache.clear();
+
+    return {
+      success: true,
+      timestamp:
         new Date().toISOString(),
     };
   }

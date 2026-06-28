@@ -1,232 +1,484 @@
 // backend/services/mtn/auth.js
-/**
- * ============================================================================
- * MTN MOMO AUTH SERVICE
- * ============================================================================
- * TITech Community Capital
- *
- * Responsibilities:
- *  - OAuth Authentication
- *  - Token Refresh
- *  - Token Caching
- *  - Expiry Management
- *  - Retry Handling
- *  - Health Monitoring
- *  - Singleton Access Token Manager
- *
- * Environment Variables:
- *
- * MTN_MOMO_BASE_URL=
- * MTN_MOMO_API_USER=
- * MTN_MOMO_API_KEY=
- * MTN_MOMO_SUBSCRIPTION_KEY=
- *
- * ============================================================================
- */
 
-const axios = require("axios");
+'use strict';
+
+const axios = require('axios');
+const https = require('https');
+const EventEmitter = require('events');
 
 let logger;
 
 try {
-  logger = require("../../modules/logger");
+  logger = require('../../modules/logger');
 } catch {
   logger = console;
 }
 
-class MTNAuthService {
-  constructor() {
-    this.baseUrl =
-      process.env.MTN_MOMO_BASE_URL;
+class MTNAuthService extends EventEmitter {
+  constructor({
+    cache = null,
+    metrics = null,
+    config = {},
+  } = {}) {
+    super();
 
-    this.apiUser =
-      process.env.MTN_MOMO_API_USER;
+    this.cache = cache;
+    this.metrics = metrics;
 
-    this.apiKey =
-      process.env.MTN_MOMO_API_KEY;
+    this.config = {
+      baseUrl:
+        process.env.MTN_MOMO_BASE_URL,
 
-    this.subscriptionKey =
-      process.env.MTN_MOMO_SUBSCRIPTION_KEY;
+      apiUser:
+        process.env.MTN_MOMO_API_USER,
 
-    /**
-     * Cached token
-     */
+      apiKey:
+        process.env.MTN_MOMO_API_KEY,
+
+      subscriptionKey:
+        process.env
+          .MTN_MOMO_SUBSCRIPTION_KEY,
+
+      timeout:
+        Number(
+          process.env
+            .MTN_MOMO_TIMEOUT
+        ) || 30000,
+
+      refreshBufferMs:
+        Number(
+          process.env
+            .MTN_MOMO_REFRESH_BUFFER_MS
+        ) || 60000,
+
+      maxRetries:
+        Number(
+          process.env
+            .MTN_MOMO_MAX_RETRIES
+        ) || 3,
+
+      retryDelayMs:
+        Number(
+          process.env
+            .MTN_MOMO_RETRY_DELAY_MS
+        ) || 1000,
+
+      cacheKey:
+        'mtn:momo:access-token',
+
+      circuitFailureThreshold: 5,
+
+      circuitResetMs:
+        60 * 1000,
+
+      ...config,
+    };
+
     this.accessToken = null;
-
-    /**
-     * Epoch timestamp
-     */
     this.expiresAt = null;
-
-    /**
-     * Prevent concurrent refresh storms
-     */
     this.refreshPromise = null;
 
-    /**
-     * Refresh 60 seconds early
-     */
-    this.expiryBufferMs = 60 * 1000;
+    this.failureCount = 0;
+    this.circuitOpenedAt = null;
 
-    /**
-     * HTTP timeout
-     */
-    this.timeout = 30000;
+    this.agent =
+      new https.Agent({
+        keepAlive: true,
+        maxSockets: 50,
+      });
+
+    this.http = axios.create({
+      timeout:
+        this.config.timeout,
+      httpsAgent:
+        this.agent,
+    });
+
+    this.validateConfig();
   }
 
-  /**
-   * ==========================================================================
-   * TOKEN STATUS
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Configuration
+   |--------------------------------------------------------------------------
+   */
+
+  validateConfig() {
+    const required = [
+      'baseUrl',
+      'apiUser',
+      'apiKey',
+      'subscriptionKey',
+    ];
+
+    const missing =
+      required.filter(
+        field =>
+          !this.config[field]
+      );
+
+    if (missing.length) {
+      throw new Error(
+        `Missing MTN configuration: ${missing.join(
+          ', '
+        )}`
+      );
+    }
+  }
+
+  /*
+   |--------------------------------------------------------------------------
+   | Circuit Breaker
+   |--------------------------------------------------------------------------
+   */
+
+  isCircuitOpen() {
+    if (
+      !this.circuitOpenedAt
+    ) {
+      return false;
+    }
+
+    if (
+      Date.now() -
+        this.circuitOpenedAt >
+      this.config
+        .circuitResetMs
+    ) {
+      this.circuitOpenedAt =
+        null;
+
+      this.failureCount = 0;
+
+      return false;
+    }
+
+    return true;
+  }
+
+  registerFailure() {
+    this.failureCount += 1;
+
+    if (
+      this.failureCount >=
+      this.config
+        .circuitFailureThreshold
+    ) {
+      this.circuitOpenedAt =
+        Date.now();
+
+      logger.error(
+        '[MTN AUTH] Circuit opened.'
+      );
+    }
+  }
+
+  registerSuccess() {
+    this.failureCount = 0;
+    this.circuitOpenedAt =
+      null;
+  }
+
+  /*
+   |--------------------------------------------------------------------------
+   | Token State
+   |--------------------------------------------------------------------------
    */
 
   isTokenValid() {
-    if (!this.accessToken) {
-      return false;
-    }
-
-    if (!this.expiresAt) {
-      return false;
-    }
-
-    return (
+    return !!(
+      this.accessToken &&
+      this.expiresAt &&
       Date.now() <
-      (this.expiresAt - this.expiryBufferMs)
+        this.expiresAt -
+          this.config
+            .refreshBufferMs
     );
   }
 
   getRemainingLifetime() {
-    if (!this.expiresAt) {
+    if (
+      !this.expiresAt
+    ) {
       return 0;
     }
 
     return Math.max(
       0,
-      this.expiresAt - Date.now()
+      this.expiresAt -
+        Date.now()
     );
   }
 
-  /**
-   * ==========================================================================
-   * AUTHENTICATE
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Distributed Cache
+   |--------------------------------------------------------------------------
    */
 
-  async authenticate(forceRefresh = false) {
+  async loadCachedToken() {
+    if (!this.cache) {
+      return;
+    }
+
     try {
+      const cached =
+        await this.cache.get(
+          this.config.cacheKey
+        );
+
+      if (!cached) {
+        return;
+      }
+
+      this.accessToken =
+        cached.accessToken;
+
+      this.expiresAt =
+        cached.expiresAt;
+    } catch (error) {
+      logger.warn(
+        '[MTN AUTH] Failed loading cached token.',
+        error.message
+      );
+    }
+  }
+
+  async saveToken() {
+    if (!this.cache) {
+      return;
+    }
+
+    try {
+      const ttl =
+        Math.floor(
+          this.getRemainingLifetime() /
+            1000
+        );
+
+      await this.cache.set(
+        this.config.cacheKey,
+        {
+          accessToken:
+            this.accessToken,
+          expiresAt:
+            this.expiresAt,
+        },
+        ttl
+      );
+    } catch (error) {
+      logger.warn(
+        '[MTN AUTH] Failed saving token.',
+        error.message
+      );
+    }
+  }
+
+  /*
+   |--------------------------------------------------------------------------
+   | Authentication
+   |--------------------------------------------------------------------------
+   */
+
+  async authenticate(
+    forceRefresh = false
+  ) {
+    if (
+      this.isCircuitOpen()
+    ) {
+      throw new Error(
+        'MTN auth circuit breaker is open.'
+      );
+    }
+
+    if (
+      !forceRefresh
+    ) {
       if (
-        !forceRefresh &&
         this.isTokenValid()
       ) {
         return {
           success: true,
-          accessToken: this.accessToken,
+          accessToken:
+            this.accessToken,
           cached: true,
-          expiresAt: this.expiresAt,
+          expiresAt:
+            this.expiresAt,
         };
       }
 
-      if (this.refreshPromise) {
-        return this.refreshPromise;
+      await this.loadCachedToken();
+
+      if (
+        this.isTokenValid()
+      ) {
+        return {
+          success: true,
+          accessToken:
+            this.accessToken,
+          cached: true,
+          expiresAt:
+            this.expiresAt,
+        };
       }
+    }
 
-      this.refreshPromise =
-        this.requestNewToken();
+    if (
+      this.refreshPromise
+    ) {
+      return this.refreshPromise;
+    }
 
-      const result =
-        await this.refreshPromise;
+    this.refreshPromise =
+      this.requestNewToken();
 
-      return result;
+    try {
+      return await this
+        .refreshPromise;
     } finally {
-      this.refreshPromise = null;
+      this.refreshPromise =
+        null;
     }
   }
 
-  /**
-   * ==========================================================================
-   * TOKEN REQUEST
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Token Request
+   |--------------------------------------------------------------------------
    */
 
   async requestNewToken() {
-    const credentials = Buffer.from(
-      `${this.apiUser}:${this.apiKey}`
-    ).toString("base64");
+    const credentials =
+      Buffer.from(
+        `${this.config.apiUser}:${this.config.apiKey}`
+      ).toString('base64');
 
-    try {
-      logger.info(
-        "[MTN AUTH] Requesting OAuth token"
-      );
+    let lastError;
 
-      const response = await axios.post(
-        `${this.baseUrl}/collection/token/`,
-        {},
-        {
-          timeout: this.timeout,
-          headers: {
-            Authorization: `Basic ${credentials}`,
-            "Ocp-Apim-Subscription-Key":
-              this.subscriptionKey,
-          },
+    for (
+      let attempt = 1;
+      attempt <=
+      this.config
+        .maxRetries;
+      attempt++
+    ) {
+      try {
+        logger.info(
+          `[MTN AUTH] Requesting token. Attempt ${attempt}`
+        );
+
+        const response =
+          await this.http.post(
+            `${this.config.baseUrl}/collection/token/`,
+            {},
+            {
+              headers: {
+                Authorization:
+                  `Basic ${credentials}`,
+                'Ocp-Apim-Subscription-Key':
+                  this.config
+                    .subscriptionKey,
+              },
+            }
+          );
+
+        const token =
+          response.data
+            .access_token;
+
+        const expiresIn =
+          Number(
+            response.data
+              .expires_in ||
+              3600
+          ) * 1000;
+
+        this.accessToken =
+          token;
+
+        this.expiresAt =
+          Date.now() +
+          expiresIn;
+
+        await this.saveToken();
+
+        this.registerSuccess();
+
+        this.emit(
+          'token.refreshed',
+          {
+            expiresAt:
+              this.expiresAt,
+          }
+        );
+
+        logger.info(
+          '[MTN AUTH] Token acquired.'
+        );
+
+        return {
+          success: true,
+          accessToken:
+            token,
+          expiresAt:
+            this.expiresAt,
+          cached: false,
+        };
+      } catch (error) {
+        lastError = error;
+
+        this.registerFailure();
+
+        logger.error(
+          `[MTN AUTH] Token request failed (${attempt})`,
+          error.response
+            ?.data ||
+            error.message
+        );
+
+        if (
+          attempt <
+          this.config
+            .maxRetries
+        ) {
+          const delay =
+            this.config
+              .retryDelayMs *
+            Math.pow(
+              2,
+              attempt - 1
+            );
+
+          await new Promise(
+            resolve =>
+              setTimeout(
+                resolve,
+                delay
+              )
+          );
         }
-      );
-
-      const accessToken =
-        response.data.access_token;
-
-      const expiresIn =
-        Number(
-          response.data.expires_in || 3600
-        ) * 1000;
-
-      this.accessToken = accessToken;
-
-      this.expiresAt =
-        Date.now() + expiresIn;
-
-      logger.info(
-        "[MTN AUTH] Token acquired successfully"
-      );
-
-      return {
-        success: true,
-        accessToken,
-        expiresAt: this.expiresAt,
-        cached: false,
-      };
-    } catch (error) {
-      logger.error(
-        "[MTN AUTH] Authentication failed",
-        error.response?.data || error.message
-      );
-
-      throw new Error(
-        error.response?.data?.message ||
-        error.message ||
-        "MTN authentication failed"
-      );
+      }
     }
+
+    throw new Error(
+      lastError.response
+        ?.data?.message ||
+        lastError.message ||
+        'MTN authentication failed'
+    );
   }
 
-  /**
-   * ==========================================================================
-   * REFRESH TOKEN
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Public API
+   |--------------------------------------------------------------------------
    */
 
   async refreshToken() {
-    logger.info(
-      "[MTN AUTH] Refreshing access token"
+    return this.authenticate(
+      true
     );
-
-    return this.authenticate(true);
   }
-
-  /**
-   * ==========================================================================
-   * GET RAW ACCESS TOKEN
-   * ==========================================================================
-   */
 
   async getAccessToken() {
     const result =
@@ -235,79 +487,104 @@ class MTNAuthService {
     return result.accessToken;
   }
 
-  /**
-   * ==========================================================================
-   * AUTHORIZATION HEADER
-   * ==========================================================================
-   */
-
   async getAuthorizationHeader() {
     const token =
       await this.getAccessToken();
 
     return {
-      Authorization: `Bearer ${token}`,
+      Authorization:
+        `Bearer ${token}`,
     };
   }
-
-  /**
-   * ==========================================================================
-   * CLEAR CACHE
-   * ==========================================================================
-   */
 
   clearCache() {
     this.accessToken = null;
     this.expiresAt = null;
 
     logger.info(
-      "[MTN AUTH] Token cache cleared"
+      '[MTN AUTH] Cache cleared.'
     );
   }
 
-  /**
-   * ==========================================================================
-   * HEALTH CHECK
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Background Refresh
+   |--------------------------------------------------------------------------
+   */
+
+  startAutoRefresh() {
+    setInterval(
+      async () => {
+        try {
+          if (
+            this
+              .getRemainingLifetime() <
+            this.config
+              .refreshBufferMs
+          ) {
+            await this.refreshToken();
+          }
+        } catch (error) {
+          logger.error(
+            '[MTN AUTH] Auto refresh failed',
+            error.message
+          );
+        }
+      },
+      30000
+    );
+  }
+
+  /*
+   |--------------------------------------------------------------------------
+   | Health
+   |--------------------------------------------------------------------------
    */
 
   async healthCheck() {
     try {
-      const authenticated =
-        await this.authenticate();
+      await this.authenticate();
 
       return {
-        provider: "MTN_MOMO",
+        provider:
+          'MTN_MOMO',
         healthy: true,
-        authenticated: !!authenticated,
-        tokenCached:
+        tokenValid:
           this.isTokenValid(),
-        expiresAt: this.expiresAt,
+        expiresAt:
+          this.expiresAt,
         remainingLifetime:
           this.getRemainingLifetime(),
+        circuitOpen:
+          this.isCircuitOpen(),
         timestamp:
           new Date().toISOString(),
       };
     } catch (error) {
       return {
-        provider: "MTN_MOMO",
+        provider:
+          'MTN_MOMO',
         healthy: false,
-        error: error.message,
+        error:
+          error.message,
+        circuitOpen:
+          this.isCircuitOpen(),
         timestamp:
           new Date().toISOString(),
       };
     }
   }
 
-  /**
-   * ==========================================================================
-   * METRICS
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Metrics
+   |--------------------------------------------------------------------------
    */
 
   getMetrics() {
     return {
-      provider: "MTN_MOMO",
+      provider:
+        'MTN_MOMO',
       tokenCached:
         !!this.accessToken,
       tokenValid:
@@ -316,16 +593,21 @@ class MTNAuthService {
         this.expiresAt,
       remainingLifetime:
         this.getRemainingLifetime(),
+      failureCount:
+        this.failureCount,
+      circuitOpen:
+        this.isCircuitOpen(),
       timestamp:
         new Date().toISOString(),
     };
   }
 }
 
-/**
- * ============================================================================
- * SINGLETON INSTANCE
- * ============================================================================
- */
+const instance =
+  new MTNAuthService();
 
-module.exports = new MTNAuthService();
+instance.startAutoRefresh();
+
+module.exports = instance;
+module.exports.MTNAuthService =
+  MTNAuthService;

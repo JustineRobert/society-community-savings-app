@@ -1,13 +1,15 @@
-
 # --- General ---
 node_modules/
 *.log
 *.gz
+*.pid
+*.seed
 .DS_Store
 Thumbs.db
 
 # --- Environment files ---
 .env
+.env.*
 .env.local
 .env.*.local
 community-savings-app-backend/.env
@@ -22,8 +24,6 @@ coverage/
 
 # --- Docker ---
 docker-compose.override.yml
-*.pid
-*.seed
 
 # --- Test reports ---
 test-reports/
@@ -34,67 +34,24 @@ junit.xml
 # --- Backend specific ---
 community-savings-app-backend/nodemon.json
 community-savings-app-backend/package-lock.json
-community-savings-app-backend/node_modules/
 community-savings-app-backend/logs/
 community-savings-app-backend/tmp/
 
 # --- Frontend specific ---
 community-savings-app-frontend/package-lock.json
-community-savings-app-frontend/node_modules/
 community-savings-app-frontend/logs/
 community-savings-app-frontend/tmp/
 community-savings-app-frontend/public/images/*.png
+
+# --- Project specific ---
+Community Savings App BooK/*.png
 
 # --- OS / IDE ---
 .vscode/
 .idea/
 *.swp
 
-
-
-
-
-# Community Savings App
-Community Savings App BooK/*.png
-
-# Dependencies
-node_modules/
-
-# Logs
-logs/
-*.log
-*.gz
-
-# Environment variables
-.env
-.env.local
-.env.*.local
-
-# Coverage
-coverage/
-
-# Build output
-dist/
-build/
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# Node / npm artifacts
-node
-community-savings-backend@*
-community-savings-app-backend/.env
-
-node_modules/
-.env
-*.env.*
-*.log
-
-
-# Environment
-.env
-*.env
-
-# Dependencies
-node_modules/
+# --- Misc ---
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

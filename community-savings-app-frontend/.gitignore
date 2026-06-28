@@ -1,15 +1,15 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
-
 # --- General ---
 node_modules/
 *.log
 *.gz
+*.pid
+*.seed
 .DS_Store
 Thumbs.db
 
 # --- Environment files ---
 .env
+.env.*
 .env.local
 .env.*.local
 community-savings-app-backend/.env
@@ -24,8 +24,6 @@ coverage/
 
 # --- Docker ---
 docker-compose.override.yml
-*.pid
-*.seed
 
 # --- Test reports ---
 test-reports/
@@ -36,13 +34,11 @@ junit.xml
 # --- Backend specific ---
 community-savings-app-backend/nodemon.json
 community-savings-app-backend/package-lock.json
-community-savings-app-backend/node_modules/
 community-savings-app-backend/logs/
 community-savings-app-backend/tmp/
 
 # --- Frontend specific ---
 community-savings-app-frontend/package-lock.json
-community-savings-app-frontend/node_modules/
 community-savings-app-frontend/logs/
 community-savings-app-frontend/tmp/
 community-savings-app-frontend/public/images/*.png
@@ -52,52 +48,7 @@ community-savings-app-frontend/public/images/*.png
 .idea/
 *.swp
 
-
-
-
-
-
-
-# dependencies
-/node_modules
-/.pnp
-.pnp.js
-
-
-# testing
-/coverage
-
-# production
-/build
-
-# misc
-.DS_Store
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
+# --- Misc ---
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-
-
-# dependencies
-node_modules/
-
-# logs
-logs/
-*.log
-
-# env
-.env
-.env.*
-
-# OS / editor
-.DS_Store
-.vscode/
-
-node_modules/
-.env
-*.env.*
-*.log

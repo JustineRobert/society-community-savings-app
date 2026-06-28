@@ -1,81 +1,121 @@
 // backend/services/mtn/collections.js
-/**
- * ============================================================================
- * MTN MOMO COLLECTIONS SERVICE
- * ============================================================================
- *
- * Responsibilities:
- *  - Deposits
- *  - Savings Contributions
- *  - Loan Repayments
- *  - Request To Pay
- *  - Collection Status Checks
- *  - Idempotency Protection
- *  - Audit Logging
- *  - Retry Handling
- *  - Settlement Integration
- *
- * ============================================================================
- */
 
-const axios = require("axios");
-const crypto = require("crypto");
+'use strict';
 
-const authService = require("./auth");
+const axios = require('axios');
+const https = require('https');
+const crypto = require('crypto');
+const EventEmitter = require('events');
 
-let logger;
-let Transaction;
-let auditService;
-let settlementService;
+const authService = require('./auth');
+
+let logger = console;
+let Transaction = null;
+let auditService = null;
+let settlementService = null;
+let queueService = null;
 
 try {
-  logger = require("../../modules/logger");
-} catch {
-  logger = console;
-}
+  logger = require('../../modules/logger');
+} catch {}
 
 try {
-  Transaction = require("../../models/Transaction");
-} catch {
-  Transaction = null;
-}
+  Transaction =
+    require('../../models/Transaction');
+} catch {}
 
 try {
-  auditService = require("../../modules/auditService");
-} catch {
-  auditService = null;
-}
+  auditService =
+    require('../../modules/auditService');
+} catch {}
 
 try {
-  settlementService = require(
-    "../../modules/mobileMoneySettlementService"
-  );
-} catch {
-  settlementService = null;
-}
+  settlementService =
+    require(
+      '../../modules/mobileMoneySettlementService'
+    );
+} catch {}
 
-class MTNCollectionsService {
-  constructor() {
-    this.baseUrl =
-      process.env.MTN_MOMO_BASE_URL;
+try {
+  queueService =
+    require('../../modules/queueService');
+} catch {}
 
-    this.subscriptionKey =
-      process.env.MTN_MOMO_SUBSCRIPTION_KEY;
+class MTNCollectionsService extends EventEmitter {
+  constructor({
+    cache = null,
+    config = {},
+  } = {}) {
+    super();
 
-    this.currency =
-      process.env.DEFAULT_CURRENCY ||
-      "UGX";
+    this.cache = cache;
 
-    this.timeout = 60000;
+    this.config = {
+      baseUrl:
+        process.env.MTN_MOMO_BASE_URL,
+
+      subscriptionKey:
+        process.env
+          .MTN_MOMO_SUBSCRIPTION_KEY,
+
+      currency:
+        process.env
+          .DEFAULT_CURRENCY ||
+        'UGX',
+
+      timeout:
+        Number(
+          process.env
+            .MTN_MOMO_TIMEOUT
+        ) || 60000,
+
+      retryAttempts:
+        Number(
+          process.env
+            .MTN_MOMO_RETRY_ATTEMPTS
+        ) || 3,
+
+      retryDelay:
+        Number(
+          process.env
+            .MTN_MOMO_RETRY_DELAY
+        ) || 1000,
+
+      statusPollingInterval:
+        5000,
+
+      statusPollingRetries:
+        12,
+
+      ...config,
+    };
+
+    this.http =
+      axios.create({
+        timeout:
+          this.config.timeout,
+        httpsAgent:
+          new https.Agent({
+            keepAlive: true,
+            maxSockets: 100,
+          }),
+      });
+
+    this.metrics = {
+      requests: 0,
+      successful: 0,
+      failed: 0,
+      retries: 0,
+    };
   }
 
-  /**
-   * ==========================================================================
-   * UTILITIES
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Utilities
+   |--------------------------------------------------------------------------
    */
 
-  generateReference() {
+  generateReferenceId() {
     return crypto.randomUUID();
   }
 
@@ -83,22 +123,41 @@ class MTNCollectionsService {
     return crypto.randomUUID();
   }
 
-  async buildHeaders(referenceId) {
+  async buildHeaders(
+    referenceId
+  ) {
     const token =
       await authService.getAccessToken();
 
     return {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      "X-Reference-Id": referenceId,
-      "Ocp-Apim-Subscription-Key":
-        this.subscriptionKey,
+      Authorization:
+        `Bearer ${token}`,
+      'Content-Type':
+        'application/json',
+      'X-Reference-Id':
+        referenceId,
+      'X-Correlation-Id':
+        crypto.randomUUID(),
+      'Ocp-Apim-Subscription-Key':
+        this.config
+          .subscriptionKey,
     };
   }
 
-  async ensureIdempotency(reference) {
-    if (!Transaction || !reference) {
-      return true;
+  /*
+   |--------------------------------------------------------------------------
+   | Idempotency
+   |--------------------------------------------------------------------------
+   */
+
+  async ensureIdempotency(
+    reference
+  ) {
+    if (
+      !Transaction ||
+      !reference
+    ) {
+      return;
     }
 
     const existing =
@@ -108,58 +167,109 @@ class MTNCollectionsService {
 
     if (existing) {
       throw new Error(
-        `Duplicate transaction reference: ${reference}`
+        `Duplicate reference ${reference}`
       );
     }
-
-    return true;
   }
 
-  async recordAudit(action, payload) {
-    try {
-      const entry = {
-        provider: "MTN_MOMO",
-        action,
-        payload,
-        timestamp:
-          new Date().toISOString(),
-      };
+  /*
+   |--------------------------------------------------------------------------
+   | Audit
+   |--------------------------------------------------------------------------
+   */
 
+  async audit(
+    action,
+    payload
+  ) {
+    try {
       if (
         auditService &&
         auditService.record
       ) {
-        await auditService.record(
-          entry
-        );
+        await auditService.record({
+          provider:
+            'MTN_MOMO',
+          action,
+          payload,
+          timestamp:
+            new Date(),
+        });
       }
-
-      logger.info(
-        `[MTN COLLECTIONS] ${action}`,
-        entry
-      );
     } catch (error) {
       logger.error(
-        "Audit logging failed",
+        'MTN audit failed',
         error
       );
     }
   }
 
-  /**
-   * ==========================================================================
-   * CORE REQUEST TO PAY
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | HTTP Retry
+   |--------------------------------------------------------------------------
+   */
+
+  async retry(fn) {
+    let lastError;
+
+    for (
+      let attempt = 1;
+      attempt <=
+      this.config
+        .retryAttempts;
+      attempt++
+    ) {
+      try {
+        return await fn();
+      } catch (error) {
+        lastError = error;
+
+        this.metrics.retries++;
+
+        if (
+          attempt <
+          this.config
+            .retryAttempts
+        ) {
+          const delay =
+            this.config
+              .retryDelay *
+            Math.pow(
+              2,
+              attempt - 1
+            );
+
+          await new Promise(
+            resolve =>
+              setTimeout(
+                resolve,
+                delay
+              )
+          );
+        }
+      }
+    }
+
+    throw lastError;
+  }
+
+  /*
+   |--------------------------------------------------------------------------
+   | Request To Pay
+   |--------------------------------------------------------------------------
    */
 
   async requestToPay({
     amount,
     phoneNumber,
-    currency = this.currency,
+    currency =
+      this.config.currency,
     externalId,
     payerMessage,
     payeeNote,
     reference,
+    tenantId,
     metadata = {},
   }) {
     await this.ensureIdempotency(
@@ -167,7 +277,7 @@ class MTNCollectionsService {
     );
 
     const referenceId =
-      this.generateReference();
+      this.generateReferenceId();
 
     const headers =
       await this.buildHeaders(
@@ -175,144 +285,175 @@ class MTNCollectionsService {
       );
 
     const payload = {
-      amount: String(amount),
+      amount:
+        String(amount),
       currency,
       externalId:
         externalId ||
         reference ||
         this.generateExternalId(),
+
       payer: {
-        partyIdType: "MSISDN",
-        partyId: phoneNumber,
+        partyIdType:
+          'MSISDN',
+        partyId:
+          phoneNumber,
       },
-      payerMessage,
-      payeeNote,
+
+      payerMessage:
+        payerMessage ||
+        'Payment',
+
+      payeeNote:
+        payeeNote ||
+        'Payment',
     };
 
+    this.metrics.requests++;
+
     try {
-      await axios.post(
-        `${this.baseUrl}/collection/v1_0/requesttopay`,
-        payload,
-        {
-          headers,
-          timeout: this.timeout,
-        }
+      await this.retry(() =>
+        this.http.post(
+          `${this.config.baseUrl}/collection/v1_0/requesttopay`,
+          payload,
+          {
+            headers,
+          }
+        )
       );
 
-      await this.recordAudit(
-        "REQUEST_TO_PAY_CREATED",
-        {
+      this.metrics.successful++;
+
+      const transaction = {
+        provider:
+          'MTN_MOMO',
+        tenantId,
+        reference:
           referenceId,
-          payload,
-          metadata,
-        }
+        externalId:
+          payload.externalId,
+        amount,
+        currency,
+        phoneNumber,
+        status:
+          'PENDING',
+        metadata,
+        createdAt:
+          new Date(),
+      };
+
+      if (Transaction) {
+        await Transaction.create(
+          transaction
+        );
+      }
+
+      await this.audit(
+        'REQUEST_TO_PAY_CREATED',
+        transaction
       );
 
-      return {
-        success: true,
-        provider: "MTN_MOMO",
-        reference: referenceId,
-        status: "PENDING",
-        amount,
-        phoneNumber,
-        currency,
-      };
+      this.emit(
+        'request.created',
+        transaction
+      );
+
+      return transaction;
     } catch (error) {
-      await this.recordAudit(
-        "REQUEST_TO_PAY_FAILED",
+      this.metrics.failed++;
+
+      await this.audit(
+        'REQUEST_TO_PAY_FAILED',
         {
-          error:
-            error.response?.data ||
-            error.message,
           payload,
+          error:
+            error.response
+              ?.data ||
+            error.message,
         }
       );
 
       throw new Error(
-        error.response?.data?.message ||
-        error.message
+        error.response
+          ?.data?.message ||
+          error.message
       );
     }
   }
 
-  /**
-   * ==========================================================================
-   * DEPOSITS
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Deposit
+   |--------------------------------------------------------------------------
    */
 
   async deposit(payload) {
     return this.requestToPay({
       ...payload,
       payerMessage:
-        payload.payerMessage ||
-        "Deposit",
+        payload
+          .payerMessage ||
+        'Deposit',
       payeeNote:
         payload.payeeNote ||
-        "Community Capital Deposit",
+        'Account Deposit',
       metadata: {
         transactionType:
-          "DEPOSIT",
+          'DEPOSIT',
       },
     });
   }
 
-  /**
-   * ==========================================================================
-   * SAVINGS CONTRIBUTIONS
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Savings Contribution
+   |--------------------------------------------------------------------------
    */
 
-  async contributeSavings(payload) {
+  async contributeSavings(
+    payload
+  ) {
     const result =
       await this.requestToPay({
         ...payload,
         payerMessage:
-          payload.payerMessage ||
-          "Savings Contribution",
+          'Savings Contribution',
         payeeNote:
-          payload.payeeNote ||
-          "Savings Contribution",
+          'Savings Contribution',
         metadata: {
           transactionType:
-            "SAVINGS_CONTRIBUTION",
+            'SAVINGS_CONTRIBUTION',
           memberId:
             payload.memberId,
-          savingsAccountId:
-            payload.savingsAccountId,
+          accountId:
+            payload
+              .savingsAccountId,
         },
       });
 
     if (
-      settlementService &&
-      settlementService.recordContribution
+      settlementService
+        ?.recordContribution
     ) {
-      try {
-        await settlementService.recordContribution(
-          {
-            amount:
-              payload.amount,
-            memberId:
-              payload.memberId,
-            reference:
-              result.reference,
-          }
-        );
-      } catch (err) {
-        logger.error(
-          "Settlement contribution recording failed",
-          err
-        );
-      }
+      await settlementService.recordContribution(
+        {
+          reference:
+            result.reference,
+          amount:
+            result.amount,
+          memberId:
+            payload.memberId,
+        }
+      );
     }
 
     return result;
   }
 
-  /**
-   * ==========================================================================
-   * LOAN REPAYMENTS
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Loan Repayment
+   |--------------------------------------------------------------------------
    */
 
   async repayLoan(payload) {
@@ -320,14 +461,12 @@ class MTNCollectionsService {
       await this.requestToPay({
         ...payload,
         payerMessage:
-          payload.payerMessage ||
-          "Loan Repayment",
+          'Loan Repayment',
         payeeNote:
-          payload.payeeNote ||
-          "Loan Repayment",
+          'Loan Repayment',
         metadata: {
           transactionType:
-            "LOAN_REPAYMENT",
+            'LOAN_REPAYMENT',
           memberId:
             payload.memberId,
           loanId:
@@ -336,111 +475,177 @@ class MTNCollectionsService {
       });
 
     if (
-      settlementService &&
-      settlementService.recordLoanRepayment
+      settlementService
+        ?.recordLoanRepayment
     ) {
-      try {
-        await settlementService.recordLoanRepayment(
-          {
-            amount:
-              payload.amount,
-            loanId:
-              payload.loanId,
-            memberId:
-              payload.memberId,
-            reference:
-              result.reference,
-          }
-        );
-      } catch (err) {
-        logger.error(
-          "Loan settlement posting failed",
-          err
-        );
-      }
+      await settlementService.recordLoanRepayment(
+        {
+          amount:
+            payload.amount,
+          memberId:
+            payload.memberId,
+          loanId:
+            payload.loanId,
+          reference:
+            result.reference,
+        }
+      );
     }
 
     return result;
   }
 
-  /**
-   * ==========================================================================
-   * TRANSACTION STATUS
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Status
+   |--------------------------------------------------------------------------
    */
 
-  async getStatus(referenceId) {
+  async getStatus(
+    referenceId
+  ) {
     const token =
       await authService.getAccessToken();
 
-    try {
-      const response =
-        await axios.get(
-          `${this.baseUrl}/collection/v1_0/requesttopay/${referenceId}`,
-          {
-            timeout: this.timeout,
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Ocp-Apim-Subscription-Key":
-                this.subscriptionKey,
-            },
-          }
-        );
-
-      return {
-        success: true,
-        provider: "MTN_MOMO",
-        reference: referenceId,
-        data: response.data,
-      };
-    } catch (error) {
-      throw new Error(
-        error.response?.data?.message ||
-        error.message
+    const response =
+      await this.http.get(
+        `${this.config.baseUrl}/collection/v1_0/requesttopay/${referenceId}`,
+        {
+          headers: {
+            Authorization:
+              `Bearer ${token}`,
+            'Ocp-Apim-Subscription-Key':
+              this.config
+                .subscriptionKey,
+          },
+        }
       );
-    }
+
+    return response.data;
   }
 
-  /**
-   * ==========================================================================
-   * RETRY FAILED COLLECTION
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Poll Until Completed
+   |--------------------------------------------------------------------------
    */
 
-  async retry(referenceId) {
-    const status =
-      await this.getStatus(
-        referenceId
-      );
-
-    if (
-      status.data?.status ===
-      "FAILED"
+  async waitForCompletion(
+    referenceId
+  ) {
+    for (
+      let i = 0;
+      i <
+      this.config
+        .statusPollingRetries;
+      i++
     ) {
-      await this.recordAudit(
-        "COLLECTION_RETRY_REQUESTED",
-        { referenceId }
-      );
+      const status =
+        await this.getStatus(
+          referenceId
+        );
 
-      return {
-        success: true,
-        retryQueued: true,
-        referenceId,
-      };
+      if (
+        [
+          'SUCCESSFUL',
+          'FAILED',
+          'REJECTED',
+        ].includes(
+          status.status
+        )
+      ) {
+        return status;
+      }
+
+      await new Promise(
+        resolve =>
+          setTimeout(
+            resolve,
+            this.config
+              .statusPollingInterval
+          )
+      );
     }
 
     return {
-      success: false,
-      retryQueued: false,
-      reason:
-        "Transaction not eligible for retry",
+      status:
+        'TIMEOUT',
     };
   }
 
-  /**
-   * ==========================================================================
-   * HEALTH CHECK
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Webhook Processing
+   |--------------------------------------------------------------------------
+   */
+
+  async processCallback(
+    payload
+  ) {
+    const referenceId =
+      payload.referenceId;
+
+    if (
+      Transaction
+    ) {
+      await Transaction.updateOne(
+        {
+          reference:
+            referenceId,
+        },
+        {
+          $set: {
+            status:
+              payload.status,
+            callback:
+              payload,
+          },
+        }
+      );
+    }
+
+    this.emit(
+      'payment.updated',
+      payload
+    );
+
+    return {
+      success: true,
+    };
+  }
+
+  /*
+   |--------------------------------------------------------------------------
+   | Retry Failed Transaction
+   |--------------------------------------------------------------------------
+   */
+
+  async retryCollection(
+    referenceId
+  ) {
+    if (
+      queueService
+        ?.enqueue
+    ) {
+      await queueService.enqueue(
+        'mtn-collection-retry',
+        {
+          referenceId,
+        }
+      );
+    }
+
+    return {
+      success: true,
+      queued: true,
+      referenceId,
+    };
+  }
+
+  /*
+   |--------------------------------------------------------------------------
+   | Health
+   |--------------------------------------------------------------------------
    */
 
   async healthCheck() {
@@ -448,24 +653,32 @@ class MTNCollectionsService {
       await authService.healthCheck();
 
     return {
-      provider: "MTN_MOMO",
-      service: "COLLECTIONS",
-      healthy: auth.healthy,
+      provider:
+        'MTN_MOMO',
+      service:
+        'COLLECTIONS',
+      healthy:
+        auth.healthy,
+      metrics:
+        this.metrics,
       timestamp:
         new Date().toISOString(),
     };
   }
 
-  /**
-   * ==========================================================================
-   * METRICS
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Metrics
+   |--------------------------------------------------------------------------
    */
 
   getMetrics() {
     return {
-      provider: "MTN_MOMO",
-      service: "COLLECTIONS",
+      provider:
+        'MTN_MOMO',
+      service:
+        'COLLECTIONS',
+      ...this.metrics,
       timestamp:
         new Date().toISOString(),
     };
@@ -474,3 +687,6 @@ class MTNCollectionsService {
 
 module.exports =
   new MTNCollectionsService();
+
+module.exports.MTNCollectionsService =
+  MTNCollectionsService;

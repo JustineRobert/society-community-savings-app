@@ -1,113 +1,166 @@
 // backend/services/airtel/collections.js
-/**
- * ============================================================================
- * AIRTEL MONEY COLLECTIONS SERVICE
- * ============================================================================
- *
- * Responsibilities
- *  - Deposits
- *  - Savings Contributions
- *  - Loan Repayments
- *  - Airtel Collections API Integration
- *  - Idempotency Protection
- *  - Audit Logging
- *  - Settlement Hooks
- *  - Transaction Tracking
- *
- * ============================================================================
- */
 
-const axios = require("axios");
-const crypto = require("crypto");
+'use strict';
 
-const authService = require("./auth");
+const axios = require('axios');
+const crypto = require('crypto');
+const https = require('https');
+const EventEmitter = require('events');
 
-let logger;
-let Transaction;
-let auditService;
-let settlementService;
+const authService = require('./auth');
+
+let logger = console;
+let Transaction = null;
+let auditService = null;
+let settlementService = null;
+let notificationService = null;
+let fraudDetectionService = null;
+let amlService = null;
+let regulatoryReportingService = null;
+let queueService = null;
 
 try {
-  logger = require("../../modules/logger");
-} catch {
-  logger = console;
-}
+  logger = require('../../modules/logger');
+} catch {}
 
 try {
-  Transaction = require("../../models/Transaction");
-} catch {
-  Transaction = null;
-}
+  Transaction =
+    require('../../models/Transaction');
+} catch {}
 
 try {
-  auditService = require("../../modules/auditService");
-} catch {
-  auditService = null;
-}
+  auditService =
+    require('../../modules/auditService');
+} catch {}
 
 try {
-  settlementService = require("../../modules/mobileMoneySettlementService");
-} catch {
-  settlementService = null;
-}
+  settlementService =
+    require('../../modules/mobileMoneySettlementService');
+} catch {}
 
-class AirtelCollectionsService {
-  constructor() {
-    this.provider = "AIRTEL_MONEY";
+try {
+  notificationService =
+    require('../../modules/notificationService');
+} catch {}
 
-    this.baseUrl =
-      process.env.AIRTEL_MONEY_BASE_URL ||
-      "https://openapiuat.airtel.africa";
+try {
+  fraudDetectionService =
+    require('../../modules/fraudDetectionService');
+} catch {}
 
-    this.country =
-      process.env.AIRTEL_COUNTRY ||
-      process.env.DEFAULT_COUNTRY ||
-      "UG";
+try {
+  amlService =
+    require('../../modules/amlService');
+} catch {}
 
-    this.currency =
-      process.env.DEFAULT_CURRENCY ||
-      "UGX";
+try {
+  regulatoryReportingService =
+    require('../../modules/regulatoryReportingService');
+} catch {}
 
-    this.timeout = Number(
-      process.env.AIRTEL_TIMEOUT || 30000
-    );
+try {
+  queueService =
+    require('../../modules/queueService');
+} catch {}
 
-    this.maxRetries = Number(
-      process.env.AIRTEL_MAX_RETRIES || 3
-    );
+class AirtelCollectionsService extends EventEmitter {
+  constructor(config = {}) {
+    super();
+
+    this.provider =
+      'AIRTEL_MONEY';
+
+    this.config = {
+      baseUrl:
+        process.env
+          .AIRTEL_MONEY_BASE_URL ||
+        'https://openapi.airtel.africa',
+
+      country:
+        process.env
+          .AIRTEL_COUNTRY ||
+        process.env
+          .DEFAULT_COUNTRY ||
+        'UG',
+
+      currency:
+        process.env
+          .DEFAULT_CURRENCY ||
+        'UGX',
+
+      timeout:
+        Number(
+          process.env
+            .AIRTEL_TIMEOUT
+        ) || 30000,
+
+      maxRetries:
+        Number(
+          process.env
+            .AIRTEL_MAX_RETRIES
+        ) || 3,
+
+      retryDelay:
+        Number(
+          process.env
+            .AIRTEL_RETRY_DELAY
+        ) || 1000,
+
+      ...config,
+    };
+
+    this.http =
+      axios.create({
+        timeout:
+          this.config.timeout,
+        httpsAgent:
+          new https.Agent({
+            keepAlive: true,
+            maxSockets: 100,
+          }),
+      });
 
     this.metrics = {
+      initiated: 0,
       deposits: 0,
       savingsContributions: 0,
       loanRepayments: 0,
+      statusQueries: 0,
       failedRequests: 0,
+      settlements: 0,
     };
   }
 
-  /**
-   * ==========================================================================
-   * HELPERS
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Helpers
+   |--------------------------------------------------------------------------
    */
 
   generateReference() {
     return crypto.randomUUID();
   }
 
-  async recordAudit(action, payload = {}) {
+  async audit(
+    action,
+    payload = {}
+  ) {
     try {
       const entry = {
-        provider: this.provider,
+        provider:
+          this.provider,
         action,
         payload,
-        timestamp: new Date(),
+        timestamp:
+          new Date(),
       };
 
       if (
-        auditService &&
-        typeof auditService.record === "function"
+        auditService?.record
       ) {
-        await auditService.record(entry);
+        await auditService.record(
+          entry
+        );
       }
 
       logger.info(
@@ -116,37 +169,15 @@ class AirtelCollectionsService {
       );
     } catch (error) {
       logger.error(
-        "[AIRTEL COLLECTIONS] Audit Error",
+        '[AIRTEL COLLECTIONS] Audit failure',
         error
       );
     }
   }
 
-  async createTransactionRecord(data) {
-    if (!Transaction?.create) {
-      return null;
-    }
-
-    return Transaction.create({
-      provider: this.provider,
-      reference: data.reference,
-      externalReference:
-        data.externalReference,
-      transactionType:
-        data.transactionType,
-      amount: data.amount,
-      currency: data.currency,
-      phoneNumber: data.phoneNumber,
-      status: data.status || "PENDING",
-      providerStatus:
-        data.providerStatus ||
-        "PENDING",
-      metadata:
-        data.metadata || {},
-    });
-  }
-
-  async ensureIdempotency(reference) {
+  async ensureIdempotency(
+    reference
+  ) {
     if (
       !Transaction?.findOne ||
       !reference
@@ -161,37 +192,67 @@ class AirtelCollectionsService {
 
     if (existing) {
       throw new Error(
-        `Duplicate reference detected: ${reference}`
+        `Duplicate transaction reference: ${reference}`
       );
     }
   }
 
-  async executeWithRetry(fn) {
+  async createTransaction(
+    payload
+  ) {
+    if (
+      !Transaction?.create
+    ) {
+      return null;
+    }
+
+    return Transaction.create(
+      payload
+    );
+  }
+
+  async executeWithRetry(
+    fn
+  ) {
     let lastError;
 
     for (
-      let attempt = 1;
-      attempt <= this.maxRetries;
-      attempt++
+      let i = 1;
+      i <=
+      this.config
+        .maxRetries;
+      i++
     ) {
       try {
         return await fn();
       } catch (error) {
         lastError = error;
 
-        logger.error(
-          `[AIRTEL COLLECTIONS] Attempt ${attempt} failed`,
-          error.message
-        );
+        this.metrics
+          .failedRequests++;
 
         if (
-          attempt < this.maxRetries
+          i <
+          this.config
+            .maxRetries
         ) {
+          const delay =
+            this.config
+              .retryDelay *
+              Math.pow(
+                2,
+                i - 1
+              ) +
+            Math.floor(
+              Math.random() *
+                250
+            );
+
           await new Promise(
-            (resolve) =>
+            r =>
               setTimeout(
-                resolve,
-                1000 * attempt
+                r,
+                delay
               )
           );
         }
@@ -201,29 +262,59 @@ class AirtelCollectionsService {
     throw lastError;
   }
 
-  async buildHeaders(reference) {
-    const token =
-      await authService.getAccessToken();
-
+  async buildHeaders(
+    reference
+  ) {
     return {
-      Authorization: `Bearer ${token}`,
-      "Content-Type":
-        "application/json",
-      Accept:
-        "application/json",
-      "X-Country":
-        this.country,
-      "X-Currency":
-        this.currency,
-      "X-Reference-Id":
+      ...(await authService.getAuthorizationHeaders()),
+      'X-Reference-Id':
         reference,
+      'X-Country':
+        this.config.country,
+      'X-Currency':
+        this.config.currency,
     };
   }
 
-  /**
-   * ==========================================================================
-   * COLLECTION REQUEST
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Compliance Hooks
+   |--------------------------------------------------------------------------
+   */
+
+  async runComplianceChecks(
+    transaction
+  ) {
+    try {
+      if (
+        fraudDetectionService
+          ?.evaluateTransaction
+      ) {
+        await fraudDetectionService.evaluateTransaction(
+          transaction
+        );
+      }
+
+      if (
+        amlService
+          ?.screenTransaction
+      ) {
+        await amlService.screenTransaction(
+          transaction
+        );
+      }
+    } catch (error) {
+      logger.error(
+        'Compliance checks failed',
+        error
+      );
+    }
+  }
+
+  /*
+   |--------------------------------------------------------------------------
+   | Collection Request
+   |--------------------------------------------------------------------------
    */
 
   async initiateCollection({
@@ -232,10 +323,14 @@ class AirtelCollectionsService {
     transactionType,
     metadata = {},
     reference,
+    tenantId = null,
   }) {
     reference =
       reference ||
       this.generateReference();
+
+    const correlationId =
+      crypto.randomUUID();
 
     await this.ensureIdempotency(
       reference
@@ -245,9 +340,9 @@ class AirtelCollectionsService {
       reference,
       subscriber: {
         country:
-          this.country,
+          this.config.country,
         currency:
-          this.currency,
+          this.config.currency,
         msisdn:
           phoneNumber,
       },
@@ -258,12 +353,16 @@ class AirtelCollectionsService {
       },
     };
 
-    await this.recordAudit(
-      "COLLECTION_INITIATED",
-      payload
+    await this.audit(
+      'COLLECTION_INITIATED',
+      {
+        reference,
+        transactionType,
+        amount,
+      }
     );
 
-    const result =
+    const providerResponse =
       await this.executeWithRetry(
         async () => {
           const headers =
@@ -271,14 +370,16 @@ class AirtelCollectionsService {
               reference
             );
 
+          headers[
+            'X-Correlation-ID'
+          ] = correlationId;
+
           const response =
-            await axios.post(
-              `${this.baseUrl}/merchant/v1/payments/`,
+            await this.http.post(
+              `${this.config.baseUrl}/merchant/v1/payments`,
               payload,
               {
                 headers,
-                timeout:
-                  this.timeout,
               }
             );
 
@@ -286,21 +387,54 @@ class AirtelCollectionsService {
         }
       );
 
-    await this.createTransactionRecord(
-      {
-        reference,
-        transactionType,
-        amount,
-        currency:
-          this.currency,
-        phoneNumber,
-        status:
-          "PENDING",
-        providerStatus:
-          result?.status ||
-          "PENDING",
-        metadata,
-      }
+    const transaction =
+      await this.createTransaction(
+        {
+          tenantId,
+          provider:
+            this.provider,
+          reference,
+          transactionType,
+          amount,
+          currency:
+            this.config
+              .currency,
+          phoneNumber,
+          status:
+            'PENDING',
+          providerStatus:
+            providerResponse
+              ?.status ||
+            'PENDING',
+          metadata,
+          correlationId,
+        }
+      );
+
+    await this.runComplianceChecks(
+      transaction
+    );
+
+    if (
+      queueService
+        ?.enqueue
+    ) {
+      await queueService.enqueue(
+        'airtel-collection',
+        {
+          reference,
+          transactionId:
+            transaction?._id,
+        }
+      );
+    }
+
+    this.metrics
+      .initiated++;
+
+    this.emit(
+      'collection.initiated',
+      transaction
     );
 
     return {
@@ -311,37 +445,44 @@ class AirtelCollectionsService {
       transactionType,
       amount,
       currency:
-        this.currency,
+        this.config
+          .currency,
       status:
-        result?.status ||
-        "PENDING",
-      providerResponse:
-        result,
+        providerResponse
+          ?.status ||
+        'PENDING',
+      providerResponse,
+      correlationId,
       createdAt:
         new Date().toISOString(),
     };
   }
 
-  /**
-   * ==========================================================================
-   * DEPOSIT
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Deposit
+   |--------------------------------------------------------------------------
    */
 
-  async deposit(payload = {}) {
-    this.metrics.deposits++;
+  async deposit(
+    payload = {}
+  ) {
+    this.metrics
+      .deposits++;
 
-    return this.initiateCollection({
-      ...payload,
-      transactionType:
-        "DEPOSIT",
-    });
+    return this.initiateCollection(
+      {
+        ...payload,
+        transactionType:
+          'DEPOSIT',
+      }
+    );
   }
 
-  /**
-   * ==========================================================================
-   * SAVINGS CONTRIBUTION
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Savings Contribution
+   |--------------------------------------------------------------------------
    */
 
   async contributeSavings(
@@ -350,50 +491,58 @@ class AirtelCollectionsService {
     this.metrics
       .savingsContributions++;
 
-    return this.initiateCollection({
-      ...payload,
-      transactionType:
-        "SAVINGS_CONTRIBUTION",
-    });
+    return this.initiateCollection(
+      {
+        ...payload,
+        transactionType:
+          'SAVINGS_CONTRIBUTION',
+      }
+    );
   }
 
-  /**
-   * ==========================================================================
-   * LOAN REPAYMENT
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Loan Repayment
+   |--------------------------------------------------------------------------
    */
 
   async repayLoan(
     payload = {}
   ) {
-    this.metrics.loanRepayments++;
+    this.metrics
+      .loanRepayments++;
 
-    return this.initiateCollection({
-      ...payload,
-      transactionType:
-        "LOAN_REPAYMENT",
-    });
+    return this.initiateCollection(
+      {
+        ...payload,
+        transactionType:
+          'LOAN_REPAYMENT',
+      }
+    );
   }
 
-  /**
-   * ==========================================================================
-   * STATUS QUERY
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Status Query
+   |--------------------------------------------------------------------------
    */
 
-  async getStatus(reference) {
+  async getStatus(
+    reference
+  ) {
+    this.metrics
+      .statusQueries++;
+
     const headers =
       await this.buildHeaders(
         reference
       );
 
     const response =
-      await axios.get(
-        `${this.baseUrl}/standard/v1/payments/${reference}`,
+      await this.http.get(
+        `${this.config.baseUrl}/standard/v1/payments/${reference}`,
         {
           headers,
-          timeout:
-            this.timeout,
         }
       );
 
@@ -404,17 +553,18 @@ class AirtelCollectionsService {
       reference,
       status:
         response.data?.data
-          ?.transaction?.status ||
-        "UNKNOWN",
+          ?.transaction
+          ?.status ||
+        'UNKNOWN',
       providerResponse:
         response.data,
     };
   }
 
-  /**
-   * ==========================================================================
-   * SETTLEMENT
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Settlement Hook
+   |--------------------------------------------------------------------------
    */
 
   async postSettlement(
@@ -422,52 +572,78 @@ class AirtelCollectionsService {
   ) {
     try {
       if (
-        settlementService &&
-        typeof settlementService.processTransaction ===
-          "function"
+        settlementService
+          ?.processTransaction
       ) {
         await settlementService.processTransaction(
           transaction
         );
+
+        this.metrics
+          .settlements++;
       }
     } catch (error) {
       logger.error(
-        "[AIRTEL COLLECTIONS] Settlement Error",
+        '[AIRTEL COLLECTIONS] Settlement failed',
         error
       );
     }
   }
 
-  /**
-   * ==========================================================================
-   * HEALTH
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Notifications
+   |--------------------------------------------------------------------------
+   */
+
+  async notify(
+    payload
+  ) {
+    try {
+      if (
+        notificationService
+          ?.send
+      ) {
+        await notificationService.send(
+          payload
+        );
+      }
+    } catch (error) {
+      logger.error(
+        'Notification failure',
+        error
+      );
+    }
+  }
+
+  /*
+   |--------------------------------------------------------------------------
+   | Health
+   |--------------------------------------------------------------------------
    */
 
   healthCheck() {
     return {
-      service:
-        "AIRTEL_COLLECTIONS",
       provider:
         this.provider,
+      service:
+        'COLLECTIONS',
       healthy: true,
+      metrics:
+        this.metrics,
       timestamp:
         new Date().toISOString(),
     };
   }
 
-  /**
-   * ==========================================================================
-   * METRICS
-   * ==========================================================================
-   */
-
   getMetrics() {
     return {
-      ...this.metrics,
       provider:
         this.provider,
-      generatedAt:
+      service:
+        'COLLECTIONS',
+      ...this.metrics,
+      timestamp:
         new Date().toISOString(),
     };
   }
@@ -475,3 +651,6 @@ class AirtelCollectionsService {
 
 module.exports =
   new AirtelCollectionsService();
+
+module.exports.AirtelCollectionsService =
+  AirtelCollectionsService;

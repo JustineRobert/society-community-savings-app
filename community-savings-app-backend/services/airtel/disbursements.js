@@ -1,116 +1,172 @@
 // backend/services/airtel/disbursements.js
-/**
- * ============================================================================
- * AIRTEL MONEY DISBURSEMENTS SERVICE
- * ============================================================================
- *
- * Responsibilities
- *  - Withdrawals
- *  - Loan Disbursements
- *  - Member Payouts
- *  - Bulk Transfers
- *  - Airtel Money Transfers API
- *  - Audit Logging
- *  - Settlement Hooks
- *  - Transaction Status Tracking
- *  - Retry Management
- *  - Idempotency Protection
- *
- * ============================================================================
- */
 
-const axios = require("axios");
-const crypto = require("crypto");
+'use strict';
 
-const authService = require("./auth");
+const axios = require('axios');
+const crypto = require('crypto');
+const https = require('https');
+const EventEmitter = require('events');
 
-let logger;
-let Transaction;
-let auditService;
-let settlementService;
+const authService = require('./auth');
+
+let logger = console;
+let Transaction = null;
+let auditService = null;
+let settlementService = null;
+let fraudDetectionService = null;
+let amlService = null;
+let notificationService = null;
+let regulatoryReportingService = null;
+let queueService = null;
 
 try {
-  logger = require("../../modules/logger");
-} catch {
-  logger = console;
-}
+  logger = require('../../modules/logger');
+} catch {}
 
 try {
-  Transaction = require("../../models/Transaction");
-} catch {
-  Transaction = null;
-}
+  Transaction =
+    require('../../models/Transaction');
+} catch {}
 
 try {
-  auditService = require("../../modules/auditService");
-} catch {
-  auditService = null;
-}
+  auditService =
+    require('../../modules/auditService');
+} catch {}
 
 try {
-  settlementService = require("../../modules/mobileMoneySettlementService");
-} catch {
-  settlementService = null;
-}
+  settlementService =
+    require('../../modules/mobileMoneySettlementService');
+} catch {}
 
-class AirtelDisbursementService {
-  constructor() {
-    this.provider = "AIRTEL_MONEY";
+try {
+  fraudDetectionService =
+    require('../../modules/fraudDetectionService');
+} catch {}
 
-    this.baseUrl =
-      process.env.AIRTEL_MONEY_BASE_URL ||
-      "https://openapiuat.airtel.africa";
+try {
+  amlService =
+    require('../../modules/amlService');
+} catch {}
 
-    this.country =
-      process.env.AIRTEL_COUNTRY ||
-      process.env.DEFAULT_COUNTRY ||
-      "UG";
+try {
+  notificationService =
+    require('../../modules/notificationService');
+} catch {}
 
-    this.currency =
-      process.env.DEFAULT_CURRENCY ||
-      "UGX";
+try {
+  regulatoryReportingService =
+    require('../../modules/regulatoryReportingService');
+} catch {}
 
-    this.timeout = Number(
-      process.env.AIRTEL_TIMEOUT || 30000
-    );
+try {
+  queueService =
+    require('../../modules/queueService');
+} catch {}
 
-    this.maxRetries = Number(
-      process.env.AIRTEL_MAX_RETRIES || 3
-    );
+class AirtelDisbursementService extends EventEmitter {
+  constructor(config = {}) {
+    super();
+
+    this.provider =
+      'AIRTEL_MONEY';
+
+    this.config = {
+      baseUrl:
+        process.env
+          .AIRTEL_MONEY_BASE_URL ||
+        'https://openapi.airtel.africa',
+
+      country:
+        process.env
+          .AIRTEL_COUNTRY ||
+        process.env
+          .DEFAULT_COUNTRY ||
+        'UG',
+
+      currency:
+        process.env
+          .DEFAULT_CURRENCY ||
+        'UGX',
+
+      timeout:
+        Number(
+          process.env
+            .AIRTEL_TIMEOUT
+        ) || 30000,
+
+      maxRetries:
+        Number(
+          process.env
+            .AIRTEL_MAX_RETRIES
+        ) || 3,
+
+      retryDelay:
+        Number(
+          process.env
+            .AIRTEL_RETRY_DELAY
+        ) || 1000,
+
+      bulkConcurrency:
+        Number(
+          process.env
+            .AIRTEL_BULK_CONCURRENCY
+        ) || 10,
+
+      ...config,
+    };
+
+    this.http =
+      axios.create({
+        timeout:
+          this.config.timeout,
+        httpsAgent:
+          new https.Agent({
+            keepAlive: true,
+            maxSockets: 100,
+          }),
+      });
 
     this.metrics = {
       withdrawals: 0,
       loanDisbursements: 0,
       bulkTransfers: 0,
-      failedRequests: 0,
       successfulRequests: 0,
+      failedRequests: 0,
+      settlements: 0,
+      statusQueries: 0,
     };
   }
 
-  /**
-   * ==========================================================================
-   * HELPERS
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Helpers
+   |--------------------------------------------------------------------------
    */
 
   generateReference() {
     return crypto.randomUUID();
   }
 
-  async recordAudit(action, payload = {}) {
+  async audit(
+    action,
+    payload = {}
+  ) {
     try {
-      const auditPayload = {
-        provider: this.provider,
+      const entry = {
+        provider:
+          this.provider,
         action,
         payload,
-        timestamp: new Date(),
+        timestamp:
+          new Date(),
       };
 
       if (
-        auditService &&
-        typeof auditService.record === "function"
+        auditService?.record
       ) {
-        await auditService.record(auditPayload);
+        await auditService.record(
+          entry
+        );
       }
 
       logger.info(
@@ -119,14 +175,18 @@ class AirtelDisbursementService {
       );
     } catch (error) {
       logger.error(
-        "[AIRTEL DISBURSEMENTS] Audit Error",
+        '[AIRTEL DISBURSEMENTS] Audit failure',
         error
       );
     }
   }
 
-  async ensureIdempotency(reference) {
-    if (!Transaction?.findOne) {
+  async ensureIdempotency(
+    reference
+  ) {
+    if (
+      !Transaction?.findOne
+    ) {
       return;
     }
 
@@ -137,17 +197,35 @@ class AirtelDisbursementService {
 
     if (existing) {
       throw new Error(
-        `Duplicate transaction reference: ${reference}`
+        `Duplicate reference: ${reference}`
       );
     }
   }
 
-  async executeWithRetry(fn) {
+  async createTransaction(
+    payload
+  ) {
+    if (
+      !Transaction?.create
+    ) {
+      return null;
+    }
+
+    return Transaction.create(
+      payload
+    );
+  }
+
+  async executeWithRetry(
+    fn
+  ) {
     let lastError;
 
     for (
       let attempt = 1;
-      attempt <= this.maxRetries;
+      attempt <=
+      this.config
+        .maxRetries;
       attempt++
     ) {
       try {
@@ -155,14 +233,32 @@ class AirtelDisbursementService {
       } catch (error) {
         lastError = error;
 
-        logger.error(
-          `[AIRTEL DISBURSEMENTS] Retry ${attempt}/${this.maxRetries}`,
-          error.message
-        );
+        this.metrics
+          .failedRequests++;
 
-        if (attempt < this.maxRetries) {
-          await new Promise((resolve) =>
-            setTimeout(resolve, attempt * 1000)
+        if (
+          attempt <
+          this.config
+            .maxRetries
+        ) {
+          const delay =
+            this.config
+              .retryDelay *
+              Math.pow(
+                2,
+                attempt - 1
+              ) +
+            Math.floor(
+              Math.random() *
+                500
+            );
+
+          await new Promise(
+            resolve =>
+              setTimeout(
+                resolve,
+                delay
+              )
           );
         }
       }
@@ -171,46 +267,59 @@ class AirtelDisbursementService {
     throw lastError;
   }
 
-  async buildHeaders(reference) {
-    const token =
-      await authService.getAccessToken();
-
+  async buildHeaders(
+    reference
+  ) {
     return {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      "X-Country": this.country,
-      "X-Currency": this.currency,
-      "X-Reference-Id": reference,
+      ...(await authService.getAuthorizationHeaders()),
+      'X-Reference-Id':
+        reference,
+      'X-Country':
+        this.config.country,
+      'X-Currency':
+        this.config.currency,
     };
   }
 
-  async createTransactionRecord(data) {
-    if (!Transaction?.create) {
-      return null;
-    }
+  /*
+   |--------------------------------------------------------------------------
+   | Compliance
+   |--------------------------------------------------------------------------
+   */
 
-    return Transaction.create({
-      provider: this.provider,
-      transactionType:
-        data.transactionType,
-      reference: data.reference,
-      externalReference:
-        data.externalReference,
-      amount: data.amount,
-      currency: data.currency,
-      phoneNumber: data.phoneNumber,
-      status: data.status || "PENDING",
-      providerStatus:
-        data.providerStatus || "PENDING",
-      metadata: data.metadata || {},
-    });
+  async runComplianceChecks(
+    transaction
+  ) {
+    try {
+      if (
+        fraudDetectionService
+          ?.evaluateTransaction
+      ) {
+        await fraudDetectionService.evaluateTransaction(
+          transaction
+        );
+      }
+
+      if (
+        amlService
+          ?.screenTransaction
+      ) {
+        await amlService.screenTransaction(
+          transaction
+        );
+      }
+    } catch (error) {
+      logger.error(
+        'Compliance checks failed',
+        error
+      );
+    }
   }
 
-  /**
-   * ==========================================================================
-   * CORE DISBURSEMENT
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Core Transfer
+   |--------------------------------------------------------------------------
    */
 
   async initiateTransfer({
@@ -219,10 +328,14 @@ class AirtelDisbursementService {
     transactionType,
     metadata = {},
     reference,
+    tenantId = null,
   }) {
     reference =
       reference ||
       this.generateReference();
+
+    const correlationId =
+      crypto.randomUUID();
 
     await this.ensureIdempotency(
       reference
@@ -231,22 +344,30 @@ class AirtelDisbursementService {
     const payload = {
       reference,
       payee: {
-        msisdn: phoneNumber,
-        country: this.country,
-        currency: this.currency,
+        msisdn:
+          phoneNumber,
+        country:
+          this.config.country,
+        currency:
+          this.config.currency,
       },
       transaction: {
-        amount: String(amount),
+        amount:
+          String(amount),
         id: reference,
       },
     };
 
-    await this.recordAudit(
-      "DISBURSEMENT_INITIATED",
-      payload
+    await this.audit(
+      'DISBURSEMENT_INITIATED',
+      {
+        reference,
+        amount,
+        transactionType,
+      }
     );
 
-    const result =
+    const providerResponse =
       await this.executeWithRetry(
         async () => {
           const headers =
@@ -254,14 +375,16 @@ class AirtelDisbursementService {
               reference
             );
 
+          headers[
+            'X-Correlation-ID'
+          ] = correlationId;
+
           const response =
-            await axios.post(
-              `${this.baseUrl}/merchant/v1/payments/`,
+            await this.http.post(
+              `${this.config.baseUrl}/merchant/v1/payments`,
               payload,
               {
                 headers,
-                timeout:
-                  this.timeout,
               }
             );
 
@@ -269,106 +392,207 @@ class AirtelDisbursementService {
         }
       );
 
-    await this.createTransactionRecord({
-      transactionType,
-      reference,
-      amount,
-      currency: this.currency,
-      phoneNumber,
-      providerStatus:
-        result?.status ||
-        "PENDING",
-      metadata,
-    });
+    const transaction =
+      await this.createTransaction(
+        {
+          tenantId,
+          provider:
+            this.provider,
+          transactionType,
+          reference,
+          amount,
+          currency:
+            this.config
+              .currency,
+          phoneNumber,
+          status:
+            'PENDING',
+          providerStatus:
+            providerResponse
+              ?.status ||
+            'PENDING',
+          metadata,
+          correlationId,
+        }
+      );
 
-    this.metrics.successfulRequests++;
+    await this.runComplianceChecks(
+      transaction
+    );
+
+    if (
+      queueService
+        ?.enqueue
+    ) {
+      await queueService.enqueue(
+        'airtel-disbursement',
+        {
+          reference,
+          transactionId:
+            transaction?._id,
+        }
+      );
+    }
+
+    if (
+      notificationService
+        ?.send
+    ) {
+      await notificationService.send(
+        {
+          type:
+            'DISBURSEMENT_INITIATED',
+          transactionId:
+            transaction?._id,
+          reference,
+        }
+      );
+    }
+
+    if (
+      regulatoryReportingService
+        ?.recordTransaction
+    ) {
+      await regulatoryReportingService.recordTransaction(
+        transaction
+      );
+    }
+
+    this.metrics
+      .successfulRequests++;
+
+    this.emit(
+      'disbursement.initiated',
+      transaction
+    );
 
     return {
       success: true,
-      provider: this.provider,
+      provider:
+        this.provider,
       reference,
       transactionType,
       amount,
-      currency: this.currency,
+      currency:
+        this.config
+          .currency,
       status:
-        result?.status ||
-        "PENDING",
-      providerResponse: result,
+        providerResponse
+          ?.status ||
+        'PENDING',
+      providerResponse,
+      correlationId,
       createdAt:
         new Date().toISOString(),
     };
   }
 
-  /**
-   * ==========================================================================
-   * WITHDRAWAL
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Withdrawals
+   |--------------------------------------------------------------------------
    */
 
-  async withdraw(payload = {}) {
-    this.metrics.withdrawals++;
+  async withdraw(
+    payload = {}
+  ) {
+    this.metrics
+      .withdrawals++;
 
-    return this.initiateTransfer({
-      ...payload,
-      transactionType:
-        "WITHDRAWAL",
-    });
+    return this.initiateTransfer(
+      {
+        ...payload,
+        transactionType:
+          'WITHDRAWAL',
+      }
+    );
   }
 
-  /**
-   * ==========================================================================
-   * LOAN DISBURSEMENT
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Loan Disbursement
+   |--------------------------------------------------------------------------
    */
 
-  async disburseLoan(payload = {}) {
-    this.metrics.loanDisbursements++;
+  async disburseLoan(
+    payload = {}
+  ) {
+    this.metrics
+      .loanDisbursements++;
 
-    return this.initiateTransfer({
-      ...payload,
-      transactionType:
-        "LOAN_DISBURSEMENT",
-    });
+    return this.initiateTransfer(
+      {
+        ...payload,
+        transactionType:
+          'LOAN_DISBURSEMENT',
+      }
+    );
   }
 
-  /**
-   * ==========================================================================
-   * GENERIC DISBURSE
-   * ==========================================================================
-   */
-
-  async disburse(payload = {}) {
-    return this.disburseLoan(payload);
+  async disburse(
+    payload = {}
+  ) {
+    return this.disburseLoan(
+      payload
+    );
   }
 
-  /**
-   * ==========================================================================
-   * BULK TRANSFERS
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Bulk Disbursement
+   |--------------------------------------------------------------------------
    */
 
   async bulkTransfer(
     transactions = []
   ) {
-    this.metrics.bulkTransfers++;
+    this.metrics
+      .bulkTransfers++;
 
-    const results =
-      await Promise.allSettled(
-        transactions.map((tx) =>
-          this.disburse(tx)
-        )
+    const results = [];
+
+    for (
+      let i = 0;
+      i < transactions.length;
+      i +=
+      this.config
+        .bulkConcurrency
+    ) {
+      const batch =
+        transactions.slice(
+          i,
+          i +
+            this.config
+              .bulkConcurrency
+        );
+
+      const batchResults =
+        await Promise.allSettled(
+          batch.map(tx =>
+            this.disburse(
+              tx
+            )
+          )
+        );
+
+      results.push(
+        ...batchResults
       );
+    }
 
     const successful =
       results.filter(
-        (r) => r.status === "fulfilled"
+        r =>
+          r.status ===
+          'fulfilled'
       ).length;
 
     const failed =
-      results.length - successful;
+      results.length -
+      successful;
 
-    await this.recordAudit(
-      "BULK_TRANSFER_COMPLETED",
+    await this.audit(
+      'BULK_TRANSFER_COMPLETED',
       {
         total:
           transactions.length,
@@ -379,7 +603,8 @@ class AirtelDisbursementService {
 
     return {
       success: true,
-      provider: this.provider,
+      provider:
+        this.provider,
       total:
         transactions.length,
       successful,
@@ -390,33 +615,41 @@ class AirtelDisbursementService {
     };
   }
 
-  /**
-   * ==========================================================================
-   * STATUS QUERY
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Status Query
+   |--------------------------------------------------------------------------
    */
 
-  async getStatus(reference) {
+  async getStatus(
+    reference
+  ) {
+    this.metrics
+      .statusQueries++;
+
     const headers =
-      await this.buildHeaders(reference);
+      await this.buildHeaders(
+        reference
+      );
 
     const response =
-      await axios.get(
-        `${this.baseUrl}/standard/v1/payments/${reference}`,
+      await this.http.get(
+        `${this.config.baseUrl}/standard/v1/payments/${reference}`,
         {
           headers,
-          timeout: this.timeout,
         }
       );
 
     return {
       success: true,
-      provider: this.provider,
+      provider:
+        this.provider,
       reference,
       status:
         response.data?.data
-          ?.transaction?.status ||
-        "UNKNOWN",
+          ?.transaction
+          ?.status ||
+        'UNKNOWN',
       providerResponse:
         response.data,
       checkedAt:
@@ -424,61 +657,63 @@ class AirtelDisbursementService {
     };
   }
 
-  /**
-   * ==========================================================================
-   * SETTLEMENT
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Settlement
+   |--------------------------------------------------------------------------
    */
 
-  async postSettlement(transaction) {
+  async postSettlement(
+    transaction
+  ) {
     try {
       if (
-        settlementService &&
-        typeof settlementService.processTransaction ===
-          "function"
+        settlementService
+          ?.processTransaction
       ) {
         await settlementService.processTransaction(
           transaction
         );
+
+        this.metrics
+          .settlements++;
       }
     } catch (error) {
       logger.error(
-        "[AIRTEL DISBURSEMENTS] Settlement Error",
+        '[AIRTEL DISBURSEMENTS] Settlement failed',
         error
       );
     }
   }
 
-  /**
-   * ==========================================================================
-   * HEALTH
-   * ==========================================================================
+  /*
+   |--------------------------------------------------------------------------
+   | Health
+   |--------------------------------------------------------------------------
    */
 
   healthCheck() {
     return {
-      service:
-        "AIRTEL_DISBURSEMENTS",
       provider:
         this.provider,
+      service:
+        'DISBURSEMENTS',
       healthy: true,
+      metrics:
+        this.metrics,
       timestamp:
         new Date().toISOString(),
     };
   }
 
-  /**
-   * ==========================================================================
-   * METRICS
-   * ==========================================================================
-   */
-
   getMetrics() {
     return {
       provider:
         this.provider,
+      service:
+        'DISBURSEMENTS',
       ...this.metrics,
-      generatedAt:
+      timestamp:
         new Date().toISOString(),
     };
   }
@@ -486,3 +721,6 @@ class AirtelDisbursementService {
 
 module.exports =
   new AirtelDisbursementService();
+
+module.exports.AirtelDisbursementService =
+  AirtelDisbursementService;
