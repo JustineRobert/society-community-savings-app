@@ -1,0 +1,426 @@
+/* ==========================================================================
+   TITech Community Capital
+   Enterprise Group Card Styles
+   File: frontend/src/components/GroupCard.css
+   Production Grade
+   ========================================================================== */
+
+:root {
+  --group-card-bg: #ffffff;
+  --group-card-border: #e2e8f0;
+  --group-card-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+  --group-card-shadow-hover: 0 16px 40px rgba(15, 23, 42, 0.12);
+
+  --group-primary: #2563eb;
+  --group-success: #10b981;
+  --group-danger: #ef4444;
+  --group-warning: #f59e0b;
+  --group-info: #06b6d4;
+
+  --group-text: #0f172a;
+  --group-text-secondary: #64748b;
+  --group-muted: #94a3b8;
+  --group-bg-soft: #f8fafc;
+
+  --group-radius: 20px;
+  --group-transition: all 0.25s ease;
+}
+
+/* ==========================================================================
+   Card Container
+   ========================================================================== */
+
+.group-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--group-card-bg);
+  border: 1px solid var(--group-card-border);
+  border-radius: var(--group-radius);
+  box-shadow: var(--group-card-shadow);
+  padding: 1.5rem;
+  cursor: pointer;
+  transition: var(--group-transition);
+  overflow: hidden;
+}
+
+.group-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--group-card-shadow-hover);
+  border-color: rgba(37, 99, 235, 0.25);
+}
+
+.group-card:focus-within {
+  outline: 2px solid var(--group-primary);
+  outline-offset: 3px;
+}
+
+.group-card.compact {
+  padding: 1rem;
+}
+
+/* ==========================================================================
+   Decorative Accent
+   ========================================================================== */
+
+.group-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 5px;
+  background: linear-gradient(
+    180deg,
+    var(--group-primary),
+    #60a5fa
+  );
+}
+
+/* ==========================================================================
+   Header
+   ========================================================================== */
+
+.group-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.group-card-title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--group-text);
+  line-height: 1.3;
+}
+
+.group-card-description {
+  margin-top: 0.45rem;
+  color: var(--group-text-secondary);
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+
+.group-card-arrow {
+  flex-shrink: 0;
+  color: var(--group-muted);
+  transition: var(--group-transition);
+}
+
+.group-card:hover .group-card-arrow {
+  color: var(--group-primary);
+  transform: translateX(4px);
+}
+
+/* ==========================================================================
+   Badges
+   ========================================================================== */
+
+.group-card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.group-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.group-badge-default {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.group-badge-success {
+  background: rgba(16, 185, 129, 0.12);
+  color: var(--group-success);
+}
+
+.group-badge-danger {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--group-danger);
+}
+
+.group-badge-warning {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--group-warning);
+}
+
+.group-badge-info {
+  background: rgba(6, 182, 212, 0.15);
+  color: var(--group-info);
+}
+
+/* ==========================================================================
+   Metrics
+   ========================================================================== */
+
+.group-card-metrics {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(130px, 1fr)
+  );
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.group-metric {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.95rem;
+  border-radius: 14px;
+  background: var(--group-bg-soft);
+  transition: var(--group-transition);
+}
+
+.group-metric:hover {
+  background: rgba(37, 99, 235, 0.06);
+}
+
+.group-metric svg {
+  color: var(--group-primary);
+  flex-shrink: 0;
+}
+
+.group-metric span {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--group-text-secondary);
+  margin-bottom: 0.2rem;
+}
+
+.group-metric strong {
+  display: block;
+  color: var(--group-text);
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+/* ==========================================================================
+   Details
+   ========================================================================== */
+
+.group-card-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.group-detail {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--group-text-secondary);
+  font-size: 0.9rem;
+}
+
+.group-detail svg {
+  flex-shrink: 0;
+  color: var(--group-primary);
+}
+
+/* ==========================================================================
+   Footer
+   ========================================================================== */
+
+.group-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--group-card-border);
+}
+
+.group-created {
+  font-size: 0.82rem;
+  color: var(--group-muted);
+}
+
+/* ==========================================================================
+   Actions
+   ========================================================================== */
+
+.group-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.group-btn {
+  border: none;
+  border-radius: 12px;
+  padding: 0.65rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--group-transition);
+}
+
+.group-btn.secondary {
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.group-btn.secondary:hover {
+  background: #cbd5e1;
+}
+
+.group-btn.danger {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--group-danger);
+}
+
+.group-btn.danger:hover {
+  background: rgba(239, 68, 68, 0.2);
+}
+
+/* ==========================================================================
+   Loading Skeleton
+   ========================================================================== */
+
+.group-card-skeleton {
+  border-radius: var(--group-radius);
+  background: #fff;
+  padding: 1.5rem;
+  border: 1px solid var(--group-card-border);
+}
+
+.group-skeleton-line {
+  width: 100%;
+  height: 14px;
+  border-radius: 10px;
+  margin-bottom: 0.75rem;
+  background: linear-gradient(
+    90deg,
+    #f1f5f9 25%,
+    #e2e8f0 50%,
+    #f1f5f9 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+}
+
+@keyframes skeleton-loading {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* ==========================================================================
+   Dark Theme Support
+   ========================================================================== */
+
+[data-theme="dark"] .group-card {
+  background: #0f172a;
+  border-color: #1e293b;
+  box-shadow: 0 10px 35px rgba(0, 0, 0, 0.35);
+}
+
+[data-theme="dark"] .group-card-title {
+  color: #f8fafc;
+}
+
+[data-theme="dark"] .group-card-description,
+[data-theme="dark"] .group-detail,
+[data-theme="dark"] .group-created,
+[data-theme="dark"] .group-metric span {
+  color: #94a3b8;
+}
+
+[data-theme="dark"] .group-metric {
+  background: #111827;
+}
+
+[data-theme="dark"] .group-metric strong {
+  color: #f8fafc;
+}
+
+[data-theme="dark"] .group-card-footer {
+  border-top-color: #1e293b;
+}
+
+[data-theme="dark"] .group-btn.secondary {
+  background: #1e293b;
+  color: #e2e8f0;
+}
+
+[data-theme="dark"] .group-btn.secondary:hover {
+  background: #334155;
+}
+
+/* ==========================================================================
+   Responsive Design
+   ========================================================================== */
+
+@media (max-width: 992px) {
+  .group-card-metrics {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .group-card {
+    padding: 1.25rem;
+  }
+
+  .group-card-footer {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .group-actions {
+    width: 100%;
+  }
+
+  .group-btn {
+    flex: 1;
+  }
+}
+
+@media (max-width: 480px) {
+  .group-card {
+    padding: 1rem;
+    border-radius: 16px;
+  }
+
+  .group-card-header {
+    gap: 0.5rem;
+  }
+
+  .group-card-title {
+    font-size: 1rem;
+  }
+
+  .group-card-description {
+    font-size: 0.85rem;
+  }
+
+  .group-metric {
+    padding: 0.8rem;
+  }
+
+  .group-actions {
+    flex-direction: column;
+  }
+
+  .group-btn {
+    width: 100%;
+  }
+}

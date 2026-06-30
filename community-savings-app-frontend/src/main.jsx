@@ -1,46 +1,168 @@
+// frontend/src/main.jsx
 // ============================================================================
-// TITech Community Capital – Main Entry Point
+// TITech Community Capital
 // File: frontend/src/main.jsx
-// Production-grade
+// Production Grade React 18 Entry Point
 // ============================================================================
 
-import React from 'react';
-import { createRoot } from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom';
-import App from './App.jsx';
+import React from "react";
+import ReactDOM from "react-dom/client";
 
-// Suppress noisy WebSocket connection errors from dev tooling by
-// overriding console.error temporarily during initial mount when
-// non-actionable WebSocket errors may be emitted by injected clients.
+import Providers from "./app/providers";
+import AppRoutes from "./routes/AppRoutes";
+
+/*
+|--------------------------------------------------------------------------
+| Optional Global Styles
+|--------------------------------------------------------------------------
+*/
+
+// import "./styles/index.css";
+// import "./styles/tailwind.css";
+
+/*
+|--------------------------------------------------------------------------
+| Development Console Noise Suppression
+|--------------------------------------------------------------------------
+|
+| Some browser extensions, dev tooling, HMR clients,
+| and WebSocket reconnect libraries emit noisy errors
+| that are not actionable during development.
+|
+| We suppress only specific connection failures and
+| restore console.error shortly after boot.
+|
+*/
+
 const originalConsoleError = console.error;
-console.error = (...args) => {
-  try {
-    const first = String(args[0] || '');
-    if (first.includes('WebSocket connection to') && first.includes('failed')) {
-      return; // swallow non-actionable dev-tooling errors
-    }
-  } catch (_) {
-    // ignore parsing errors
-  }
-  originalConsoleError.apply(console, args);
-};
 
-const container = document.getElementById('root');
-if (!container) {
-  throw new Error('Root container #root not found in index.html');
+if (import.meta.env.DEV) {
+  console.error = (...args) => {
+    try {
+      const message = String(args?.[0] ?? "");
+
+      const suppressibleErrors = [
+        "WebSocket connection to",
+        "Failed to fetch dynamically imported module",
+        "ResizeObserver loop limit exceeded",
+      ];
+
+      const shouldSuppress =
+        suppressibleErrors.some((error) =>
+          message.includes(error)
+        );
+
+      if (shouldSuppress) {
+        return;
+      }
+    } catch {
+      // Ignore parsing failures
+    }
+
+    originalConsoleError(...args);
+  };
 }
 
-const root = createRoot(container);
+/*
+|--------------------------------------------------------------------------
+| Root Element Validation
+|--------------------------------------------------------------------------
+*/
+
+const container = document.getElementById("root");
+
+if (!container) {
+  throw new Error(
+    "Root container '#root' was not found in index.html."
+  );
+}
+
+/*
+|--------------------------------------------------------------------------
+| Create React Root
+|--------------------------------------------------------------------------
+*/
+
+const root = ReactDOM.createRoot(container);
+
+/*
+|--------------------------------------------------------------------------
+| Render Application
+|--------------------------------------------------------------------------
+*/
 
 root.render(
   <React.StrictMode>
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
+    <Providers>
+      <AppRoutes />
+    </Providers>
   </React.StrictMode>
 );
 
-// Restore console.error after mount to avoid suppressing real errors
-setTimeout(() => {
-  console.error = originalConsoleError;
-}, 3000);
+/*
+|--------------------------------------------------------------------------
+| Restore Console
+|--------------------------------------------------------------------------
+*/
+
+if (import.meta.env.DEV) {
+  setTimeout(() => {
+    console.error = originalConsoleError;
+  }, 3000);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Performance Monitoring
+|--------------------------------------------------------------------------
+|
+| Optional integrations:
+|
+| reportWebVitals(console.log);
+| reportWebVitals(sendToAnalytics);
+|
+*/
+
+// import reportWebVitals from "./reportWebVitals";
+// reportWebVitals();
+
+/*
+|--------------------------------------------------------------------------
+| Application Diagnostics
+|--------------------------------------------------------------------------
+*/
+
+if (import.meta.env.DEV) {
+  window.__APP_INFO__ = {
+    name: "TITech Community Capital",
+    version: import.meta.env.VITE_APP_VERSION || "1.0.0",
+    environment:
+      import.meta.env.MODE || "development",
+    buildTime:
+      import.meta.env.VITE_BUILD_TIME ||
+      new Date().toISOString(),
+  };
+}
+
+/*
+|--------------------------------------------------------------------------
+| Hot Module Replacement
+|--------------------------------------------------------------------------
+*/
+
+if (import.meta.hot) {
+  import.meta.hot.accept();
+}
+
+/*
+|--------------------------------------------------------------------------
+| Future Integrations
+|--------------------------------------------------------------------------
+|
+| Sentry.init({...})
+| Analytics.initialize(...)
+| FeatureFlagProvider.bootstrap(...)
+| ServiceWorker.register(...)
+| WebSocketManager.connect(...)
+|
+*/

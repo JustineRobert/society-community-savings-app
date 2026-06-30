@@ -1,327 +1,880 @@
-/* eslint-disable no-console */
 // ============================================================================
 // TITech Community Capital
 // Enterprise API Client
+// File: frontend/src/services/api.js
 // Production Grade
+// Multi-Tenant | JWT | Retry | Refresh | Observability | Idempotency
 // ============================================================================
 
-import axios from 'axios';
-import { v4 as uuidv4 } from 'uuid';
+import axios from "axios";
+import { v4 as uuidv4 } from "uuid";
 
 // ============================================================================
-// CONFIG
+// Configuration
 // ============================================================================
 
 const API_BASE =
   import.meta.env.VITE_API_URL ||
-  'http://localhost:5000';
+  "http://localhost:5000";
 
-const TOKEN_KEY = 'token';
+const REQUEST_TIMEOUT =
+  Number(
+    import.meta.env
+      .VITE_REQUEST_TIMEOUT
+  ) || 30000;
 
-const MAX_RETRIES = 3;
-const RETRY_DELAY_MS = 1000;
+const MAX_RETRIES =
+  Number(
+    import.meta.env
+      .VITE_API_RETRIES
+  ) || 3;
 
-const IS_DEV = import.meta.env.DEV;
+const RETRY_DELAY =
+  Number(
+    import.meta.env
+      .VITE_API_RETRY_DELAY
+  ) || 1000;
+
+const TOKEN_KEY =
+  import.meta.env
+    .VITE_TOKEN_KEY ||
+  "token";
+
+const REFRESH_TOKEN_KEY =
+  import.meta.env
+    .VITE_REFRESH_TOKEN_KEY ||
+  "refreshToken";
+
+const TENANT_KEY =
+  import.meta.env
+    .VITE_TENANT_KEY ||
+  "tenantId";
+
+const DEVICE_KEY =
+  "deviceId";
+
+const IS_DEV =
+  import.meta.env.DEV;
 
 // ============================================================================
-// AXIOS INSTANCE
+// Storage
+// ============================================================================
+
+const storage = {
+  get(key) {
+    try {
+      return (
+        localStorage.getItem(
+          key
+        ) ||
+        sessionStorage.getItem(
+          key
+        )
+      );
+    } catch {
+      return null;
+    }
+  },
+
+  set(key, value) {
+    try {
+      if (
+        value === undefined ||
+        value === null
+      ) {
+        this.remove(key);
+        return;
+      }
+
+      localStorage.setItem(
+        key,
+        value
+      );
+    } catch {}
+  },
+
+  remove(key) {
+    try {
+      localStorage.removeItem(
+        key
+      );
+      sessionStorage.removeItem(
+        key
+      );
+    } catch {}
+  },
+};
+
+// ============================================================================
+// Token Helpers
+// ============================================================================
+
+export const getToken =
+  () =>
+    storage.get(
+      TOKEN_KEY
+    );
+
+export const setToken =
+  token =>
+    storage.set(
+      TOKEN_KEY,
+      token
+    );
+
+export const clearToken =
+  () =>
+    storage.remove(
+      TOKEN_KEY
+    );
+
+export const getRefreshToken =
+  () =>
+    storage.get(
+      REFRESH_TOKEN_KEY
+    );
+
+export const setRefreshToken =
+  token =>
+    storage.set(
+      REFRESH_TOKEN_KEY,
+      token
+    );
+
+export const clearRefreshToken =
+  () =>
+    storage.remove(
+      REFRESH_TOKEN_KEY
+    );
+
+// ============================================================================
+// Tenant Helpers
+// ============================================================================
+
+export const getTenant =
+  () =>
+    storage.get(
+      TENANT_KEY
+    );
+
+export const setTenant =
+  tenantId => {
+    storage.set(
+      TENANT_KEY,
+      tenantId
+    );
+
+    api.defaults.headers.common[
+      "x-tenant-id"
+    ] = tenantId;
+  };
+
+export const clearTenant =
+  () => {
+    storage.remove(
+      TENANT_KEY
+    );
+
+    delete api.defaults
+      .headers.common[
+      "x-tenant-id"
+    ];
+  };
+
+// ============================================================================
+// Device Helpers
+// ============================================================================
+
+export function getDeviceId() {
+  let deviceId =
+    storage.get(
+      DEVICE_KEY
+    );
+
+  if (!deviceId) {
+    deviceId =
+      crypto.randomUUID();
+
+    storage.set(
+      DEVICE_KEY,
+      deviceId
+    );
+  }
+
+  return deviceId;
+}
+
+// ============================================================================
+// Axios Instance
 // ============================================================================
 
 const api = axios.create({
   baseURL: API_BASE,
-  timeout: 30000,
+  timeout:
+    REQUEST_TIMEOUT,
   withCredentials: true,
   headers: {
-    'Content-Type': 'application/json',
-    Accept: 'application/json',
+    Accept:
+      "application/json",
+    "Content-Type":
+      "application/json",
   },
 });
 
 // ============================================================================
-// TOKEN HELPERS
+// Request Registry
 // ============================================================================
 
-export const getToken = () => {
-  try {
-    return localStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
-  }
-};
+const pendingRequests =
+  new Map();
 
-export const setToken = (token) => {
-  try {
-    if (token) {
-      localStorage.setItem(TOKEN_KEY, token);
-    } else {
-      localStorage.removeItem(TOKEN_KEY);
-    }
-  } catch (err) {
-    console.error('Token storage error', err);
-  }
-};
-
-export const clearToken = () => {
-  try {
-    localStorage.removeItem(TOKEN_KEY);
-  } catch {}
-};
+function requestKey(
+  config
+) {
+  return [
+    config.method,
+    config.url,
+    JSON.stringify(
+      config.params
+    ),
+    JSON.stringify(
+      config.data
+    ),
+  ].join(":");
+}
 
 // ============================================================================
-// TENANT SUPPORT
+// Retry Helpers
 // ============================================================================
 
-export const setTenant = (tenantId) => {
-  if (tenantId) {
-    api.defaults.headers.common['x-tenant-id'] = tenantId;
-  } else {
-    delete api.defaults.headers.common['x-tenant-id'];
-  }
-};
+function sleep(ms) {
+  return new Promise(
+    resolve =>
+      setTimeout(
+        resolve,
+        ms
+      )
+  );
+}
 
-export const clearTenant = () => {
-  delete api.defaults.headers.common['x-tenant-id'];
-};
+function retryDelay(
+  attempt
+) {
+  const jitter =
+    Math.random() * 500;
+
+  return (
+    RETRY_DELAY *
+      Math.pow(
+        2,
+        attempt - 1
+      ) +
+    jitter
+  );
+}
+
+function shouldRetry(
+  status
+) {
+  return (
+    !status ||
+    [
+      408,
+      425,
+      429,
+      500,
+      502,
+      503,
+      504,
+    ].includes(
+      status
+    )
+  );
+}
 
 // ============================================================================
-// REQUEST INTERCEPTOR
+// Refresh Token Management
+// ============================================================================
+
+let isRefreshing =
+  false;
+
+let subscribers =
+  [];
+
+function subscribe(
+  callback
+) {
+  subscribers.push(
+    callback
+  );
+}
+
+function notify(
+  token
+) {
+  subscribers.forEach(
+    cb =>
+      cb(token)
+  );
+
+  subscribers = [];
+}
+
+// ============================================================================
+// Request Interceptor
 // ============================================================================
 
 api.interceptors.request.use(
-  (config) => {
-    const token = getToken();
+  config => {
+    config.metadata = {
+      startedAt:
+        Date.now(),
+    };
+
+    const token =
+      getToken();
+
+    const tenantId =
+      getTenant();
 
     if (token) {
       config.headers.Authorization =
-        config.headers.Authorization ||
         `Bearer ${token}`;
-
-      config.headers['x-auth-token'] =
-        config.headers['x-auth-token'] || token;
     }
 
-    config.headers['Cache-Control'] = 'no-cache';
-    config.headers.Pragma = 'no-cache';
+    if (tenantId) {
+      config.headers[
+        "x-tenant-id"
+      ] = tenantId;
+    }
 
-    const correlationId = uuidv4();
+    config.headers[
+      "x-request-id"
+    ] =
+      config.headers[
+        "x-request-id"
+      ] ||
+      uuidv4();
 
-    config.headers['x-correlation-id'] =
-      config.headers['x-correlation-id'] ||
-      correlationId;
+    config.headers[
+      "x-correlation-id"
+    ] =
+      config.headers[
+        "x-correlation-id"
+      ] ||
+      uuidv4();
 
-    const isFinancialOperation =
-      config.url?.includes('/payments') ||
-      config.url?.includes('/momo') ||
-      config.url?.includes('/transactions') ||
-      config.url?.includes('/loans') ||
-      config.url?.includes('/withdrawals') ||
-      config.url?.includes('/deposits') ||
-      config.url?.includes('/ledger');
+    config.headers[
+      "x-device-id"
+    ] =
+      getDeviceId();
+
+    config.headers[
+      "x-client-version"
+    ] =
+      import.meta.env
+        .VITE_APP_VERSION ||
+      "1.0.0";
+
+    config.headers[
+      "x-client-platform"
+    ] = "web";
+
+    // Financial APIs
+    const financial =
+      [
+        "/transactions",
+        "/payments",
+        "/wallet",
+        "/ledger",
+        "/loans",
+        "/savings",
+        "/momo",
+      ].some(path =>
+        config.url?.includes(
+          path
+        )
+      );
 
     if (
-      isFinancialOperation &&
-      config.method?.toLowerCase() !== 'get'
+      financial &&
+      config.method !==
+        "get"
     ) {
-      config.headers['Idempotency-Key'] =
-        config.headers['Idempotency-Key'] ||
+      config.headers[
+        "Idempotency-Key"
+      ] =
+        config.headers[
+          "Idempotency-Key"
+        ] ||
         uuidv4();
 
-      config.headers['x-transaction-id'] =
-        config.headers['x-transaction-id'] ||
+      config.headers[
+        "x-transaction-id"
+      ] =
+        config.headers[
+          "x-transaction-id"
+        ] ||
         uuidv4();
     }
 
+    // Duplicate request prevention
+    const key =
+      requestKey(
+        config
+      );
+
+    if (
+      pendingRequests.has(
+        key
+      )
+    ) {
+      const controller =
+        new AbortController();
+
+      config.signal =
+        controller.signal;
+
+      controller.abort();
+    }
+
+    pendingRequests.set(
+      key,
+      true
+    );
+
     if (IS_DEV) {
-      console.info('[API REQUEST]', {
-        method: config.method,
-        url: config.url,
-        correlationId,
-        timestamp: new Date().toISOString(),
-      });
+      console.info(
+        "[API REQUEST]",
+        {
+          method:
+            config.method,
+          url:
+            config.url,
+          correlationId:
+            config.headers[
+              "x-correlation-id"
+            ],
+        }
+      );
     }
 
     return config;
   },
-  (error) => Promise.reject(error)
+  error =>
+    Promise.reject(
+      error
+    )
 );
 
 // ============================================================================
-// TOKEN REFRESH MANAGEMENT
-// ============================================================================
-
-let isRefreshing = false;
-let refreshSubscribers = [];
-
-const subscribeTokenRefresh = (callback) => {
-  refreshSubscribers.push(callback);
-};
-
-const notifySubscribers = (token) => {
-  refreshSubscribers.forEach((callback) => callback(token));
-  refreshSubscribers = [];
-};
-
-// ============================================================================
-// RETRY HELPERS
-// ============================================================================
-
-const sleep = (ms) =>
-  new Promise((resolve) =>
-    setTimeout(resolve, ms)
-  );
-
-const shouldRetry = (status) =>
-  !status ||
-  [500, 502, 503, 504].includes(status);
-
-// ============================================================================
-// RESPONSE INTERCEPTOR
+// Response Interceptor
 // ============================================================================
 
 api.interceptors.response.use(
-  (response) => response,
+  response => {
+    const key =
+      requestKey(
+        response.config
+      );
 
-  async (error) => {
-    const originalRequest = error.config;
-    const status = error.response?.status;
-
-    // =========================================================================
-    // NETWORK + SERVER RETRIES
-    // =========================================================================
+    pendingRequests.delete(
+      key
+    );
 
     if (
-      shouldRetry(status) &&
-      (originalRequest._retryCount || 0) <
-        MAX_RETRIES
+      response.config
+        .metadata
     ) {
-      originalRequest._retryCount =
-        (originalRequest._retryCount || 0) + 1;
-
-      const delay =
-        RETRY_DELAY_MS *
-        originalRequest._retryCount;
+      const duration =
+        Date.now() -
+        response.config
+          .metadata
+          .startedAt;
 
       if (IS_DEV) {
-        console.warn(
-          `[API RETRY] Attempt ${originalRequest._retryCount}`
+        console.info(
+          "[API RESPONSE]",
+          {
+            url:
+              response.config
+                .url,
+            duration:
+              `${duration}ms`,
+            status:
+              response.status,
+          }
         );
       }
-
-      await sleep(delay);
-
-      return api(originalRequest);
     }
 
-    // =========================================================================
-    // TOKEN REFRESH
-    // =========================================================================
+    return response;
+  },
+
+  async error => {
+    const request =
+      error.config || {};
+
+    const key =
+      requestKey(
+        request
+      );
+
+    pendingRequests.delete(
+      key
+    );
+
+    const status =
+      error.response
+        ?.status;
+
+    // ==========================================================
+    // Offline
+    // ==========================================================
+
+    if (
+      !navigator.onLine
+    ) {
+      return Promise.reject(
+        {
+          ...error,
+          message:
+            "You are offline.",
+        }
+      );
+    }
+
+    // ==========================================================
+    // Retry
+    // ==========================================================
+
+    if (
+      shouldRetry(
+        status
+      ) &&
+      (request._retryCount ||
+        0) <
+        MAX_RETRIES
+    ) {
+      request._retryCount =
+        (request._retryCount ||
+          0) + 1;
+
+      await sleep(
+        retryDelay(
+          request._retryCount
+        )
+      );
+
+      return api(
+        request
+      );
+    }
+
+    // ==========================================================
+    // Token Refresh
+    // ==========================================================
 
     if (
       status === 401 &&
-      !originalRequest._retryAuth &&
-      !originalRequest.url?.includes('/api/auth/refresh')
+      !request._retry &&
+      !request.url?.includes(
+        "/auth/refresh"
+      )
     ) {
-      if (isRefreshing) {
-        return new Promise((resolve) => {
-          subscribeTokenRefresh((token) => {
-            originalRequest.headers.Authorization =
-              `Bearer ${token}`;
+      if (
+        isRefreshing
+      ) {
+        return new Promise(
+          resolve => {
+            subscribe(
+              token => {
+                request.headers.Authorization =
+                  `Bearer ${token}`;
 
-            resolve(api(originalRequest));
-          });
-        });
+                resolve(
+                  api(
+                    request
+                  )
+                );
+              }
+            );
+          }
+        );
       }
 
-      originalRequest._retryAuth = true;
-      isRefreshing = true;
+      request._retry =
+        true;
+
+      isRefreshing =
+        true;
 
       try {
-        const refreshResponse =
+        const response =
           await axios.post(
             `${API_BASE}/api/auth/refresh`,
-            {},
             {
-              withCredentials: true,
+              refreshToken:
+                getRefreshToken(),
+            },
+            {
+              withCredentials:
+                true,
             }
           );
 
-        const newToken =
-          refreshResponse.data.token ||
-          refreshResponse.data.accessToken;
+        const token =
+          response.data
+            ?.accessToken ||
+          response.data
+            ?.token;
 
-        if (!newToken) {
+        const refresh =
+          response.data
+            ?.refreshToken;
+
+        if (!token) {
           throw new Error(
-            'Refresh endpoint returned no token'
+            "Invalid refresh response."
           );
         }
 
-        setToken(newToken);
+        setToken(token);
+
+        if (refresh) {
+          setRefreshToken(
+            refresh
+          );
+        }
 
         api.defaults.headers.common.Authorization =
-          `Bearer ${newToken}`;
+          `Bearer ${token}`;
 
-        notifySubscribers(newToken);
+        notify(token);
 
-        isRefreshing = false;
+        isRefreshing =
+          false;
 
-        originalRequest.headers.Authorization =
-          `Bearer ${newToken}`;
+        request.headers.Authorization =
+          `Bearer ${token}`;
 
-        return api(originalRequest);
-      } catch (refreshError) {
-        isRefreshing = false;
+        return api(
+          request
+        );
+      } catch (
+        refreshError
+      ) {
+        isRefreshing =
+          false;
 
         clearToken();
+        clearRefreshToken();
+        clearTenant();
 
-        delete api.defaults.headers.common
+        delete api.defaults
+          .headers.common
           .Authorization;
 
         if (
-          window.location.pathname !== '/login'
+          window.location.pathname !==
+          "/login"
         ) {
-          window.location.href = '/login';
+          window.location.assign(
+            "/login"
+          );
         }
 
-        return Promise.reject(refreshError);
+        return Promise.reject(
+          refreshError
+        );
       }
     }
 
-    // =========================================================================
-    // LOGGING
-    // =========================================================================
-
     if (IS_DEV) {
-      console.error('[API ERROR]', {
-        url: originalRequest?.url,
-        method: originalRequest?.method,
-        status,
-        message: error.message,
-        response: error.response?.data,
-      });
+      console.error(
+        "[API ERROR]",
+        {
+          url:
+            request.url,
+          method:
+            request.method,
+          status,
+          message:
+            error.message,
+          data:
+            error.response
+              ?.data,
+        }
+      );
     }
 
-    return Promise.reject(error);
+    return Promise.reject(
+      error
+    );
   }
 );
 
 // ============================================================================
-// AUTH HELPERS
+// Upload Helpers
 // ============================================================================
 
-export const login = (credentials) =>
-  api.post('/api/auth/login', credentials);
+export function uploadFile(
+  url,
+  file,
+  extra = {},
+  config = {}
+) {
+  const form =
+    new FormData();
 
-export const register = (payload) =>
-  api.post('/api/auth/register', payload);
+  form.append(
+    "file",
+    file
+  );
 
-export const logout = () =>
-  api.post('/api/auth/logout');
+  Object.entries(
+    extra
+  ).forEach(
+    ([k, v]) =>
+      form.append(k, v)
+  );
 
-export const refreshToken = () =>
-  api.post('/api/auth/refresh');
+  return api.post(
+    url,
+    form,
+    {
+      ...config,
+      headers: {
+        ...config.headers,
+        "Content-Type":
+          "multipart/form-data",
+      },
+    }
+  );
+}
 
 // ============================================================================
-// EXPORTS
+// Download Helpers
+// ============================================================================
+
+export function downloadFile(
+  url,
+  config = {}
+) {
+  return api.get(url, {
+    ...config,
+    responseType:
+      "blob",
+  });
+}
+
+// ============================================================================
+// Authentication APIs
+// ============================================================================
+
+export const login =
+  payload =>
+    api.post(
+      "/api/auth/login",
+      payload
+    );
+
+export const register =
+  payload =>
+    api.post(
+      "/api/auth/register",
+      payload
+    );
+
+export const logout =
+  () =>
+    api.post(
+      "/api/auth/logout"
+    );
+
+export const refreshToken =
+  () =>
+    api.post(
+      "/api/auth/refresh"
+    );
+
+// ============================================================================
+// Generic HTTP Methods
+// ============================================================================
+
+export const get = (
+  url,
+  config
+) =>
+  api.get(
+    url,
+    config
+  );
+
+export const post = (
+  url,
+  data,
+  config
+) =>
+  api.post(
+    url,
+    data,
+    config
+  );
+
+export const put = (
+  url,
+  data,
+  config
+) =>
+  api.put(
+    url,
+    data,
+    config
+  );
+
+export const patch = (
+  url,
+  data,
+  config
+) =>
+  api.patch(
+    url,
+    data,
+    config
+  );
+
+export const del = (
+  url,
+  config
+) =>
+  api.delete(
+    url,
+    config
+  );
+
+// ============================================================================
+// Diagnostics
+// ============================================================================
+
+export function getApiDiagnostics() {
+  return {
+    apiBase:
+      API_BASE,
+    tenantId:
+      getTenant(),
+    authenticated:
+      !!getToken(),
+    deviceId:
+      getDeviceId(),
+    pendingRequests:
+      pendingRequests.size,
+  };
+}
+
+// ============================================================================
+// Export
 // ============================================================================
 
 export default api;

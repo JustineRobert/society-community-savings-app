@@ -1,0 +1,337 @@
+/* ==========================================================================
+   TITech Community Capital
+   Enterprise KPI Widget
+   File: frontend/src/components/KPIWidget.css
+   Production Grade
+   ========================================================================== */
+
+:root {
+  --kpi-radius: 18px;
+  --kpi-padding: 1.5rem;
+  --kpi-shadow:
+    0 8px 30px rgba(15, 23, 42, 0.08);
+  --kpi-transition: all 0.25s ease;
+}
+
+/* ==========================================================================
+   Base Widget
+   ========================================================================== */
+
+.kpi-widget {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 180px;
+  padding: var(--kpi-padding);
+  background: #ffffff;
+  border-radius: var(--kpi-radius);
+  border: 1px solid #e5e7eb;
+  box-shadow: var(--kpi-shadow);
+  overflow: hidden;
+  transition: var(--kpi-transition);
+}
+
+.kpi-widget:hover {
+  transform: translateY(-3px);
+  box-shadow:
+    0 14px 40px rgba(15, 23, 42, 0.12);
+}
+
+.kpi-widget.clickable {
+  cursor: pointer;
+}
+
+.kpi-widget.clickable:active {
+  transform: scale(0.98);
+}
+
+.kpi-widget::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 6px;
+  height: 100%;
+  border-radius: 6px 0 0 6px;
+  background: #2563eb;
+}
+
+/* ==========================================================================
+   Header
+   ========================================================================== */
+
+.kpi-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.kpi-title {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.kpi-subtitle {
+  margin-top: 0.35rem;
+  color: #94a3b8;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+/* ==========================================================================
+   Icon
+   ========================================================================== */
+
+.kpi-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(37, 99, 235, 0.08);
+  color: #2563eb;
+  flex-shrink: 0;
+}
+
+/* ==========================================================================
+   Value
+   ========================================================================== */
+
+.kpi-body {
+  margin-top: 1.25rem;
+}
+
+.kpi-value {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1.1;
+  color: #0f172a;
+  word-break: break-word;
+}
+
+/* ==========================================================================
+   Footer
+   ========================================================================== */
+
+.kpi-footer {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.kpi-trend {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.kpi-trend.up {
+  background: rgba(16, 185, 129, 0.12);
+  color: #059669;
+}
+
+.kpi-trend.down {
+  background: rgba(239, 68, 68, 0.12);
+  color: #dc2626;
+}
+
+.kpi-trend.flat {
+  background: rgba(148, 163, 184, 0.15);
+  color: #475569;
+}
+
+.kpi-trend-label {
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.kpi-custom-footer {
+  width: 100%;
+}
+
+/* ==========================================================================
+   Skeleton Loading
+   ========================================================================== */
+
+.kpi-skeleton {
+  width: 70%;
+}
+
+.kpi-line {
+  width: 100%;
+  height: 36px;
+  border-radius: 8px;
+  background:
+    linear-gradient(
+      90deg,
+      #f1f5f9 25%,
+      #e2e8f0 50%,
+      #f1f5f9 75%
+    );
+  background-size: 400% 100%;
+  animation:
+    kpiSkeletonPulse 1.5s infinite;
+}
+
+@keyframes kpiSkeletonPulse {
+  0% {
+    background-position: 100% 50%;
+  }
+
+  100% {
+    background-position: 0 50%;
+  }
+}
+
+/* ==========================================================================
+   Color Variants
+   ========================================================================== */
+
+.kpi-widget.primary::before {
+  background: #2563eb;
+}
+
+.kpi-widget.primary .kpi-icon {
+  background: rgba(37, 99, 235, 0.1);
+  color: #2563eb;
+}
+
+.kpi-widget.success::before {
+  background: #10b981;
+}
+
+.kpi-widget.success .kpi-icon {
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+}
+
+.kpi-widget.warning::before {
+  background: #f59e0b;
+}
+
+.kpi-widget.warning .kpi-icon {
+  background: rgba(245, 158, 11, 0.12);
+  color: #f59e0b;
+}
+
+.kpi-widget.danger::before {
+  background: #ef4444;
+}
+
+.kpi-widget.danger .kpi-icon {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+}
+
+.kpi-widget.info::before {
+  background: #06b6d4;
+}
+
+.kpi-widget.info .kpi-icon {
+  background: rgba(6, 182, 212, 0.12);
+  color: #06b6d4;
+}
+
+.kpi-widget.purple::before {
+  background: #8b5cf6;
+}
+
+.kpi-widget.purple .kpi-icon {
+  background: rgba(139, 92, 246, 0.12);
+  color: #8b5cf6;
+}
+
+/* ==========================================================================
+   Dark Mode
+   ========================================================================== */
+
+[data-theme="dark"] .kpi-widget {
+  background: #0f172a;
+  border-color: #1e293b;
+}
+
+[data-theme="dark"] .kpi-title {
+  color: #cbd5e1;
+}
+
+[data-theme="dark"] .kpi-subtitle {
+  color: #94a3b8;
+}
+
+[data-theme="dark"] .kpi-value {
+  color: #f8fafc;
+}
+
+[data-theme="dark"] .kpi-trend-label {
+  color: #94a3b8;
+}
+
+[data-theme="dark"] .kpi-line {
+  background:
+    linear-gradient(
+      90deg,
+      #1e293b 25%,
+      #334155 50%,
+      #1e293b 75%
+    );
+  background-size: 400% 100%;
+}
+
+/* ==========================================================================
+   Mobile
+   ========================================================================== */
+
+@media (max-width: 768px) {
+  .kpi-widget {
+    min-height: 160px;
+    padding: 1.25rem;
+  }
+
+  .kpi-value {
+    font-size: 1.65rem;
+  }
+
+  .kpi-icon {
+    width: 46px;
+    height: 46px;
+  }
+
+  .kpi-footer {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .kpi-widget {
+    min-height: 145px;
+    padding: 1rem;
+  }
+
+  .kpi-value {
+    font-size: 1.4rem;
+  }
+
+  .kpi-title {
+    font-size: 0.8rem;
+  }
+
+  .kpi-subtitle {
+    font-size: 0.75rem;
+  }
+}

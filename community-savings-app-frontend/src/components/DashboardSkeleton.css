@@ -1,0 +1,389 @@
+/* ==========================================================================
+   TITech Community Capital
+   Enterprise Dashboard Skeleton Styles
+   File: frontend/src/components/DashboardSkeleton.css
+   Production Grade
+   ========================================================================== */
+
+:root {
+  --skeleton-bg: #ffffff;
+  --skeleton-card-bg: #ffffff;
+  --skeleton-border: #e2e8f0;
+  --skeleton-line: #e2e8f0;
+  --skeleton-highlight: #f8fafc;
+  --skeleton-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+
+  --skeleton-radius: 20px;
+  --skeleton-gap: 1.5rem;
+  --skeleton-animation: skeleton-shimmer 1.5s ease-in-out infinite;
+}
+
+/* ==========================================================================
+   Main Layout
+   ========================================================================== */
+
+.dashboard-skeleton-container {
+  display: flex;
+  gap: 2rem;
+  width: 100%;
+  min-height: 100vh;
+  padding: 1.5rem;
+  background: #f8fafc;
+}
+
+.dashboard-skeleton-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.dashboard-sidebar-skeleton {
+  width: 280px;
+  min-width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.5rem;
+  border-radius: var(--skeleton-radius);
+  background: var(--skeleton-card-bg);
+  border: 1px solid var(--skeleton-border);
+  box-shadow: var(--skeleton-shadow);
+}
+
+/* ==========================================================================
+   Generic Skeleton Block
+   ========================================================================== */
+
+.dashboard-skeleton-block {
+  position: relative;
+  overflow: hidden;
+  background: var(--skeleton-line);
+  border-radius: 12px;
+}
+
+.dashboard-skeleton-block::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  animation: var(--skeleton-animation);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.65),
+    transparent
+  );
+}
+
+.dashboard-skeleton-circle {
+  border-radius: 50%;
+}
+
+/* ==========================================================================
+   Header
+   ========================================================================== */
+
+.dashboard-header-skeleton {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2rem;
+  padding: 1.75rem;
+  background: var(--skeleton-card-bg);
+  border-radius: var(--skeleton-radius);
+  border: 1px solid var(--skeleton-border);
+  box-shadow: var(--skeleton-shadow);
+}
+
+.dashboard-header-skeleton > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.dashboard-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+/* ==========================================================================
+   Statistics Grid
+   ========================================================================== */
+
+.dashboard-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(240px, 1fr)
+  );
+  gap: var(--skeleton-gap);
+}
+
+.dashboard-stat-skeleton {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 1.5rem;
+  background: var(--skeleton-card-bg);
+  border-radius: var(--skeleton-radius);
+  border: 1px solid var(--skeleton-border);
+  box-shadow: var(--skeleton-shadow);
+}
+
+.dashboard-stat-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+/* ==========================================================================
+   Charts
+   ========================================================================== */
+
+.dashboard-charts-grid {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(380px, 1fr)
+  );
+  gap: var(--skeleton-gap);
+}
+
+.dashboard-chart-skeleton {
+  padding: 1.75rem;
+  background: var(--skeleton-card-bg);
+  border-radius: var(--skeleton-radius);
+  border: 1px solid var(--skeleton-border);
+  box-shadow: var(--skeleton-shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.dashboard-chart-area {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem;
+  height: 260px;
+}
+
+.dashboard-chart-bar {
+  flex: 1;
+  min-width: 24px;
+  background: var(--skeleton-line);
+  border-radius: 12px 12px 0 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.dashboard-chart-bar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  animation: var(--skeleton-animation);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.6),
+    transparent
+  );
+}
+
+/* ==========================================================================
+   Groups
+   ========================================================================== */
+
+.dashboard-groups-grid {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(300px, 1fr)
+  );
+  gap: var(--skeleton-gap);
+}
+
+.dashboard-group-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.5rem;
+  background: var(--skeleton-card-bg);
+  border-radius: var(--skeleton-radius);
+  border: 1px solid var(--skeleton-border);
+  box-shadow: var(--skeleton-shadow);
+}
+
+.dashboard-group-footer {
+  display: flex;
+  justify-content: space-between;
+  margin-top: auto;
+}
+
+/* ==========================================================================
+   Animation
+   ========================================================================== */
+
+@keyframes skeleton-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* ==========================================================================
+   Hover State
+   ========================================================================== */
+
+.dashboard-stat-skeleton,
+.dashboard-chart-skeleton,
+.dashboard-group-skeleton,
+.dashboard-header-skeleton,
+.dashboard-sidebar-skeleton {
+  transition: all 0.25s ease;
+}
+
+.dashboard-stat-skeleton:hover,
+.dashboard-chart-skeleton:hover,
+.dashboard-group-skeleton:hover {
+  transform: translateY(-2px);
+}
+
+/* ==========================================================================
+   Dark Mode
+   ========================================================================== */
+
+[data-theme="dark"] .dashboard-skeleton-container {
+  background: #020617;
+}
+
+[data-theme="dark"] .dashboard-header-skeleton,
+[data-theme="dark"] .dashboard-stat-skeleton,
+[data-theme="dark"] .dashboard-chart-skeleton,
+[data-theme="dark"] .dashboard-group-skeleton,
+[data-theme="dark"] .dashboard-sidebar-skeleton {
+  background: #0f172a;
+  border-color: #1e293b;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+
+[data-theme="dark"] .dashboard-skeleton-block,
+[data-theme="dark"] .dashboard-chart-bar {
+  background: #1e293b;
+}
+
+[data-theme="dark"]
+  .dashboard-skeleton-block::before,
+[data-theme="dark"]
+  .dashboard-chart-bar::before {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.08),
+    transparent
+  );
+}
+
+/* ==========================================================================
+   Tablet
+   ========================================================================== */
+
+@media (max-width: 1024px) {
+  .dashboard-skeleton-container {
+    flex-direction: column;
+  }
+
+  .dashboard-sidebar-skeleton {
+    width: 100%;
+    min-width: auto;
+  }
+
+  .dashboard-charts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ==========================================================================
+   Mobile
+   ========================================================================== */
+
+@media (max-width: 768px) {
+  .dashboard-skeleton-container {
+    padding: 1rem;
+    gap: 1.5rem;
+  }
+
+  .dashboard-header-skeleton {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .dashboard-header-actions {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .dashboard-stats-grid,
+  .dashboard-groups-grid,
+  .dashboard-charts-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-chart-area {
+    height: 220px;
+  }
+
+  .dashboard-group-skeleton,
+  .dashboard-chart-skeleton,
+  .dashboard-stat-skeleton {
+    padding: 1.25rem;
+  }
+}
+
+/* ==========================================================================
+   Small Mobile
+   ========================================================================== */
+
+@media (max-width: 480px) {
+  .dashboard-skeleton-container {
+    padding: 0.75rem;
+  }
+
+  .dashboard-header-skeleton,
+  .dashboard-group-skeleton,
+  .dashboard-chart-skeleton,
+  .dashboard-stat-skeleton,
+  .dashboard-sidebar-skeleton {
+    border-radius: 16px;
+    padding: 1rem;
+  }
+
+  .dashboard-chart-area {
+    height: 180px;
+  }
+}
+
+/* ==========================================================================
+   Accessibility
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-skeleton-block::before,
+  .dashboard-chart-bar::before {
+    animation: none;
+  }
+
+  .dashboard-stat-skeleton,
+  .dashboard-chart-skeleton,
+  .dashboard-group-skeleton,
+  .dashboard-header-skeleton,
+  .dashboard-sidebar-skeleton {
+    transition: none;
+  }
+}

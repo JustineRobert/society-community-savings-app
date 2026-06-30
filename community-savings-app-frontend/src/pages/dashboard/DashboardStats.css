@@ -1,0 +1,449 @@
+/* ==========================================================================
+   TITech Community Capital
+   Enterprise Dashboard Statistics
+   File: frontend/src/pages/dashboard/DashboardStats.css
+   Production Grade
+   ========================================================================== */
+
+/* ==========================================================================
+   Variables
+   ========================================================================== */
+
+:root {
+  --dashboard-bg: #f8fafc;
+  --dashboard-card-bg: #ffffff;
+  --dashboard-border: #e2e8f0;
+
+  --dashboard-text: #0f172a;
+  --dashboard-text-secondary: #64748b;
+
+  --dashboard-primary: #2563eb;
+  --dashboard-success: #16a34a;
+  --dashboard-danger: #dc2626;
+  --dashboard-warning: #f59e0b;
+
+  --dashboard-shadow:
+    0 8px 24px rgba(
+      15,
+      23,
+      42,
+      0.08
+    );
+
+  --dashboard-radius: 18px;
+  --dashboard-transition:
+    all 0.25s ease;
+}
+
+/* ==========================================================================
+   Grid Layout
+   ========================================================================== */
+
+.dashboard-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(260px, 1fr)
+  );
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.dashboard-stats-grid.executive {
+  margin-top: 1rem;
+}
+
+/* ==========================================================================
+   Statistic Card
+   ========================================================================== */
+
+.dashboard-stat-card {
+  position: relative;
+  overflow: hidden;
+  padding: 1.5rem;
+  border-radius: var(
+    --dashboard-radius
+  );
+  background: var(
+    --dashboard-card-bg
+  );
+  border: 1px solid
+    var(--dashboard-border);
+  box-shadow: var(
+    --dashboard-shadow
+  );
+  transition: var(
+    --dashboard-transition
+  );
+  min-height: 170px;
+}
+
+.dashboard-stat-card:hover {
+  transform: translateY(
+    -4px
+  );
+  box-shadow:
+    0 16px 40px rgba(
+      15,
+      23,
+      42,
+      0.12
+    );
+}
+
+.dashboard-stat-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    135deg,
+    rgba(37, 99, 235, 0.04),
+    transparent
+  );
+  pointer-events: none;
+}
+
+/* ==========================================================================
+   Header
+   ========================================================================== */
+
+.dashboard-stat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+}
+
+.dashboard-stat-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  background: rgba(
+    37,
+    99,
+    235,
+    0.1
+  );
+
+  color: var(
+    --dashboard-primary
+  );
+}
+
+/* ==========================================================================
+   Body
+   ========================================================================== */
+
+.dashboard-stat-body h4 {
+  margin: 0;
+  color: var(
+    --dashboard-text-secondary
+  );
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.dashboard-stat-body h2 {
+  margin-top: 0.75rem;
+  margin-bottom: 0;
+  font-size: 2rem;
+  line-height: 1.2;
+  color: var(
+    --dashboard-text
+  );
+  font-weight: 800;
+  word-break: break-word;
+}
+
+/* ==========================================================================
+   Trend Badge
+   ========================================================================== */
+
+.dashboard-trend {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+
+  padding: 0.35rem 0.7rem;
+
+  border-radius: 999px;
+
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.dashboard-trend.positive {
+  background: rgba(
+    22,
+    163,
+    74,
+    0.12
+  );
+  color: var(
+    --dashboard-success
+  );
+}
+
+.dashboard-trend.negative {
+  background: rgba(
+    220,
+    38,
+    38,
+    0.12
+  );
+  color: var(
+    --dashboard-danger
+  );
+}
+
+/* ==========================================================================
+   Warning Cards
+   ========================================================================== */
+
+.dashboard-stat-card.warning {
+  border-left: 5px solid
+    var(--dashboard-warning);
+}
+
+.dashboard-stat-card.warning
+  .dashboard-stat-icon {
+  background: rgba(
+    245,
+    158,
+    11,
+    0.12
+  );
+  color: var(
+    --dashboard-warning
+  );
+}
+
+/* ==========================================================================
+   Tenant Card
+   ========================================================================== */
+
+.dashboard-tenant-card {
+  background: var(
+    --dashboard-card-bg
+  );
+  border-radius: var(
+    --dashboard-radius
+  );
+  border: 1px solid
+    var(--dashboard-border);
+
+  padding: 1.75rem;
+  box-shadow: var(
+    --dashboard-shadow
+  );
+}
+
+.dashboard-tenant-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+
+  margin-bottom: 1.5rem;
+}
+
+.dashboard-tenant-header h3 {
+  margin: 0;
+  color: var(
+    --dashboard-text
+  );
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.dashboard-tenant-details {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(150px, 1fr)
+  );
+  gap: 1rem;
+}
+
+.dashboard-tenant-details div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.dashboard-tenant-details span {
+  color: var(
+    --dashboard-text-secondary
+  );
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.dashboard-tenant-details strong {
+  color: var(
+    --dashboard-text
+  );
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+/* ==========================================================================
+   Skeleton Loading
+   ========================================================================== */
+
+.dashboard-stat-skeleton {
+  min-height: 170px;
+  padding: 1.5rem;
+  border-radius: var(
+    --dashboard-radius
+  );
+  overflow: hidden;
+}
+
+.skeleton-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  margin-bottom: 1.25rem;
+
+  background: linear-gradient(
+    90deg,
+    #e2e8f0 25%,
+    #f1f5f9 50%,
+    #e2e8f0 75%
+  );
+
+  background-size: 400% 100%;
+  animation: skeleton-loading
+    1.4s infinite;
+}
+
+.skeleton-line {
+  height: 14px;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+
+  background: linear-gradient(
+    90deg,
+    #e2e8f0 25%,
+    #f1f5f9 50%,
+    #e2e8f0 75%
+  );
+
+  background-size: 400% 100%;
+  animation: skeleton-loading
+    1.4s infinite;
+}
+
+.skeleton-line.short {
+  width: 65%;
+}
+
+/* ==========================================================================
+   Animation
+   ========================================================================== */
+
+@keyframes skeleton-loading {
+  0% {
+    background-position:
+      100% 0;
+  }
+
+  100% {
+    background-position:
+      -100% 0;
+  }
+}
+
+/* ==========================================================================
+   Dark Mode
+   ========================================================================== */
+
+.dark {
+  --dashboard-bg: #020617;
+  --dashboard-card-bg: #0f172a;
+  --dashboard-border: #1e293b;
+
+  --dashboard-text: #f8fafc;
+  --dashboard-text-secondary: #94a3b8;
+
+  --dashboard-shadow:
+    0 8px 30px rgba(
+      0,
+      0,
+      0,
+      0.4
+    );
+}
+
+/* ==========================================================================
+   Responsive
+   ========================================================================== */
+
+@media (max-width: 992px) {
+  .dashboard-stat-body h2 {
+    font-size: 1.7rem;
+  }
+
+  .dashboard-stat-card {
+    min-height: 150px;
+  }
+}
+
+@media (max-width: 768px) {
+  .dashboard-stats-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .dashboard-tenant-details {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-stat-body h2 {
+    font-size: 1.5rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .dashboard-stat-card,
+  .dashboard-tenant-card {
+    padding: 1.25rem;
+  }
+
+  .dashboard-stat-header {
+    margin-bottom: 1rem;
+  }
+
+  .dashboard-stat-icon {
+    width: 46px;
+    height: 46px;
+  }
+
+  .dashboard-stat-body h2 {
+    font-size: 1.3rem;
+  }
+
+  .dashboard-trend {
+    font-size: 0.72rem;
+    padding: 0.3rem 0.55rem;
+  }
+}
+
+/* ==========================================================================
+   Accessibility
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-stat-card,
+  .dashboard-trend,
+  .skeleton-icon,
+  .skeleton-line {
+    transition: none;
+    animation: none;
+  }
+}

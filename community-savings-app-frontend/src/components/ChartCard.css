@@ -1,0 +1,382 @@
+/* ==========================================================================
+   TITech Community Capital
+   Enterprise Chart Card
+   File: frontend/src/components/ChartCard.css
+   Production Grade
+   ========================================================================== */
+
+:root {
+  --chart-card-bg: #ffffff;
+  --chart-card-border: #e5e7eb;
+  --chart-card-shadow:
+    0 4px 12px rgba(15, 23, 42, 0.08);
+  --chart-card-shadow-hover:
+    0 12px 32px rgba(15, 23, 42, 0.12);
+  --chart-card-radius: 20px;
+  --chart-primary: #2563eb;
+  --chart-text: #0f172a;
+  --chart-text-secondary: #64748b;
+  --chart-danger: #ef4444;
+  --chart-success: #10b981;
+  --chart-bg-soft: #f8fafc;
+}
+
+/* ==========================================================================
+   Card Container
+   ========================================================================== */
+
+.chart-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--chart-card-bg);
+  border: 1px solid var(--chart-card-border);
+  border-radius: var(--chart-card-radius);
+  box-shadow: var(--chart-card-shadow);
+  overflow: hidden;
+  transition:
+    transform 0.25s ease,
+    box-shadow 0.25s ease,
+    border-color 0.25s ease;
+}
+
+.chart-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(
+    --chart-card-shadow-hover
+  );
+}
+
+/* ==========================================================================
+   Fullscreen Mode
+   ========================================================================== */
+
+.chart-card.fullscreen {
+  position: fixed;
+  inset: 1rem;
+  z-index: 9999;
+  width: auto;
+  height: auto;
+  background: #fff;
+  border-radius: 24px;
+}
+
+.chart-card.fullscreen
+  .chart-card-body {
+  height: calc(
+    100vh - 180px
+  ) !important;
+}
+
+/* ==========================================================================
+   Header
+   ========================================================================== */
+
+.chart-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid
+    rgba(226, 232, 240, 0.7);
+}
+
+.chart-card-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--chart-text);
+}
+
+.chart-card-subtitle {
+  margin-top: 0.35rem;
+  font-size: 0.875rem;
+  color: var(
+    --chart-text-secondary
+  );
+  line-height: 1.4;
+}
+
+/* ==========================================================================
+   Actions
+   ========================================================================== */
+
+.chart-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.chart-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: var(
+    --chart-text-secondary
+  );
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.chart-action-btn:hover {
+  background: var(
+    --chart-bg-soft
+  );
+  color: var(--chart-primary);
+}
+
+.chart-action-btn:active {
+  transform: scale(0.96);
+}
+
+.chart-action-btn:focus-visible {
+  outline: 2px solid
+    var(--chart-primary);
+  outline-offset: 2px;
+}
+
+/* ==========================================================================
+   Body
+   ========================================================================== */
+
+.chart-card-body {
+  position: relative;
+  padding: 1rem 1.5rem 1.5rem;
+  min-height: 280px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ==========================================================================
+   Footer
+   ========================================================================== */
+
+.chart-card-footer {
+  padding: 1rem 1.5rem;
+  border-top: 1px solid
+    rgba(226, 232, 240, 0.7);
+  background: #fafafa;
+  color: var(
+    --chart-text-secondary
+  );
+  font-size: 0.875rem;
+}
+
+/* ==========================================================================
+   Loading State
+   ========================================================================== */
+
+.chart-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 240px;
+}
+
+.chart-loader {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  border: 5px solid
+    rgba(37, 99, 235, 0.15);
+  border-top-color:
+    var(--chart-primary);
+  animation: chartSpin 1s linear
+    infinite;
+}
+
+@keyframes chartSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ==========================================================================
+   Empty / Error States
+   ========================================================================== */
+
+.chart-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  min-height: 240px;
+  text-align: center;
+  color: var(
+    --chart-text-secondary
+  );
+}
+
+.chart-empty svg {
+  color: var(--chart-danger);
+  opacity: 0.8;
+}
+
+.chart-empty p {
+  margin: 0;
+  font-size: 0.95rem;
+  max-width: 320px;
+  line-height: 1.6;
+}
+
+/* ==========================================================================
+   Recharts Compatibility
+   ========================================================================== */
+
+.chart-card .recharts-wrapper {
+  width: 100% !important;
+}
+
+.chart-card
+  .recharts-responsive-container {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* ==========================================================================
+   Success Variant
+   ========================================================================== */
+
+.chart-card.success {
+  border-left: 4px solid
+    var(--chart-success);
+}
+
+/* ==========================================================================
+   Error Variant
+   ========================================================================== */
+
+.chart-card.error {
+  border-left: 4px solid
+    var(--chart-danger);
+}
+
+/* ==========================================================================
+   Dark Theme Support
+   ========================================================================== */
+
+[data-theme="dark"]
+  .chart-card {
+  background: #0f172a;
+  border-color: #1e293b;
+  box-shadow:
+    0 8px 30px rgba(
+      0,
+      0,
+      0,
+      0.35
+    );
+}
+
+[data-theme="dark"]
+  .chart-card-title {
+  color: #f8fafc;
+}
+
+[data-theme="dark"]
+  .chart-card-subtitle,
+[data-theme="dark"]
+  .chart-card-footer,
+[data-theme="dark"]
+  .chart-empty {
+  color: #94a3b8;
+}
+
+[data-theme="dark"]
+  .chart-card-header {
+  border-bottom-color: #1e293b;
+}
+
+[data-theme="dark"]
+  .chart-card-footer {
+  background: #111827;
+  border-top-color: #1e293b;
+}
+
+[data-theme="dark"]
+  .chart-action-btn {
+  color: #94a3b8;
+}
+
+[data-theme="dark"]
+  .chart-action-btn:hover {
+  background: #1e293b;
+  color: #60a5fa;
+}
+
+[data-theme="dark"]
+  .chart-card.fullscreen {
+  background: #0f172a;
+}
+
+/* ==========================================================================
+   Mobile
+   ========================================================================== */
+
+@media (max-width: 992px) {
+  .chart-card-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .chart-card-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 768px) {
+  .chart-card-header,
+  .chart-card-body,
+  .chart-card-footer {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .chart-card-body {
+    min-height: 240px;
+  }
+
+  .chart-card.fullscreen {
+    inset: 0;
+    border-radius: 0;
+  }
+
+  .chart-card.fullscreen
+    .chart-card-body {
+    height: calc(
+      100vh - 160px
+    ) !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .chart-card-title {
+    font-size: 1rem;
+  }
+
+  .chart-card-subtitle {
+    font-size: 0.8rem;
+  }
+
+  .chart-action-btn {
+    width: 34px;
+    height: 34px;
+  }
+
+  .chart-card-body {
+    min-height: 220px;
+  }
+}

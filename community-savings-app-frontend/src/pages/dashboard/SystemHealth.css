@@ -1,0 +1,528 @@
+/* ==========================================================================
+   TITech Community Capital
+   System Health Dashboard
+   File: frontend/src/pages/SystemHealth.css
+   Production Grade
+   ========================================================================== */
+
+/* ==========================================================================
+   Root Variables
+   ========================================================================== */
+
+:root {
+  --health-bg: #f8fafc;
+  --health-surface: #ffffff;
+  --health-border: #e2e8f0;
+
+  --health-text: #0f172a;
+  --health-text-secondary: #64748b;
+
+  --health-primary: #2563eb;
+  --health-success: #16a34a;
+  --health-warning: #f59e0b;
+  --health-danger: #dc2626;
+
+  --health-shadow:
+    0 10px 30px rgba(15, 23, 42, 0.08);
+
+  --health-radius: 20px;
+
+  --health-transition:
+    all 0.25s ease;
+}
+
+/* ==========================================================================
+   Page
+   ========================================================================== */
+
+.system-health-page {
+  min-height: 100vh;
+  padding: 2rem;
+  background: var(--health-bg);
+
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+}
+
+/* ==========================================================================
+   Status Card
+   ========================================================================== */
+
+.system-status-card {
+  padding: 2rem;
+  border-radius: var(
+    --health-radius
+  );
+  box-shadow: var(
+    --health-shadow
+  );
+}
+
+.system-status-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+
+  margin-bottom: 2rem;
+}
+
+.system-status-header h2 {
+  margin: 0;
+  color: var(
+    --health-text
+  );
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.system-status-header p {
+  margin-top: 0.5rem;
+  color: var(
+    --health-text-secondary
+  );
+}
+
+.system-status-body {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.system-status-body h3 {
+  margin: 0;
+  color: var(
+    --health-text
+  );
+}
+
+.system-status-body p {
+  margin-top: 0.5rem;
+  color: var(
+    --health-text-secondary
+  );
+}
+
+.status-icon {
+  flex-shrink: 0;
+}
+
+.status-icon.healthy {
+  color: var(
+    --health-success
+  );
+}
+
+.status-icon.unhealthy {
+  color: var(
+    --health-danger
+  );
+}
+
+/* ==========================================================================
+   Error Card
+   ========================================================================== */
+
+.system-error-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+
+  padding: 1rem 1.25rem;
+
+  background:
+    rgba(
+      220,
+      38,
+      38,
+      0.08
+    );
+
+  border: 1px solid
+    rgba(
+      220,
+      38,
+      38,
+      0.15
+    );
+
+  color: var(
+    --health-danger
+  );
+
+  border-radius: 16px;
+}
+
+/* ==========================================================================
+   Metrics Grid
+   ========================================================================== */
+
+.health-grid {
+  display: grid;
+  gap: 1.5rem;
+
+  grid-template-columns:
+    repeat(
+      auto-fit,
+      minmax(
+        220px,
+        1fr
+      )
+    );
+}
+
+.metric-card {
+  padding: 1.5rem;
+  border-radius: var(
+    --health-radius
+  );
+
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+
+  transition: var(
+    --health-transition
+  );
+}
+
+.metric-card:hover {
+  transform: translateY(
+    -4px
+  );
+
+  box-shadow:
+    0 16px 35px rgba(
+      15,
+      23,
+      42,
+      0.1
+    );
+}
+
+.metric-card svg {
+  color: var(
+    --health-primary
+  );
+}
+
+.metric-card h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(
+    --health-text-secondary
+  );
+  font-weight: 600;
+}
+
+.metric-card h2 {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(
+    --health-text
+  );
+}
+
+.metric-card small {
+  color: var(
+    --health-text-secondary
+  );
+}
+
+/* ==========================================================================
+   Progress Bar
+   ========================================================================== */
+
+.health-progress {
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+
+  background:
+    rgba(
+      148,
+      163,
+      184,
+      0.15
+    );
+
+  overflow: hidden;
+}
+
+.health-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  transition: width 0.4s ease;
+}
+
+/* ==========================================================================
+   Dependencies
+   ========================================================================== */
+
+.dependency-grid {
+  display: grid;
+  gap: 1.5rem;
+
+  grid-template-columns:
+    repeat(
+      auto-fit,
+      minmax(
+        320px,
+        1fr
+      )
+    );
+}
+
+.dependency-card {
+  padding: 1.5rem;
+
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+
+  border-radius: var(
+    --health-radius
+  );
+
+  transition: var(
+    --health-transition
+  );
+}
+
+.dependency-card:hover {
+  transform: translateY(
+    -3px
+  );
+
+  box-shadow:
+    0 15px 30px rgba(
+      15,
+      23,
+      42,
+      0.08
+    );
+}
+
+.dependency-card svg {
+  color: var(
+    --health-primary
+  );
+}
+
+.dependency-card h3 {
+  margin: 0;
+  color: var(
+    --health-text
+  );
+}
+
+.dependency-card p {
+  margin-top: 0.3rem;
+  color: var(
+    --health-text-secondary
+  );
+}
+
+/* ==========================================================================
+   Services
+   ========================================================================== */
+
+.services-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+
+  margin-bottom: 1.5rem;
+}
+
+.services-header h2 {
+  margin: 0;
+  color: var(
+    --health-text
+  );
+}
+
+.services-header svg {
+  color: var(
+    --health-primary
+  );
+}
+
+.services-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.service-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  padding: 1rem 1.25rem;
+
+  background: var(
+    --health-bg
+  );
+
+  border: 1px solid
+    var(--health-border);
+
+  border-radius: 16px;
+
+  transition: var(
+    --health-transition
+  );
+}
+
+.service-item:hover {
+  border-color:
+    rgba(
+      37,
+      99,
+      235,
+      0.3
+    );
+}
+
+.service-item h4 {
+  margin: 0;
+  color: var(
+    --health-text
+  );
+}
+
+.service-item p {
+  margin-top: 0.3rem;
+  color: var(
+    --health-text-secondary
+  );
+}
+
+.empty-services {
+  text-align: center;
+  padding: 3rem 2rem;
+  color: var(
+    --health-text-secondary
+  );
+}
+
+/* ==========================================================================
+   Dark Mode
+   ========================================================================== */
+
+.dark {
+  --health-bg: #020617;
+  --health-surface: #0f172a;
+  --health-border: #1e293b;
+
+  --health-text: #f8fafc;
+  --health-text-secondary: #94a3b8;
+
+  --health-shadow:
+    0 20px 40px rgba(
+      0,
+      0,
+      0,
+      0.45
+    );
+}
+
+.dark .metric-card,
+.dark .dependency-card,
+.dark .system-status-card,
+.dark .service-item {
+  background: var(
+    --health-surface
+  );
+}
+
+.dark .health-progress {
+  background:
+    rgba(
+      255,
+      255,
+      255,
+      0.08
+    );
+}
+
+/* ==========================================================================
+   Responsive
+   ========================================================================== */
+
+@media (max-width: 1024px) {
+  .system-health-page {
+    padding: 1.5rem;
+  }
+
+  .health-grid {
+    grid-template-columns:
+      repeat(
+        auto-fit,
+        minmax(
+          200px,
+          1fr
+        )
+      );
+  }
+}
+
+@media (max-width: 768px) {
+  .system-health-page {
+    padding: 1rem;
+  }
+
+  .system-status-header,
+  .system-status-body,
+  .service-item,
+  .dependency-card {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .service-item {
+    gap: 1rem;
+  }
+
+  .metric-card h2 {
+    font-size: 1.75rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .health-grid,
+  .dependency-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .system-status-card,
+  .metric-card,
+  .dependency-card {
+    padding: 1.25rem;
+  }
+
+  .system-status-header h2 {
+    font-size: 1.25rem;
+  }
+}
+
+/* ==========================================================================
+   Reduced Motion
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  .metric-card,
+  .dependency-card,
+  .service-item,
+  .health-progress-fill {
+    transition: none;
+  }
+
+  .metric-card:hover,
+  .dependency-card:hover {
+    transform: none;
+  }
+}

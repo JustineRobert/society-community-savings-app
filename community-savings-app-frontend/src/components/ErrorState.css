@@ -1,0 +1,432 @@
+/* ==========================================================================
+   TITech Community Capital
+   Enterprise Error State Styles
+   File: frontend/src/components/ErrorState.css
+   Production Grade
+   ========================================================================== */
+
+:root {
+  --error-bg: #ffffff;
+  --error-border: #e2e8f0;
+  --error-shadow: 0 12px 40px rgba(15, 23, 42, 0.08);
+
+  --error-text: #0f172a;
+  --error-text-secondary: #64748b;
+  --error-code-bg: #f8fafc;
+  --error-code-border: #e2e8f0;
+
+  --error-primary: #dc2626;
+  --error-primary-hover: #b91c1c;
+
+  --error-secondary: #2563eb;
+  --error-secondary-hover: #1d4ed8;
+
+  --error-radius: 24px;
+  --error-transition: all 0.25s ease;
+}
+
+/* ==========================================================================
+   Container
+   ========================================================================== */
+
+.error-state {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+
+  width: 100%;
+  min-height: 420px;
+
+  padding: 3rem 2rem;
+  text-align: center;
+
+  background: var(--error-bg);
+  border: 1px solid var(--error-border);
+  border-radius: var(--error-radius);
+  box-shadow: var(--error-shadow);
+
+  overflow: hidden;
+  animation: errorFadeIn 0.35s ease;
+}
+
+.error-state::before {
+  content: "";
+  position: absolute;
+  top: -160px;
+  right: -160px;
+  width: 320px;
+  height: 320px;
+  border-radius: 50%;
+  background: rgba(220, 38, 38, 0.04);
+  pointer-events: none;
+}
+
+.error-state::after {
+  content: "";
+  position: absolute;
+  bottom: -180px;
+  left: -180px;
+  width: 360px;
+  height: 360px;
+  border-radius: 50%;
+  background: rgba(220, 38, 38, 0.03);
+  pointer-events: none;
+}
+
+/* ==========================================================================
+   Compact
+   ========================================================================== */
+
+.error-state-compact {
+  min-height: 280px;
+  padding: 2rem 1.5rem;
+}
+
+/* ==========================================================================
+   Icon
+   ========================================================================== */
+
+.error-state-icon {
+  position: relative;
+  z-index: 2;
+
+  width: 96px;
+  height: 96px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 50%;
+  background: rgba(220, 38, 38, 0.08);
+  color: var(--error-primary);
+
+  transition: var(--error-transition);
+}
+
+.error-state:hover .error-state-icon {
+  transform: scale(1.05);
+}
+
+/* ==========================================================================
+   Content
+   ========================================================================== */
+
+.error-state-content {
+  position: relative;
+  z-index: 2;
+  max-width: 700px;
+}
+
+.error-state-title {
+  margin: 0;
+  color: var(--error-text);
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.error-state-description {
+  margin-top: 1rem;
+  color: var(--error-text-secondary);
+  font-size: 1rem;
+  line-height: 1.8;
+}
+
+/* ==========================================================================
+   Error Details
+   ========================================================================== */
+
+.error-state-details {
+  margin-top: 1.5rem;
+  padding: 1rem;
+
+  border-radius: 14px;
+  border: 1px solid
+    var(--error-code-border);
+
+  background: var(--error-code-bg);
+
+  text-align: left;
+  overflow-x: auto;
+}
+
+.error-state-details code {
+  display: block;
+  font-size: 0.875rem;
+  color: var(--error-primary);
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.error-state-extra {
+  margin-top: 1.5rem;
+}
+
+/* ==========================================================================
+   Actions
+   ========================================================================== */
+
+.error-state-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+
+  margin-top: 1rem;
+  z-index: 2;
+}
+
+.error-state-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+
+  min-width: 150px;
+  padding: 0.9rem 1.5rem;
+
+  border: none;
+  border-radius: 14px;
+
+  font-size: 0.95rem;
+  font-weight: 600;
+
+  cursor: pointer;
+  transition: var(--error-transition);
+}
+
+.error-state-btn svg {
+  flex-shrink: 0;
+}
+
+.error-state-btn.primary {
+  background: var(--error-primary);
+  color: #ffffff;
+}
+
+.error-state-btn.primary:hover {
+  background: var(--error-primary-hover);
+  transform: translateY(-2px);
+}
+
+.error-state-btn.secondary {
+  background: #eff6ff;
+  color: var(--error-secondary);
+  border: 1px solid
+    rgba(37, 99, 235, 0.15);
+}
+
+.error-state-btn.secondary:hover {
+  background: #dbeafe;
+  color: var(--error-secondary-hover);
+  transform: translateY(-2px);
+}
+
+.error-state-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+/* ==========================================================================
+   Variants
+   ========================================================================== */
+
+.error-state-network .error-state-icon {
+  background: rgba(59, 130, 246, 0.1);
+  color: #2563eb;
+}
+
+.error-state-server .error-state-icon {
+  background: rgba(245, 158, 11, 0.12);
+  color: #d97706;
+}
+
+.error-state-permission .error-state-icon {
+  background: rgba(168, 85, 247, 0.12);
+  color: #7c3aed;
+}
+
+.error-state-not_found .error-state-icon {
+  background: rgba(107, 114, 128, 0.12);
+  color: #475569;
+}
+
+/* ==========================================================================
+   Loading State
+   ========================================================================== */
+
+.error-state-loading {
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+.error-state-loading .error-state-btn svg {
+  animation: errorSpin 1s linear infinite;
+}
+
+/* ==========================================================================
+   Animations
+   ========================================================================== */
+
+@keyframes errorFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes errorSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ==========================================================================
+   Dark Theme
+   ========================================================================== */
+
+[data-theme="dark"] .error-state {
+  background: #0f172a;
+  border-color: #1e293b;
+  box-shadow:
+    0 20px 50px rgba(
+      0,
+      0,
+      0,
+      0.45
+    );
+}
+
+[data-theme="dark"] .error-state-title {
+  color: #f8fafc;
+}
+
+[data-theme="dark"]
+  .error-state-description {
+  color: #94a3b8;
+}
+
+[data-theme="dark"]
+  .error-state-details {
+  background: #020617;
+  border-color: #334155;
+}
+
+[data-theme="dark"]
+  .error-state-details code {
+  color: #fca5a5;
+}
+
+[data-theme="dark"]
+  .error-state-btn.secondary {
+  background: #1e293b;
+  border-color: #334155;
+  color: #cbd5e1;
+}
+
+[data-theme="dark"]
+  .error-state-btn.secondary:hover {
+  background: #334155;
+}
+
+/* ==========================================================================
+   Tablet
+   ========================================================================== */
+
+@media (max-width: 768px) {
+  .error-state {
+    min-height: 360px;
+    padding: 2rem 1.5rem;
+  }
+
+  .error-state-title {
+    font-size: 1.5rem;
+  }
+
+  .error-state-description {
+    font-size: 0.95rem;
+  }
+
+  .error-state-icon {
+    width: 82px;
+    height: 82px;
+  }
+
+  .error-state-actions {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .error-state-btn {
+    width: 100%;
+  }
+}
+
+/* ==========================================================================
+   Mobile
+   ========================================================================== */
+
+@media (max-width: 480px) {
+  .error-state {
+    min-height: 300px;
+    padding: 1.5rem 1rem;
+    border-radius: 18px;
+  }
+
+  .error-state-title {
+    font-size: 1.25rem;
+  }
+
+  .error-state-description {
+    font-size: 0.9rem;
+    line-height: 1.7;
+  }
+
+  .error-state-icon {
+    width: 72px;
+    height: 72px;
+  }
+
+  .error-state-btn {
+    min-width: auto;
+    font-size: 0.9rem;
+    padding: 0.85rem 1rem;
+  }
+
+  .error-state-details {
+    padding: 0.85rem;
+  }
+}
+
+/* ==========================================================================
+   Accessibility
+   ========================================================================== */
+
+.error-state-btn:focus-visible {
+  outline: 3px solid
+    rgba(37, 99, 235, 0.35);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .error-state,
+  .error-state-icon,
+  .error-state-btn {
+    animation: none;
+    transition: none;
+  }
+
+  .error-state:hover .error-state-icon,
+  .error-state-btn:hover {
+    transform: none;
+  }
+}

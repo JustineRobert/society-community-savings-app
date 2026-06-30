@@ -1,38 +1,38 @@
+// frontend/src/pages/Dashboard.jsx
 // ============================================================================
 // TITech Community Capital
 // Enterprise Dashboard
+// File: src/pages/Dashboard.jsx
 // Production Grade
 // ============================================================================
 
 import React, {
-  useEffect,
-  useState,
   useCallback,
+  useEffect,
   useMemo,
   useRef,
-} from 'react';
+  useState,
+} from "react";
 
 import {
   useNavigate,
-} from 'react-router-dom';
+} from "react-router-dom";
 
 import {
   AlertCircle,
-  Menu,
-  X,
-  LogOut,
-  Plus,
-  Users,
-  RefreshCw,
   Bell,
-  Wallet,
-  PiggyBank,
   CreditCard,
-} from 'lucide-react';
-
-import { toast } from 'react-toastify';
+  LogOut,
+  Menu,
+  PiggyBank,
+  RefreshCw,
+  Users,
+  Wallet,
+  X,
+} from "lucide-react";
 
 import {
+  ResponsiveContainer,
   BarChart,
   Bar,
   XAxis,
@@ -41,67 +41,135 @@ import {
   PieChart,
   Pie,
   Cell,
-  ResponsiveContainer,
-} from 'recharts';
+} from "recharts";
 
-import api from '../services/api';
-import { useAuth } from '../context/AuthContext';
+import { toast } from "react-toastify";
 
-import './Dashboard.css';
+import api from "../services/api";
+import { useAuth } from "../context/AuthContext";
 
-// ============================================================================
-// SKELETON
-// ============================================================================
-
-const GroupCardSkeleton = () => (
-  <div className="group-card-skeleton">
-    <div className="skeleton-title" />
-    <div className="skeleton-line" />
-    <div className="skeleton-line" />
-    <div className="skeleton-line" />
-  </div>
-);
+import "./Dashboard.css";
 
 // ============================================================================
-// ADMIN ANALYTICS
+// Constants
 // ============================================================================
 
-function AdminDashboard({ stats }) {
-  const loanData = stats?.loans || [];
+const AUTO_REFRESH_INTERVAL = 60000;
+
+const DEFAULT_STATS = {
+  savings: 0,
+  loans: [],
+  fraud: [
+    {
+      name: "Clean",
+      value: 100,
+    },
+    {
+      name: "Flagged",
+      value: 0,
+    },
+  ],
+  members: 0,
+  activeLoans: 0,
+  totalDisbursed: 0,
+};
+
+const FRAUD_COLORS = [
+  "#10b981",
+  "#ef4444",
+];
+
+// ============================================================================
+// Skeleton
+// ============================================================================
+
+function GroupCardSkeleton() {
+  return (
+    <div className="group-card-skeleton">
+      <div className="skeleton-title" />
+      <div className="skeleton-line" />
+      <div className="skeleton-line" />
+      <div className="skeleton-line" />
+    </div>
+  );
+}
+
+// ============================================================================
+// KPI Card
+// ============================================================================
+
+function StatCard({
+  icon: Icon,
+  title,
+  value,
+}) {
+  return (
+    <div className="stat-card">
+      <Icon size={28} />
+
+      <h3>{title}</h3>
+
+      <p>{value}</p>
+    </div>
+  );
+}
+
+// ============================================================================
+// Admin Analytics
+// ============================================================================
+
+function AdminDashboard({
+  stats,
+}) {
+  const loanData =
+    stats?.loans || [];
 
   const fraudData =
-    stats?.fraud || [
-      { name: 'Clean', value: 100 },
-      { name: 'Flagged', value: 0 },
-    ];
+    stats?.fraud ||
+    DEFAULT_STATS.fraud;
 
   return (
     <section className="admin-dashboard">
-      <h2>Administration Analytics</h2>
+      <h2>
+        Administration Analytics
+      </h2>
 
       <div className="chart-grid">
         <div className="chart-card">
-          <h3>Loan Distribution</h3>
+          <h3>
+            Loan Distribution
+          </h3>
 
           <ResponsiveContainer
             width="100%"
-            height={300}
+            height={320}
           >
-            <BarChart data={loanData}>
-              <XAxis dataKey="status" />
+            <BarChart
+              data={loanData}
+            >
+              <XAxis
+                dataKey="status"
+              />
+
               <YAxis />
+
               <Tooltip />
-              <Bar dataKey="count" />
+
+              <Bar
+                dataKey="count"
+              />
             </BarChart>
           </ResponsiveContainer>
         </div>
 
         <div className="chart-card">
-          <h3>Fraud Monitoring</h3>
+          <h3>
+            Fraud Monitoring
+          </h3>
 
           <ResponsiveContainer
             width="100%"
-            height={300}
+            height={320}
           >
             <PieChart>
               <Pie
@@ -110,13 +178,25 @@ function AdminDashboard({ stats }) {
                 outerRadius={100}
               >
                 {fraudData.map(
-                  (entry, index) => (
+                  (
+                    entry,
+                    index
+                  ) => (
                     <Cell
-                      key={index}
+                      key={
+                        index
+                      }
+                      fill={
+                        FRAUD_COLORS[
+                          index %
+                            FRAUD_COLORS.length
+                        ]
+                      }
                     />
                   )
                 )}
               </Pie>
+
               <Tooltip />
             </PieChart>
           </ResponsiveContainer>
@@ -127,114 +207,128 @@ function AdminDashboard({ stats }) {
 }
 
 // ============================================================================
-// MAIN DASHBOARD
+// Main Dashboard
 // ============================================================================
 
 export default function Dashboard() {
-  const navigate = useNavigate();
+  const navigate =
+    useNavigate();
 
   const {
     user,
     logout,
   } = useAuth();
 
-  const mountedRef = useRef(true);
+  const mountedRef =
+    useRef(false);
 
-  const [groups, setGroups] =
-    useState([]);
+  const refreshRef =
+    useRef();
 
-  const [loading, setLoading] =
-    useState(true);
+  const [
+    loading,
+    setLoading,
+  ] = useState(true);
 
-  const [error, setError] =
-    useState('');
+  const [
+    groups,
+    setGroups,
+  ] = useState([]);
 
-  const [menuOpen, setMenuOpen] =
-    useState(false);
-
-  const [notifCount, setNotifCount] =
-    useState(0);
-
-  const [retryCount, setRetryCount] =
-    useState(0);
-
-  const [stats, setStats] =
-    useState({
-      savings: 0,
-      loans: [],
-      fraud: [],
-      members: 0,
-    });
-
-  // ==========================================================================
-  // ROLE
-  // ==========================================================================
-
-  const isAdmin = useMemo(
-    () =>
-      user?.role === 'admin' ||
-      user?.role === 'ADMIN',
-    [user]
+  const [
+    stats,
+    setStats,
+  ] = useState(
+    DEFAULT_STATS
   );
 
-  // ==========================================================================
-  // FORMATTERS
-  // ==========================================================================
+  const [
+    error,
+    setError,
+  ] = useState("");
+
+  const [
+    retryCount,
+    setRetryCount,
+  ] = useState(0);
+
+  const [
+    menuOpen,
+    setMenuOpen,
+  ] = useState(false);
+
+  const [
+    notifCount,
+    setNotifCount,
+  ] = useState(0);
+
+  // ===========================================================================
+  // Role
+  // ===========================================================================
+
+  const isAdmin =
+    useMemo(() => {
+      return [
+        "admin",
+        "ADMIN",
+        "super_admin",
+      ].includes(
+        user?.role
+      );
+    }, [user]);
+
+  // ===========================================================================
+  // Formatters
+  // ===========================================================================
 
   const formatCurrency =
-    useCallback((value) => {
-      return new Intl.NumberFormat(
-        'en-UG',
-        {
-          style: 'currency',
-          currency: 'UGX',
-          maximumFractionDigits: 0,
-        }
-      ).format(
-        Number(value || 0)
-      );
-    }, []);
+    useCallback(
+      (value) => {
+        return new Intl.NumberFormat(
+          "en-UG",
+          {
+            style:
+              "currency",
+            currency:
+              "UGX",
+            maximumFractionDigits: 0,
+          }
+        ).format(
+          Number(
+            value || 0
+          )
+        );
+      },
+      []
+    );
 
   const formatDate =
-    useCallback((date) => {
-      if (!date) {
-        return 'N/A';
-      }
+    useCallback(
+      (date) => {
+        if (!date)
+          return "N/A";
 
-      try {
-        return new Date(
-          date
-        ).toLocaleDateString();
-      } catch {
-        return 'N/A';
-      }
-    }, []);
+        try {
+          return new Date(
+            date
+          ).toLocaleDateString();
+        } catch {
+          return "N/A";
+        }
+      },
+      []
+    );
 
-  const formatMembers =
-    useCallback((members) => {
-      if (
-        !Array.isArray(members)
-      ) {
-        return '0 members';
-      }
-
-      return `${members.length} member${
-        members.length === 1
-          ? ''
-          : 's'
-      }`;
-    }, []);
-
-  // ==========================================================================
-  // FETCH GROUPS
-  // ==========================================================================
+  // ===========================================================================
+  // API Calls
+  // ===========================================================================
 
   const fetchGroups =
-    useCallback(async () => {
-      try {
+    useCallback(
+      async () => {
         const response =
           await api.get(
-            '/api/groups'
+            "/api/groups"
           );
 
         const data =
@@ -243,62 +337,62 @@ export default function Dashboard() {
           [];
 
         setGroups(
-          Array.isArray(data)
+          Array.isArray(
+            data
+          )
             ? data
             : []
         );
-      } catch (err) {
-        console.error(err);
+      },
+      []
+    );
 
-        setError(
-          err?.response?.data
-            ?.message ||
-            'Failed to load groups'
-        );
-      }
-    }, []);
+  const fetchStats =
+    useCallback(
+      async () => {
+        if (!isAdmin)
+          return;
 
-  // ==========================================================================
-  // FETCH ADMIN STATS
-  // ==========================================================================
-
-  const fetchAdminStats =
-    useCallback(async () => {
-      if (!isAdmin) return;
-
-      try {
         const response =
           await api.get(
-            '/api/admin/stats'
+            "/api/admin/stats"
           );
 
-        setStats(
-          response?.data ||
-            response
-        );
-      } catch (err) {
-        console.error(
-          'Admin stats error',
-          err
-        );
-      }
-    }, [isAdmin]);
+        setStats({
+          ...DEFAULT_STATS,
+          ...(response
+            ?.data ||
+            response),
+        });
+      },
+      [isAdmin]
+    );
 
-  // ==========================================================================
-  // INIT
-  // ==========================================================================
-
-  useEffect(() => {
-    mountedRef.current =
-      true;
-
-    const load =
+  const loadDashboard =
+    useCallback(
       async () => {
         try {
-          await Promise.all([
-            fetchGroups(),
-            fetchAdminStats(),
-          ]);
+          setError("");
+
+          await Promise.all(
+            [
+              fetchGroups(),
+              fetchStats(),
+            ]
+          );
+        } catch (
+          err
+        ) {
+          console.error(
+            err
+          );
+
+          setError(
+            err?.response
+              ?.data
+              ?.message ||
+              "Failed to load dashboard."
+          );
         } finally {
           if (
             mountedRef.current
@@ -308,63 +402,89 @@ export default function Dashboard() {
             );
           }
         }
-      };
+      },
+      [
+        fetchGroups,
+        fetchStats,
+      ]
+    );
 
-    load();
+  // ===========================================================================
+  // Initialize
+  // ===========================================================================
+
+  useEffect(() => {
+    mountedRef.current =
+      true;
+
+    loadDashboard();
+
+    refreshRef.current =
+      setInterval(
+        loadDashboard,
+        AUTO_REFRESH_INTERVAL
+      );
 
     return () => {
       mountedRef.current =
         false;
+
+      clearInterval(
+        refreshRef.current
+      );
     };
   }, [
-    fetchGroups,
-    fetchAdminStats,
+    loadDashboard,
   ]);
 
-  // ==========================================================================
-  // SOCKET NOTIFICATIONS
-  // ==========================================================================
+  // ===========================================================================
+  // Notifications
+  // ===========================================================================
 
   useEffect(() => {
     let cleanup;
 
     import(
-      '../services/socket'
-    ).then(
-      ({
-        default: socket,
-      }) => {
-        const handler =
-          () =>
-            setNotifCount(
-              (
-                previous
-              ) =>
-                previous + 1
-            );
+      "../services/socket"
+    )
+      .then(
+        ({
+          default:
+            socket,
+        }) => {
+          const handler =
+            () =>
+              setNotifCount(
+                (
+                  prev
+                ) =>
+                  prev +
+                  1
+              );
 
-        socket.on(
-          'notification',
-          handler
-        );
-
-        cleanup = () =>
-          socket.off(
-            'notification',
+          socket.on(
+            "notification",
             handler
           );
-      }
-    );
+
+          cleanup =
+            () =>
+              socket.off(
+                "notification",
+                handler
+              );
+        }
+      )
+      .catch(() => {});
 
     return () => {
-      if (cleanup)
-        cleanup();
+      cleanup?.();
     };
   }, []);
 
-  // ==========================================================================
-  // LOGOUT
-  // ==========================================================================
+  // ===========================================================================
+  // Logout
+  // ===========================================================================
 
   const handleLogout =
     useCallback(
@@ -373,7 +493,7 @@ export default function Dashboard() {
           await logout();
 
           navigate(
-            '/login',
+            "/login",
             {
               replace:
                 true,
@@ -381,7 +501,7 @@ export default function Dashboard() {
           );
         } catch {
           toast.error(
-            'Logout failed'
+            "Logout failed."
           );
         }
       },
@@ -391,39 +511,42 @@ export default function Dashboard() {
       ]
     );
 
-  // ==========================================================================
-  // RETRY
-  // ==========================================================================
+  // ===========================================================================
+  // Retry
+  // ===========================================================================
 
   const handleRetry =
-    useCallback(async () => {
-      if (
-        retryCount >= 3
-      ) {
-        toast.error(
-          'Maximum retries reached'
+    useCallback(
+      async () => {
+        if (
+          retryCount >=
+          3
+        ) {
+          toast.error(
+            "Maximum retries reached."
+          );
+          return;
+        }
+
+        setRetryCount(
+          (
+            previous
+          ) =>
+            previous +
+            1
         );
-        return;
-      }
 
-      setRetryCount(
-        (
-          previous
-        ) =>
-          previous + 1
-      );
+        await loadDashboard();
+      },
+      [
+        retryCount,
+        loadDashboard,
+      ]
+    );
 
-      setError('');
-
-      await fetchGroups();
-    }, [
-      retryCount,
-      fetchGroups,
-    ]);
-
-  // ==========================================================================
-  // LOADING
-  // ==========================================================================
+  // ===========================================================================
+  // Loading
+  // ===========================================================================
 
   if (loading) {
     return (
@@ -435,9 +558,9 @@ export default function Dashboard() {
     );
   }
 
-  // ==========================================================================
-  // AUTH CHECK
-  // ==========================================================================
+  // ===========================================================================
+  // Authentication
+  // ===========================================================================
 
   if (!user) {
     return (
@@ -454,7 +577,7 @@ export default function Dashboard() {
         <button
           onClick={() =>
             navigate(
-              '/login'
+              "/login"
             )
           }
         >
@@ -464,22 +587,19 @@ export default function Dashboard() {
     );
   }
 
-  // ==========================================================================
-  // RENDER
-  // ==========================================================================
+  // ===========================================================================
+  // Render
+  // ===========================================================================
 
   return (
     <div className="dashboard-container">
-
       <header className="dashboard-header">
         <h1>
-          Welcome,
-          {' '}
+          Welcome,{" "}
           {user?.name}
         </h1>
 
         <div className="dashboard-actions">
-
           <button
             onClick={() =>
               setMenuOpen(
@@ -496,6 +616,7 @@ export default function Dashboard() {
 
           <button>
             <Bell />
+
             {notifCount >
               0 && (
               <span>
@@ -509,47 +630,47 @@ export default function Dashboard() {
       </header>
 
       <section className="stats-grid">
+        <StatCard
+          icon={
+            PiggyBank
+          }
+          title="Savings"
+          value={formatCurrency(
+            stats.savings
+          )}
+        />
 
-        <div className="stat-card">
-          <PiggyBank />
-          <h3>
-            Savings
-          </h3>
-          <p>
-            {formatCurrency(
-              stats.savings
-            )}
-          </p>
-        </div>
+        <StatCard
+          icon={Wallet}
+          title="Groups"
+          value={
+            groups.length
+          }
+        />
 
-        <div className="stat-card">
-          <Wallet />
-          <h3>
-            Groups
-          </h3>
-          <p>
-            {
-              groups.length
-            }
-          </p>
-        </div>
+        <StatCard
+          icon={Users}
+          title="Members"
+          value={
+            stats.members
+          }
+        />
 
-        <div className="stat-card">
-          <CreditCard />
-          <h3>
-            Members
-          </h3>
-          <p>
-            {stats.members ||
-              0}
-          </p>
-        </div>
-
+        <StatCard
+          icon={
+            CreditCard
+          }
+          title="Active Loans"
+          value={
+            stats.activeLoans
+          }
+        />
       </section>
 
       {error && (
         <div className="error-box">
           <AlertCircle />
+
           <p>{error}</p>
 
           <button
@@ -571,7 +692,7 @@ export default function Dashboard() {
 
       <section className="groups-section">
         <h2>
-          TITech Community Groups
+          Community Groups
         </h2>
 
         <div className="groups-grid">
@@ -597,13 +718,18 @@ export default function Dashboard() {
                 </h3>
 
                 <p>
-                  {group.description}
+                  {
+                    group.description
+                  }
                 </p>
 
                 <p>
-                  {formatMembers(
-                    group.members
-                  )}
+                  {(
+                    group
+                      ?.members ||
+                    []
+                  ).length}{" "}
+                  members
                 </p>
 
                 <p>
@@ -614,7 +740,7 @@ export default function Dashboard() {
 
                 <p>
                   Next:
-                  {' '}
+                  {" "}
                   {formatDate(
                     group.nextContributionDate
                   )}

@@ -1,0 +1,521 @@
+/* ==========================================================================
+   TITech Community Capital
+   Executive Dashboard
+   File: frontend/src/pages/dashboard/ExecutiveDashboard.css
+   Production Grade
+   ========================================================================== */
+
+/* ==========================================================================
+   Variables
+   ========================================================================== */
+
+:root {
+  --executive-bg: #ffffff;
+  --executive-surface: #f8fafc;
+  --executive-border: #e2e8f0;
+
+  --executive-text: #0f172a;
+  --executive-text-secondary: #64748b;
+
+  --executive-primary: #2563eb;
+  --executive-success: #16a34a;
+  --executive-warning: #f59e0b;
+  --executive-danger: #dc2626;
+
+  --executive-shadow:
+    0 10px 30px rgba(
+      15,
+      23,
+      42,
+      0.08
+    );
+
+  --executive-radius: 20px;
+  --executive-transition:
+    all 0.25s ease;
+}
+
+/* ==========================================================================
+   Dashboard Layout
+   ========================================================================== */
+
+.executive-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  width: 100%;
+}
+
+/* ==========================================================================
+   Header
+   ========================================================================== */
+
+.executive-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 2rem;
+
+  padding: 2rem;
+  background: var(
+    --executive-bg
+  );
+  border: 1px solid
+    var(--executive-border);
+  border-radius: var(
+    --executive-radius
+  );
+  box-shadow: var(
+    --executive-shadow
+  );
+}
+
+.executive-header h1 {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(
+    --executive-text
+  );
+}
+
+.executive-header p {
+  margin-top: 0.75rem;
+  margin-bottom: 0;
+  color: var(
+    --executive-text-secondary
+  );
+  line-height: 1.6;
+}
+
+.executive-actions {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+/* ==========================================================================
+   Metrics Grid
+   ========================================================================== */
+
+.executive-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(260px, 1fr)
+  );
+  gap: 1.5rem;
+}
+
+.executive-metric-card {
+  padding: 1.5rem;
+  border-radius: var(
+    --executive-radius
+  );
+  background: var(
+    --executive-bg
+  );
+  border: 1px solid
+    var(--executive-border);
+  box-shadow: var(
+    --executive-shadow
+  );
+  transition: var(
+    --executive-transition
+  );
+}
+
+.executive-metric-card:hover {
+  transform: translateY(
+    -4px
+  );
+
+  box-shadow:
+    0 18px 45px rgba(
+      15,
+      23,
+      42,
+      0.12
+    );
+}
+
+.executive-metric-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.executive-metric-header p {
+  margin: 0;
+  color: var(
+    --executive-text-secondary
+  );
+  font-size: 0.9rem;
+}
+
+.executive-metric-header h3 {
+  margin-top: 0.6rem;
+  margin-bottom: 0;
+  color: var(
+    --executive-text
+  );
+  font-size: 1.6rem;
+  font-weight: 700;
+}
+
+.executive-icon {
+  width: 56px;
+  height: 56px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 16px;
+
+  background:
+    rgba(
+      37,
+      99,
+      235,
+      0.1
+    );
+
+  color: var(
+    --executive-primary
+  );
+}
+
+.executive-trend {
+  margin-top: 1rem;
+
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.executive-trend.positive {
+  color: var(
+    --executive-success
+  );
+}
+
+.executive-trend.negative {
+  color: var(
+    --executive-danger
+  );
+}
+
+/* ==========================================================================
+   Charts
+   ========================================================================== */
+
+.executive-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(450px, 1fr)
+  );
+  gap: 1.5rem;
+}
+
+.executive-chart-card {
+  background: var(
+    --executive-bg
+  );
+  border: 1px solid
+    var(--executive-border);
+  border-radius: var(
+    --executive-radius
+  );
+  box-shadow: var(
+    --executive-shadow
+  );
+  overflow: hidden;
+  transition: var(
+    --executive-transition
+  );
+}
+
+.executive-chart-card:hover {
+  transform: translateY(
+    -4px
+  );
+}
+
+.executive-chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid
+    var(--executive-border);
+}
+
+.executive-chart-header h3 {
+  margin: 0;
+  color: var(
+    --executive-text
+  );
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.executive-chart-header svg {
+  color: var(
+    --executive-primary
+  );
+}
+
+/* ==========================================================================
+   Risk & Governance
+   ========================================================================== */
+
+.executive-risk-grid {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(420px, 1fr)
+  );
+  gap: 1.5rem;
+}
+
+.executive-risk-card {
+  background: var(
+    --executive-bg
+  );
+  border: 1px solid
+    var(--executive-border);
+  border-radius: var(
+    --executive-radius
+  );
+  box-shadow: var(
+    --executive-shadow
+  );
+  overflow: hidden;
+  transition: var(
+    --executive-transition
+  );
+}
+
+.executive-risk-card:hover {
+  transform: translateY(
+    -4px
+  );
+}
+
+.executive-risk-metrics {
+  padding: 1.5rem;
+
+  display: grid;
+  gap: 1rem;
+}
+
+.executive-risk-metrics div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  background:
+    var(
+      --executive-surface
+    );
+
+  padding: 1rem;
+  border-radius: 14px;
+}
+
+.executive-risk-metrics span {
+  color: var(
+    --executive-text-secondary
+  );
+}
+
+.executive-risk-metrics strong {
+  color: var(
+    --executive-text
+  );
+  font-weight: 700;
+}
+
+.executive-status-list {
+  padding: 1.5rem;
+
+  display: grid;
+  gap: 1rem;
+}
+
+.executive-status-list div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  background:
+    var(
+      --executive-surface
+    );
+
+  padding: 1rem;
+  border-radius: 14px;
+}
+
+.executive-status-list span {
+  color: var(
+    --executive-text
+  );
+  font-weight: 600;
+}
+
+/* ==========================================================================
+   Recharts
+   ========================================================================== */
+
+.recharts-wrapper {
+  padding: 1rem;
+}
+
+.recharts-cartesian-axis-tick-value {
+  fill: var(
+    --executive-text-secondary
+  );
+}
+
+.recharts-legend-item-text {
+  color: var(
+    --executive-text
+  ) !important;
+}
+
+.recharts-tooltip-wrapper {
+  outline: none;
+}
+
+/* ==========================================================================
+   Dark Mode
+   ========================================================================== */
+
+.dark {
+  --executive-bg: #0f172a;
+  --executive-surface: #1e293b;
+  --executive-border: #334155;
+
+  --executive-text: #f8fafc;
+  --executive-text-secondary: #94a3b8;
+
+  --executive-shadow:
+    0 14px 45px rgba(
+      0,
+      0,
+      0,
+      0.45
+    );
+}
+
+.dark .recharts-cartesian-grid line {
+  stroke: #334155;
+}
+
+/* ==========================================================================
+   Responsive
+   ========================================================================== */
+
+@media (max-width: 1400px) {
+  .executive-chart-grid,
+  .executive-risk-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 992px) {
+  .executive-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .executive-metrics-grid {
+    grid-template-columns: repeat(
+      2,
+      minmax(0, 1fr)
+    );
+  }
+}
+
+@media (max-width: 768px) {
+  .executive-dashboard {
+    gap: 1.5rem;
+  }
+
+  .executive-header {
+    padding: 1.5rem;
+  }
+
+  .executive-header h1 {
+    font-size: 1.6rem;
+  }
+
+  .executive-actions {
+    width: 100%;
+  }
+
+  .executive-actions button {
+    flex: 1;
+  }
+
+  .executive-metrics-grid,
+  .executive-chart-grid,
+  .executive-risk-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .executive-risk-metrics div,
+  .executive-status-list div {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.6rem;
+  }
+}
+
+@media (max-width: 576px) {
+  .executive-header {
+    padding: 1rem;
+  }
+
+  .executive-metric-card {
+    padding: 1rem;
+  }
+
+  .executive-chart-header {
+    padding: 1rem;
+  }
+
+  .executive-risk-metrics,
+  .executive-status-list {
+    padding: 1rem;
+  }
+
+  .executive-metric-header h3 {
+    font-size: 1.3rem;
+  }
+}
+
+/* ==========================================================================
+   Reduced Motion
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  .executive-metric-card,
+  .executive-chart-card,
+  .executive-risk-card {
+    transition: none;
+  }
+
+  .executive-metric-card:hover,
+  .executive-chart-card:hover,
+  .executive-risk-card:hover {
+    transform: none;
+  }
+}

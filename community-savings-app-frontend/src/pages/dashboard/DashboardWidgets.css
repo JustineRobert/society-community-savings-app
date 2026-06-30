@@ -1,0 +1,395 @@
+/* ==========================================================================
+   TITech Community Capital
+   Enterprise Dashboard Widgets
+   File: frontend/src/pages/dashboard/DashboardWidgets.css
+   Production Grade
+   ========================================================================== */
+
+/* ==========================================================================
+   Root Variables
+   ========================================================================== */
+
+:root {
+  --widget-bg: #ffffff;
+  --widget-border: #e2e8f0;
+  --widget-text: #0f172a;
+  --widget-text-secondary: #64748b;
+
+  --widget-primary: #2563eb;
+  --widget-success: #16a34a;
+  --widget-warning: #f59e0b;
+  --widget-danger: #dc2626;
+
+  --widget-shadow:
+    0 10px 30px rgba(
+      15,
+      23,
+      42,
+      0.08
+    );
+
+  --widget-radius: 20px;
+
+  --widget-transition:
+    all 0.25s ease;
+}
+
+/* ==========================================================================
+   Grid
+   ========================================================================== */
+
+.dashboard-widgets-grid {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(350px, 1fr)
+  );
+  gap: 1.5rem;
+  margin-top: 2rem;
+}
+
+/* ==========================================================================
+   Widget Card
+   ========================================================================== */
+
+.dashboard-widget-card {
+  background: var(
+    --widget-bg
+  );
+  border: 1px solid
+    var(--widget-border);
+  border-radius: var(
+    --widget-radius
+  );
+  box-shadow: var(
+    --widget-shadow
+  );
+  overflow: hidden;
+  transition: var(
+    --widget-transition
+  );
+  min-height: 320px;
+}
+
+.dashboard-widget-card:hover {
+  transform: translateY(
+    -4px
+  );
+  box-shadow:
+    0 18px 40px rgba(
+      15,
+      23,
+      42,
+      0.12
+    );
+}
+
+/* ==========================================================================
+   Header
+   ========================================================================== */
+
+.dashboard-widget-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid
+    var(--widget-border);
+}
+
+.dashboard-widget-title {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.dashboard-widget-title svg {
+  color: var(
+    --widget-primary
+  );
+}
+
+.dashboard-widget-title h3 {
+  margin: 0;
+  color: var(
+    --widget-text
+  );
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+/* ==========================================================================
+   Body
+   ========================================================================== */
+
+.dashboard-widget-body {
+  padding: 1.5rem;
+  height: calc(
+    100% - 76px
+  );
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+
+/* ==========================================================================
+   Lists
+   ========================================================================== */
+
+.dashboard-widget-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.dashboard-widget-list li {
+  padding: 1rem 0;
+  border-bottom: 1px solid
+    rgba(
+      148,
+      163,
+      184,
+      0.15
+    );
+}
+
+.dashboard-widget-list li:last-child {
+  border-bottom: none;
+}
+
+.dashboard-widget-list p,
+.dashboard-widget-list strong {
+  margin: 0;
+  color: var(
+    --widget-text
+  );
+  font-weight: 600;
+}
+
+.dashboard-widget-list small {
+  display: block;
+  margin-top: 0.4rem;
+  color: var(
+    --widget-text-secondary
+  );
+  font-size: 0.8rem;
+}
+
+/* ==========================================================================
+   Metrics
+   ========================================================================== */
+
+.dashboard-widget-metrics {
+  display: grid;
+  gap: 1rem;
+}
+
+.dashboard-widget-metrics div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  padding: 0.9rem 1rem;
+
+  background:
+    rgba(
+      248,
+      250,
+      252,
+      0.8
+    );
+
+  border-radius: 12px;
+}
+
+.dashboard-widget-metrics span {
+  color: var(
+    --widget-text-secondary
+  );
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.dashboard-widget-metrics strong {
+  color: var(
+    --widget-text
+  );
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+/* ==========================================================================
+   Health
+   ========================================================================== */
+
+.dashboard-widget-health {
+  display: grid;
+  gap: 1rem;
+}
+
+.dashboard-widget-health div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  padding: 0.85rem 1rem;
+
+  border-radius: 12px;
+  background:
+    rgba(
+      248,
+      250,
+      252,
+      0.8
+    );
+}
+
+.dashboard-widget-health span {
+  color: var(
+    --widget-text
+  );
+  font-weight: 600;
+}
+
+/* ==========================================================================
+   Actions
+   ========================================================================== */
+
+.dashboard-widget-actions {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(140px, 1fr)
+  );
+  gap: 0.9rem;
+}
+
+.dashboard-widget-actions button {
+  width: 100%;
+  justify-content: center;
+}
+
+/* ==========================================================================
+   Warning Cards
+   ========================================================================== */
+
+.dashboard-widget-card.warning {
+  border-left: 5px solid
+    var(--widget-warning);
+}
+
+.dashboard-widget-card.warning
+  .dashboard-widget-title
+  svg {
+  color: var(
+    --widget-warning
+  );
+}
+
+/* ==========================================================================
+   Empty States
+   ========================================================================== */
+
+.dashboard-widget-body p {
+  margin: 0;
+  color: var(
+    --widget-text-secondary
+  );
+}
+
+/* ==========================================================================
+   Dark Mode
+   ========================================================================== */
+
+.dark {
+  --widget-bg: #0f172a;
+  --widget-border: #1e293b;
+  --widget-text: #f8fafc;
+  --widget-text-secondary: #94a3b8;
+
+  --widget-shadow:
+    0 12px 40px rgba(
+      0,
+      0,
+      0,
+      0.45
+    );
+}
+
+.dark
+  .dashboard-widget-metrics
+  div,
+.dark
+  .dashboard-widget-health
+  div {
+  background:
+    rgba(
+      30,
+      41,
+      59,
+      0.8
+    );
+}
+
+/* ==========================================================================
+   Responsive
+   ========================================================================== */
+
+@media (max-width: 1200px) {
+  .dashboard-widgets-grid {
+    grid-template-columns: repeat(
+      auto-fit,
+      minmax(300px, 1fr)
+    );
+  }
+}
+
+@media (max-width: 768px) {
+  .dashboard-widgets-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .dashboard-widget-header {
+    padding: 1rem;
+  }
+
+  .dashboard-widget-body {
+    padding: 1rem;
+  }
+
+  .dashboard-widget-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .dashboard-widget-card {
+    min-height: auto;
+  }
+
+  .dashboard-widget-title h3 {
+    font-size: 0.95rem;
+  }
+
+  .dashboard-widget-metrics div,
+  .dashboard-widget-health div {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.4rem;
+  }
+}
+
+/* ==========================================================================
+   Reduced Motion
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-widget-card {
+    transition: none;
+  }
+
+  .dashboard-widget-card:hover {
+    transform: none;
+  }
+}

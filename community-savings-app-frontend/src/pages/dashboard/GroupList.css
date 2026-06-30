@@ -1,0 +1,469 @@
+/* ==========================================================================
+   TITech Community Capital
+   Group List
+   File: frontend/src/pages/dashboard/GroupList.css
+   Production Grade
+   ========================================================================== */
+
+/* ==========================================================================
+   Variables
+   ========================================================================== */
+
+:root {
+  --group-bg: #ffffff;
+  --group-surface: #f8fafc;
+  --group-border: #e2e8f0;
+
+  --group-primary: #2563eb;
+  --group-primary-light: #dbeafe;
+
+  --group-success: #16a34a;
+  --group-warning: #f59e0b;
+  --group-danger: #dc2626;
+
+  --group-text: #0f172a;
+  --group-text-secondary: #64748b;
+
+  --group-radius: 20px;
+
+  --group-shadow:
+    0 8px 25px
+      rgba(15, 23, 42, 0.08);
+
+  --group-transition:
+    all 0.25s ease;
+}
+
+/* ==========================================================================
+   Container
+   ========================================================================== */
+
+.group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+  width: 100%;
+}
+
+/* ==========================================================================
+   Toolbar
+   ========================================================================== */
+
+.group-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.group-search {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+
+  flex: 1;
+  min-width: 300px;
+
+  background: var(--group-bg);
+  border: 1px solid
+    var(--group-border);
+  border-radius: 16px;
+  padding: 0.75rem 1rem;
+
+  box-shadow: var(
+    --group-shadow
+  );
+}
+
+.group-search svg {
+  color: var(
+    --group-text-secondary
+  );
+  flex-shrink: 0;
+}
+
+.group-search input {
+  border: none;
+  outline: none;
+  background: transparent;
+  width: 100%;
+}
+
+.group-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.group-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+
+  background: var(--group-bg);
+  border: 1px solid
+    var(--group-border);
+  border-radius: 16px;
+  padding: 0.75rem 1rem;
+
+  box-shadow: var(
+    --group-shadow
+  );
+}
+
+.group-filter svg {
+  color: var(
+    --group-text-secondary
+  );
+}
+
+.group-filter select {
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--group-text);
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+/* ==========================================================================
+   Summary
+   ========================================================================== */
+
+.group-summary {
+  color: var(
+    --group-text-secondary
+  );
+  font-size: 0.95rem;
+}
+
+.group-summary strong {
+  color: var(--group-text);
+}
+
+/* ==========================================================================
+   Grid
+   ========================================================================== */
+
+.group-grid {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(320px, 1fr)
+  );
+  gap: 1.5rem;
+}
+
+/* ==========================================================================
+   Card
+   ========================================================================== */
+
+.group-card {
+  background: var(--group-bg);
+  border: 1px solid
+    var(--group-border);
+  border-radius: var(
+    --group-radius
+  );
+
+  padding: 1.5rem;
+
+  box-shadow: var(
+    --group-shadow
+  );
+
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+
+  transition: var(
+    --group-transition
+  );
+
+  position: relative;
+  overflow: hidden;
+}
+
+.group-card::before {
+  content: "";
+  position: absolute;
+
+  top: 0;
+  left: 0;
+  right: 0;
+
+  height: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--group-primary),
+    #3b82f6
+  );
+
+  opacity: 0;
+  transition: var(
+    --group-transition
+  );
+}
+
+.group-card:hover {
+  transform: translateY(
+    -6px
+  );
+
+  box-shadow:
+    0 20px 45px
+      rgba(
+        15,
+        23,
+        42,
+        0.12
+      );
+}
+
+.group-card:hover::before {
+  opacity: 1;
+}
+
+.group-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.group-avatar {
+  width: 54px;
+  height: 54px;
+
+  border-radius: 16px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  background:
+    var(
+      --group-primary-light
+    );
+
+  color: var(
+    --group-primary
+  );
+}
+
+.group-card h3 {
+  margin: 0;
+
+  font-size: 1.15rem;
+  font-weight: 700;
+
+  color: var(--group-text);
+
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-description {
+  margin: 0;
+  color: var(
+    --group-text-secondary
+  );
+  line-height: 1.6;
+  min-height: 50px;
+}
+
+/* ==========================================================================
+   Metadata
+   ========================================================================== */
+
+.group-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.group-meta div {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+
+  color: var(
+    --group-text-secondary
+  );
+
+  font-size: 0.92rem;
+}
+
+.group-meta svg {
+  color: var(
+    --group-primary
+  );
+  flex-shrink: 0;
+}
+
+/* ==========================================================================
+   Actions
+   ========================================================================== */
+
+.group-open-btn {
+  margin-top: auto;
+  width: 100%;
+}
+
+.group-open-btn svg {
+  margin-left: 0.5rem;
+}
+
+/* ==========================================================================
+   Loading State
+   ========================================================================== */
+
+.group-grid .skeleton {
+  border-radius: var(
+    --group-radius
+  );
+}
+
+/* ==========================================================================
+   Empty State
+   ========================================================================== */
+
+.group-empty {
+  background: var(--group-bg);
+  border: 1px dashed
+    var(--group-border);
+
+  border-radius: var(
+    --group-radius
+  );
+
+  padding: 4rem 2rem;
+
+  text-align: center;
+}
+
+.group-empty h3 {
+  margin-top: 1rem;
+  color: var(--group-text);
+}
+
+.group-empty p {
+  color: var(
+    --group-text-secondary
+  );
+}
+
+/* ==========================================================================
+   Scrollbar
+   ========================================================================== */
+
+.group-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.group-list::-webkit-scrollbar-thumb {
+  background:
+    rgba(
+      148,
+      163,
+      184,
+      0.4
+    );
+  border-radius: 999px;
+}
+
+/* ==========================================================================
+   Dark Mode
+   ========================================================================== */
+
+.dark {
+  --group-bg: #0f172a;
+  --group-surface: #1e293b;
+  --group-border: #334155;
+
+  --group-text: #f8fafc;
+  --group-text-secondary: #94a3b8;
+
+  --group-shadow:
+    0 12px 40px
+      rgba(0, 0, 0, 0.45);
+
+  --group-primary-light:
+    rgba(
+      37,
+      99,
+      235,
+      0.2
+    );
+}
+
+/* ==========================================================================
+   Responsive
+   ========================================================================== */
+
+@media (max-width: 992px) {
+  .group-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .group-search {
+    min-width: auto;
+  }
+
+  .group-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+@media (max-width: 768px) {
+  .group-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .group-filter,
+  .group-search {
+    width: 100%;
+  }
+
+  .group-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .group-actions button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 576px) {
+  .group-card {
+    padding: 1.25rem;
+  }
+
+  .group-description {
+    min-height: auto;
+  }
+
+  .group-meta {
+    gap: 0.6rem;
+  }
+}
+
+/* ==========================================================================
+   Reduced Motion
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  .group-card,
+  .group-card::before {
+    transition: none;
+  }
+
+  .group-card:hover {
+    transform: none;
+  }
+}
