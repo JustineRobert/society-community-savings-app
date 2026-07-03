@@ -3,7 +3,7 @@
 
 const { Queue, Worker, QueueScheduler } = require('bullmq');
 const IORedis = require('ioredis');
-const logger = require('../middleware/logging');
+const logger = require('../utils/logger');
 
 // Redis connection (supports URL or host/port)
 const redisUrl = process.env.REDIS_URL || process.env.REDIS_URI || null;

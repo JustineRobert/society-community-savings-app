@@ -145,13 +145,26 @@ app.options('*', cors(corsOptions));
 /*                               RATE LIMITING                                 */
 /* -------------------------------------------------------------------------- */
 
+const isDevelopment = process.env.NODE_ENV !== 'production';
+
+function skipLocalhost(req) {
+  if (!isDevelopment) return false;
+
+  const ip = req.ip || req.connection?.remoteAddress || '';
+  return (
+    ip === '127.0.0.1' ||
+    ip === '::1' ||
+    ip.includes('127.0.0.1')
+  );
+}
+
 /**
  * Create a rate limiter using redisService.createRateLimitStore() which will
  * return a Redis-backed store when Redis is available, or a memory fallback
  * otherwise. For auth endpoints we use a lighter limiter and skip logout to
  * avoid 401->429 cascades.
  */
-function createApiLimiter({ windowMs = 15 * 60 * 1000, max = config.rateLimitMax } = {}) {
+function createApiLimiter({ windowMs = 15 * 60 * 1000, max = config.rateLimitMax, skipPaths = [] } = {}) {
   const store = redisService.createRateLimitStore();
   return rateLimit({
     windowMs,
@@ -159,6 +172,12 @@ function createApiLimiter({ windowMs = 15 * 60 * 1000, max = config.rateLimitMax
     store,
     standardHeaders: true,
     legacyHeaders: false,
+    skip(req) {
+      if (skipPaths.some((path) => req.path === path || req.originalUrl?.endsWith(path))) {
+        return true;
+      }
+      return skipLocalhost(req);
+    },
     handler: (req, res) =>
       res.status(429).json({
         message: 'Too many requests, please try again later.',
@@ -170,7 +189,11 @@ function createApiLimiter({ windowMs = 15 * 60 * 1000, max = config.rateLimitMax
 const apiLimiter = createApiLimiter();
 
 // Auth-specific limiter (lighter)
-const authLimiter = createApiLimiter({ windowMs: 15 * 60 * 1000, max: Math.max(10, Math.floor((config.rateLimitMax || 100) / 4)) });
+const authLimiter = createApiLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: Math.max(10, Math.floor((config.rateLimitMax || 100) / 4)),
+  skipPaths: ['/logout'],
+});
 
 // Apply global limiter to API
 app.use(apiLimiter);
@@ -190,20 +213,16 @@ app.use('/api/risk', require('./routes/risk'));
 // The auth route file should export router; we mount it here and then add a
 // small middleware to bypass rate limiting for logout path if needed.
 const authRouter = require('./routes/auth');
-
-// Bypass authLimiter for logout to avoid repeated 401->429 loops.
-// This middleware runs before authRouter handlers.
-app.use('/api/auth/logout', (req, res, next) => {
-  // Allow the request through without counting against the authLimiter store.
-  // express-rate-limit does not provide a direct skip API, so we simply call next()
-  // and rely on the auth route handler to be idempotent (return 204 when no session).
-  next();
-});
+const emailRouter = require('./routes/email');
 
 app.use('/api/auth', authRouter);
+app.use('/api/email', emailRouter);
 
 app.use('/api/momo', require('./routes/momoRoutes'));
 app.use('/api/webhook', require('./routes/webhook'));
+app.use('/api/kyc', require('./routes/kyc'));
+app.use('/api/bizchat', require('./routes/bizchat'));
+app.use('/api/rbac', require('./routes/rbac'));
 
 /* -------------------------------------------------------------------------- */
 /*                                 METRICS                                     */
@@ -306,7 +325,7 @@ server.requestTimeout = config.timeouts?.request || 120000;
 /*                              START SERVER                                   */
 /* -------------------------------------------------------------------------- */
 
-(async () => {
+async function startServer() {
   try {
     // Connect DB first (this will set mongoReady when open)
     await connectDB();
@@ -325,6 +344,14 @@ server.requestTimeout = config.timeouts?.request || 120000;
     // If mongoose emits duplicate index warnings, recommend disabling autoIndex in production
     if (config.env === 'production') {
       mongoose.set('autoIndex', false);
+    }
+
+    // Seed RBAC roles/permissions if present
+    try {
+      const rbacService = require('./services/rbacService');
+      rbacService.seedRolesPermissions().catch((err) => logger.debug('RBAC seed skipped or failed', { err: err.message }));
+    } catch (err) {
+      logger.debug('RBAC seed service not available', { err: err.message });
     }
 
     if (!server.listening) {
@@ -353,7 +380,11 @@ server.requestTimeout = config.timeouts?.request || 120000;
     });
     process.exit(1);
   }
-})();
+}
+
+if (require.main === module) {
+  startServer();
+}
 
 server.on('error', (err) => {
   logger.error('HTTP Server Error', { error: err.message, code: err.code });
@@ -408,8 +439,6 @@ process.on('uncaughtException', (err) => {
   shutdown(1);
 });
 
-module.exports = {
-  app,
-  server,
-  io,
-};
+module.exports = app;
+app.server = server;
+app.io = io;

@@ -1,3 +1,12 @@
+const AuditLog = require('../models/AuditLog');
+
+async function logAction({ action, userId, tenantId, entityType, entityId, metadata }) {
+  const entry = new AuditLog({ action, userId, tenantId, entityType, entityId, metadata });
+  await entry.save();
+  return entry;
+}
+
+module.exports = { logAction };
 // services/auditService.js
 const mongoose = require("mongoose");
 

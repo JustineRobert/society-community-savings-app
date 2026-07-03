@@ -2,7 +2,7 @@
 "use strict";
 
 const axios = require("axios");
-const logger = require("../utils/logger") || console;
+const logger = require("../../utils/logger") || console;
 
 const BASE_URL = process.env.KYC_PROVIDER_URL;
 const API_KEY = process.env.KYC_API_KEY;

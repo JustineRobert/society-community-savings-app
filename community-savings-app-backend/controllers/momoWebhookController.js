@@ -3,7 +3,7 @@
 // Exports a named handler `momoCallback` expected by routes/momoRoutes.js
 
 const mongoose = require("mongoose");
-const { v4: uuidv4 } = require("uuid");
+const { randomUUID } = require('crypto');
 const LedgerEntry = require("../models/LedgerEntry");
 const Transaction = require("../models/Transaction");
 
@@ -11,7 +11,7 @@ const Transaction = require("../models/Transaction");
  * Generate a short error id for logs and responses.
  */
 function makeErrorId() {
-  return uuidv4();
+  return randomUUID();
 }
 
 /**

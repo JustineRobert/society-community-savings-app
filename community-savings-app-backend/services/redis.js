@@ -19,8 +19,14 @@
 // if (!redis.isReady()) { /* fallback behavior */ }
 // ============================================================================
 
-const Redis = require('ioredis');
 const EventEmitter = require('events');
+let Redis;
+try {
+  // only require ioredis when not running tests or when a real URI is provided
+  Redis = require('ioredis');
+} catch (err) {
+  Redis = null;
+}
 
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const REDIS_URI = process.env.REDIS_URI || process.env.REDIS_URL || 'redis://127.0.0.1:6379';
@@ -149,8 +155,15 @@ function createMemoryStore() {
 let client;
 let memoryFallback = null;
 
-try {
-  client = new Redis(REDIS_URI, {
+// If running tests, prefer an in-memory stub to avoid opening TCP handles.
+if (NODE_ENV === 'test' || String(REDIS_URI).toLowerCase().startsWith('memory')) {
+  memoryFallback = createMemoryStore();
+  client = memoryFallback;
+  gracefullyDegraded = true;
+  logInfo('ℹ️ Redis stub (in-memory) active for test environment');
+} else {
+  try {
+    client = new Redis(REDIS_URI, {
     retryStrategy: (times) => {
       if (times > MAX_RETRY_ATTEMPTS) {
         // stop retrying
@@ -174,12 +187,13 @@ try {
     autoResubscribe: true,
   });
 
-  logInfo('🔌 Redis client created');
-} catch (err) {
-  logErrorThrottled('⚠️ Failed to create Redis client:', err);
-  gracefullyDegraded = true;
-  memoryFallback = createMemoryStore();
-  client = memoryFallback;
+    logInfo('🔌 Redis client created');
+  } catch (err) {
+    logErrorThrottled('⚠️ Failed to create Redis client:', err);
+    gracefullyDegraded = true;
+    memoryFallback = createMemoryStore();
+    client = memoryFallback;
+  }
 }
 
 // ============================================================================

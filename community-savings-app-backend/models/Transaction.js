@@ -378,18 +378,6 @@ transactionSchema.index({
 });
 
 transactionSchema.index({
-  externalId: 1,
-});
-
-transactionSchema.index({
-  providerTransactionId: 1,
-});
-
-transactionSchema.index({
-  reconciled: 1,
-});
-
-transactionSchema.index({
   tenantId: 1,
   createdAt: -1,
 });

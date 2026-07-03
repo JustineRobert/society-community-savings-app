@@ -43,14 +43,20 @@ try {
 }
 
 // Optional context integration
-let requestContext;
+let requestContext = null;
 
-try {
-  requestContext = require(
-    '../middleware/requestContext'
-  );
-} catch (_) {
-  requestContext = null;
+function loadRequestContext() {
+  if (requestContext) {
+    return requestContext;
+  }
+
+  try {
+    requestContext = require('../middleware/requestContext');
+  } catch (_) {
+    requestContext = null;
+  }
+
+  return requestContext;
 }
 
 const LOG_LEVEL =
@@ -199,16 +205,19 @@ function redactMeta(
 
 function getRequestMeta() {
   try {
+    const contextModule =
+      loadRequestContext();
+
     if (
-      !requestContext ||
-      typeof requestContext.getContext !==
+      !contextModule ||
+      typeof contextModule.getContext !==
         'function'
     ) {
       return {};
     }
 
     const ctx =
-      requestContext.getContext();
+      contextModule.getContext() || {};
 
     return {
       requestId:

@@ -10,7 +10,7 @@ const mongoSanitize = require('express-mongo-sanitize');
 const helmet = require('helmet');
 const csrf = require('csrf');
 const crypto = require('crypto');
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('crypto');
 
 // ============================================================================
 // 1. HELMET - Secure HTTP Headers

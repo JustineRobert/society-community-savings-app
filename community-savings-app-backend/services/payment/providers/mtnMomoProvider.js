@@ -7,7 +7,7 @@
  */
 
 const axios = require('axios');
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('crypto');
 const BasePaymentProvider = require('./baseProvider');
 const logger = require('../../../utils/logger');
 
@@ -56,7 +56,7 @@ class MtnMomoProvider extends BasePaymentProvider {
   generateHeaders() {
     return {
       Authorization: `Bearer ${this.apiKey}`,
-      'X-Reference-Id': uuidv4(),
+      'X-Reference-Id': randomUUID(),
       'Content-Type': 'application/json',
       Accept: 'application/json',
     };
@@ -95,7 +95,7 @@ class MtnMomoProvider extends BasePaymentProvider {
     }
 
     try {
-      const requestId = uuidv4();
+      const requestId = randomUUID();
       const normalizedPhone = this.normalizePhoneNumber(phone);
 
       const payload = {
@@ -241,7 +241,7 @@ class MtnMomoProvider extends BasePaymentProvider {
     }
 
     try {
-      const requestId = uuidv4();
+      const requestId = randomUUID();
       const normalizedPhone = this.normalizePhoneNumber(phone);
 
       const payload = {
@@ -375,7 +375,7 @@ class MtnMomoProvider extends BasePaymentProvider {
    */
   async refundPayment(originalRequestId, amount) {
     try {
-      const refundId = uuidv4();
+      const refundId = randomUUID();
 
       logger.info('[MtnMoMo] Refund initiated', {
         originalRequestId,

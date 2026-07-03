@@ -8,7 +8,7 @@ const emitter = new EventEmitter();
 emitter.setMaxListeners(50);
 
 // Centralized logger (replace with Winston or your logger)
-const logger = require('../middleware/logging');
+const logger = require('../utils/logger');
 
 function publish(topic, payload) {
   try {

@@ -3,7 +3,7 @@
 // Production-ready MTN MoMo Request-to-Pay integration (collection API)
 
 const axios = require("axios");
-const { v4: uuidv4 } = require("uuid");
+const { randomUUID } = require('crypto');
 const logger = require("../utils/logger"); // optional structured logger
 
 const BASE_URL = process.env.MTN_MOMO_BASE_URL || "https://sandbox.momodeveloper.mtn.com";
@@ -17,7 +17,7 @@ const RETRY_DELAY_MS = parseInt(process.env.MTN_RETRY_DELAY_MS || "500", 10);
 
 const momoServiceImpl = require('./momoServiceImpl'); // actual HTTP client to MoMo
 const circuitFactory = require('../utils/circuitBreaker');
-const logger = require('../middleware/logging');
+const logger = require('../utils/logger');
 
 // Optional: fallback when MoMo is unavailable
 const fallback = async (payload) => {
@@ -114,7 +114,7 @@ exports.requestToPay = async ({ phone, amount, reference, currency } = {}) => {
   if (!phone) throw new Error("phone is required");
   if (amount == null || Number(amount) <= 0) throw new Error("amount must be a positive number");
 
-  const extRef = reference || uuidv4();
+  const extRef = reference || randomUUID();
   const body = {
     amount: String(amount),
     currency: (currency || DEFAULT_CURRENCY).toUpperCase(),
@@ -232,7 +232,7 @@ exports.initiatePayout = async ({ phone, amount, reference, currency } = {}) => 
   if (!phone) throw new Error("phone is required");
   if (amount == null || Number(amount) <= 0) throw new Error("amount must be a positive number");
 
-  const extRef = reference || uuidv4();
+  const extRef = reference || randomUUID();
   const body = {
     amount: String(amount),
     currency: (currency || DEFAULT_CURRENCY).toUpperCase(),

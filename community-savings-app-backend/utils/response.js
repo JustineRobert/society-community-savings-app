@@ -1,3 +1,12 @@
+function success(res, data = null, traceId = null) {
+  return res.json({ success: true, data, traceId });
+}
+
+function error(res, code = 'ERROR', message = 'An error occurred', status = 500, traceId = null) {
+  return res.status(status).json({ success: false, error: { code, message }, traceId });
+}
+
+module.exports = { success, error };
 // utils/response.js
 'use strict';
 

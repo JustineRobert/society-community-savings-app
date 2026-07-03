@@ -1,3 +1,27 @@
+const KYC = require('../models/KYC');
+
+async function createOrUpdateKYC(userId, data) {
+  const filter = { userId };
+  const update = { $set: data };
+  const opts = { upsert: true, new: true, setDefaultsOnInsert: true };
+  return KYC.findOneAndUpdate(filter, update, opts).lean();
+}
+
+async function getKYCByUser(userId) {
+  return KYC.findOne({ userId }).lean();
+}
+
+async function requireVerifiedKYC(req, res, next) {
+  const userId = req.user && req.user.id;
+  if (!userId) return res.status(401).json({ success: false, error: { code: 'UNAUTH', message: 'Unauthorized' } });
+  const kyc = await KYC.findOne({ userId }).lean();
+  if (!kyc || kyc.status !== 'VERIFIED') {
+    return res.status(403).json({ success: false, error: { code: 'KYC_REQUIRED', message: 'KYC verification required' } });
+  }
+  next();
+}
+
+module.exports = { createOrUpdateKYC, getKYCByUser, requireVerifiedKYC };
 // ============================================================================
 // File: backend/services/kycService.js
 // Description: Enterprise KYC Service

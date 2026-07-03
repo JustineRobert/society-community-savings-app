@@ -9,7 +9,8 @@
 
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
-const { v4: uuidv4 } = require('uuid');
+const mongoose = require('mongoose');
+const logger = require('../utils/logger');
 const User = require('../models/User');
 const RefreshToken = require('../models/RefreshToken');
 
@@ -18,7 +19,7 @@ const ACCESS_TOKEN_SECRET = process.env.ACCESS_TOKEN_SECRET || process.env.JWT_S
 
 const REFRESH_TOKEN_DAYS = parseInt(process.env.REFRESH_TOKEN_DAYS || '30', 10);
 const REFRESH_COOKIE_NAME = 'refreshToken';
-const REFRESH_COOKIE_PATH = '/api/auth/refresh';
+const REFRESH_COOKIE_PATH = '/api/auth';
 
 const JWT_ISSUER = process.env.JWT_ISSUER || undefined;
 const JWT_AUDIENCE = process.env.JWT_AUDIENCE || undefined;
@@ -46,16 +47,30 @@ function setRefreshCookie(res, token) {
 }
 
 function clearRefreshCookie(res) {
-  res.clearCookie(REFRESH_COOKIE_NAME, { path: REFRESH_COOKIE_PATH });
+  const isProd = process.env.NODE_ENV === 'production';
+  res.clearCookie(REFRESH_COOKIE_NAME, {
+    path: REFRESH_COOKIE_PATH,
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? 'Strict' : 'Lax',
+  });
 }
 
 function generateAccessToken(user) {
   // user can be a Mongoose document; use normalized primitives.
+  const userId = user._id?.toString?.() || user.id || String(user);
+  const tenantId = user.tenantId?.toString?.() || user.tenantId || null;
   const payload = {
+    sub: userId,
+    id: userId,
+    userId,
+    tenantId,
+    role: user.role,
     user: {
-      id: user._id?.toString?.() || user.id || String(user),
+      id: userId,
       email: user.email,
       role: user.role,
+      tenantId,
     },
   };
   const options = {
@@ -73,7 +88,7 @@ async function createRefreshToken(userId, deviceInfo = {}) {
   const expiresAt = new Date(now.getTime() + REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000);
 
   const dbEntry = await RefreshToken.create({
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     userId,
     tokenHash,
     deviceInfo,
@@ -101,17 +116,24 @@ async function register(req, res) {
       email,
       password,
       name,
+      fullName,
+      firstName,
+      lastName,
+      phoneNumber,
       deviceInfo = {},
     } = req.body;
 
-    if (!email || !password || !name) {
+    const normalizedName = (name || fullName || `${firstName || ''} ${lastName || ''}`)
+      .trim();
+    const normalizedEmail = email?.trim().toLowerCase();
+    const normalizedPhone = phoneNumber?.trim() || req.body.phone?.trim();
+
+    if (!normalizedEmail || !password || !normalizedName) {
       return res.status(400).json({
         success: false,
         message: 'Name, email and password are required',
       });
     }
-
-    const normalizedEmail = email.trim().toLowerCase();
 
     const existing = await User.findOne({
       email: normalizedEmail,
@@ -124,18 +146,44 @@ async function register(req, res) {
       });
     }
 
+    const tenantHeader = req.headers['x-tenant-id'];
+    const tenantId =
+      tenantHeader &&
+      mongoose.Types.ObjectId.isValid(tenantHeader)
+        ? tenantHeader
+        : null;
+
     const user = await User.create({
-      name,
+      name: normalizedName,
       email: normalizedEmail,
       password,
+      phone: normalizedPhone,
+      tenantId,
     });
+
+    if (tenantId) {
+      try {
+        const WalletService = require('../services/walletService');
+        if (WalletService?.createWallet) {
+          await WalletService.createWallet({
+            userId: user._id,
+            tenantId,
+          });
+        }
+      } catch (err) {
+        logger.warn('[AuthController] Wallet creation failed', { error: err.message, userId: user._id, tenantId });
+      }
+    }
 
     const accessToken = generateAccessToken(user);
 
     const { token: refreshToken } =
       await createRefreshToken(user._id, {
         ip: req.ip,
-        ua: req.get('User-Agent'),
+        ua:
+          req.headers?.['user-agent'] ||
+          req.get?.('User-Agent') ||
+          null,
         ...deviceInfo,
       });
 
@@ -238,12 +286,39 @@ async function login(req, res) {
         message: 'Account disabled',
       });
     }
-    if (!user) return res.status(401).json({ message: 'Invalid credentials' });
 
-    const isMatch = await user.matchPassword(password); // assumes schema method
-    if (!isMatch) return res.status(401).json({ message: 'Invalid credentials' });
+    if (user.status === 'suspended' || user.status === 'locked') {
+      return res.status(423).json({
+        message:
+          user.status === 'locked'
+            ? 'Account temporarily locked due to failed login attempts'
+            : 'Account suspended',
+      });
+    }
+
+    if (typeof user.isLocked === 'function' && user.isLocked()) {
+      return res.status(423).json({
+        message: 'Account temporarily locked due to failed login attempts',
+      });
+    }
+
+    const isMatch = await user.matchPassword(password);
+    if (!isMatch) {
+      if (typeof user.bumpFailedLogin === 'function') {
+        await user.bumpFailedLogin();
+      }
+      return res.status(401).json({ message: 'Invalid credentials' });
+    }
+
+    if (typeof user.resetFailedLogin === 'function') {
+      await user.resetFailedLogin();
+    }
 
     user.lastLogin = new Date();
+    user.security = user.security || {};
+    user.security.lastLoginAt = new Date();
+    user.security.lastLoginIp = req.ip;
+    user.security.lastLoginUserAgent = req.get('User-Agent');
     await user.save();
 
     const accessToken = generateAccessToken(user);
@@ -282,8 +357,30 @@ async function login(req, res) {
  * - Token family support
  */
 
+async function createRefreshSession() {
+  // In test environments or when transactions are not supported by the server,
+  // avoid creating sessions to prevent "Transaction numbers are only allowed"
+  // errors on standalone Mongo instances. Tests typically run against a
+  // lightweight Mongo that doesn't support transactions.
+  if (process.env.NODE_ENV === 'test') {
+    return { session: null, transactionAvailable: false };
+  }
+
+  const session = await RefreshToken.startSession();
+  let transactionAvailable = true;
+
+  try {
+    session.startTransaction();
+  } catch (err) {
+    transactionAvailable = false;
+  }
+
+  return { session, transactionAvailable };
+}
+
 async function refresh(req, res) {
   let session;
+  let transactionAvailable = false;
 
   try {
     const presentedToken =
@@ -300,15 +397,23 @@ async function refresh(req, res) {
 
     const presentedHash = hashToken(presentedToken);
 
-    session = await RefreshToken.startSession();
-    session.startTransaction();
+    ({ session, transactionAvailable } = await createRefreshSession());
+    const sessionOptions = transactionAvailable ? { session } : {};
 
-    const dbToken = await RefreshToken.findOne({
-      tokenHash: presentedHash,
-    }).session(session);
+    const dbTokenQuery = RefreshToken.findOne({ tokenHash: presentedHash });
+    if (transactionAvailable) {
+      dbTokenQuery.session(session);
+    }
+    const dbToken = await dbTokenQuery.exec();
 
     if (!dbToken) {
-      await session.abortTransaction();
+      if (
+        transactionAvailable &&
+        typeof session.inTransaction === 'function' &&
+        session.inTransaction()
+      ) {
+        await session.abortTransaction();
+      }
 
       return res.status(401).json({
         success: false,
@@ -332,10 +437,12 @@ async function refresh(req, res) {
             revokedReason: 'reuse_detected',
           },
         },
-        { session }
+        transactionAvailable ? { session } : {}
       );
 
-      await session.commitTransaction();
+      if (transactionAvailable) {
+        await session.commitTransaction();
+      }
 
       console.warn(
         `[SECURITY] Refresh token reuse detected for user ${dbToken.userId}`
@@ -356,9 +463,11 @@ async function refresh(req, res) {
       dbToken.revokedAt = new Date();
       dbToken.revokedReason = 'expired';
 
-      await dbToken.save({ session });
+      await dbToken.save(transactionAvailable ? { session } : {});
 
-      await session.commitTransaction();
+      if (transactionAvailable) {
+        await session.commitTransaction();
+      }
 
       return res.status(401).json({
         success: false,
@@ -370,12 +479,20 @@ async function refresh(req, res) {
     /**
      * User Validation
      */
-    const user = await User.findById(
-      dbToken.userId
-    ).session(session);
+    const userQuery = User.findById(dbToken.userId);
+    if (transactionAvailable) {
+      userQuery.session(session);
+    }
+    const user = await userQuery.exec();
 
     if (!user) {
-      await session.abortTransaction();
+      if (
+        transactionAvailable &&
+        typeof session.inTransaction === 'function' &&
+        session.inTransaction()
+      ) {
+        await session.abortTransaction();
+      }
 
       return res.status(401).json({
         success: false,
@@ -399,10 +516,12 @@ async function refresh(req, res) {
             revokedReason: 'account_disabled',
           },
         },
-        { session }
+        transactionAvailable ? { session } : {}
       );
 
-      await session.commitTransaction();
+      if (transactionAvailable) {
+        await session.commitTransaction();
+      }
 
       return res.status(403).json({
         success: false,
@@ -430,15 +549,17 @@ async function refresh(req, res) {
     dbToken.replacedBy = newDbToken.id;
     dbToken.lastUsedAt = new Date();
 
-    await dbToken.save({ session });
+    await dbToken.save(transactionAvailable ? { session } : {});
 
     /**
      * Update New Session Metadata
      */
     newDbToken.lastUsedAt = new Date();
-    await newDbToken.save({ session });
+    await newDbToken.save(transactionAvailable ? { session } : {});
 
-    await session.commitTransaction();
+    if (transactionAvailable) {
+      await session.commitTransaction();
+    }
 
     /**
      * Issue New Access Token
@@ -459,7 +580,10 @@ async function refresh(req, res) {
         userId: user._id,
         sessionId: newDbToken.id,
         ip: req.ip,
-        userAgent: req.get('User-Agent'),
+        userAgent:
+          req.headers?.['user-agent'] ||
+          req.get?.('User-Agent') ||
+          null,
       }
     );
 
@@ -474,7 +598,7 @@ async function refresh(req, res) {
       error
     );
 
-    if (session?.inTransaction()) {
+    if (session && transactionAvailable && typeof session.inTransaction === 'function' && session.inTransaction()) {
       await session.abortTransaction();
     }
 

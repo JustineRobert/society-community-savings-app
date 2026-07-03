@@ -3,7 +3,7 @@
 
 const { Worker, QueueScheduler } = require('bullmq');
 const IORedis = require('ioredis');
-const logger = require('../middleware/logging'); // your structured logger
+const logger = require('../utils/logger'); // your structured logger
 const { httpRequestsTotal, httpErrorsTotal } = require('../utils/metrics'); // optional metrics
 
 // Redis connection (URL preferred)

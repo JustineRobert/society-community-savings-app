@@ -6,7 +6,7 @@
 const { Server: SocketIOServer } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const config = require('../config');
-const { logger } = require('../utils/logger');
+const logger = require('../utils/logger');
 
 function createSocketServer(httpServer, options = {}) {
   const allowedOrigins = (config.corsOrigins || 'http://localhost:3000')

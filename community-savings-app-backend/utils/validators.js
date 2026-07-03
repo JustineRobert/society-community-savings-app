@@ -40,16 +40,52 @@ const validationRules = {
   // ------------------------
   register: [
     body('name')
+      .optional()
       .trim()
       .escape()
-      .notEmpty()
-      .withMessage('Name is required')
       .isLength({ min: 2 })
       .withMessage('Name must be at least 2 characters')
       .isLength({ max: MAX_NAME_LEN })
       .withMessage(`Name must not exceed ${MAX_NAME_LEN} characters`)
       .matches(/^[a-zA-Z\s'-]+$/)
       .withMessage('Name can only contain letters, spaces, hyphens, and apostrophes'),
+
+    body('fullName')
+      .optional()
+      .trim()
+      .escape()
+      .isLength({ min: 2 })
+      .withMessage('Full name must be at least 2 characters')
+      .isLength({ max: MAX_NAME_LEN })
+      .withMessage(`Full name must not exceed ${MAX_NAME_LEN} characters`),
+
+    body('firstName')
+      .optional()
+      .trim()
+      .escape()
+      .isLength({ min: 2 })
+      .withMessage('First name must be at least 2 characters')
+      .isLength({ max: MAX_NAME_LEN })
+      .withMessage(`First name must not exceed ${MAX_NAME_LEN} characters`),
+
+    body('lastName')
+      .optional()
+      .trim()
+      .escape()
+      .isLength({ min: 2 })
+      .withMessage('Last name must be at least 2 characters')
+      .isLength({ max: MAX_NAME_LEN })
+      .withMessage(`Last name must not exceed ${MAX_NAME_LEN} characters`),
+
+    body('name').custom((value, { req }) => {
+      const fullName = req.body.fullName;
+      const firstName = req.body.firstName;
+      const lastName = req.body.lastName;
+      if (!value && !fullName && !(firstName && lastName)) {
+        throw new Error('Name, fullName, or firstName and lastName are required');
+      }
+      return true;
+    }),
 
     body('email')
       .trim()
@@ -69,6 +105,11 @@ const validationRules = {
       )
       .matches(/^(?!.*[\s])/)
       .withMessage('Password must not contain spaces'),
+    body('phoneNumber')
+      .optional()
+      .trim()
+      .isMobilePhone()
+      .withMessage('Please provide a valid phone number'),
   ],
 
   login: [

@@ -1,7 +1,7 @@
 // middleware/logging.js
 'use strict';
 
-const { logger } = require('../utils/logger'); // Winston or Pino instance
+const logger = require('../utils/logger'); // Winston or Pino instance
 
 const loggingMiddleware = (req, res, next) => {
   const start = Date.now();

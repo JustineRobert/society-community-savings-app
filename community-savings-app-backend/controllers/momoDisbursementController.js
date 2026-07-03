@@ -1,14 +1,14 @@
 // Disbursement (Withdraw) (controllers/momoDisbursementController.js)
 
 const axios = require("axios");
-const { v4: uuidv4 } = require("uuid");
+const { randomUUID } = require('crypto');
 const Transaction = require("../models/Transaction");
 const { getMomoToken } = require("../services/momoTokenService");
 
 exports.disburse = async (req, res) => {
   try {
     const token = await getMomoToken();
-    const referenceId = uuidv4();
+    const referenceId = randomUUID();
 
     await Transaction.create({
       userId: req.user.id,

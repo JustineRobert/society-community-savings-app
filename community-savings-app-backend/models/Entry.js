@@ -3,11 +3,11 @@
 
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('crypto');
 
 const EntrySchema = new Schema(
   {
-    _id: { type: String, default: uuidv4 },
+    _id: { type: String, default: () => randomUUID() },
 
     transactionId: {
       type: String,

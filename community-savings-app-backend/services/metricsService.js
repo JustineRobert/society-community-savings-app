@@ -18,7 +18,35 @@ try {
   promClient = null;
 }
 
-const logger = require("../utils/logger");
+let loggerInstance = null;
+
+function getLogger() {
+  if (loggerInstance) {
+    return loggerInstance;
+  }
+
+  try {
+    loggerInstance = require("../utils/logger");
+  } catch (_) {
+    loggerInstance = {
+      debug() {},
+      info() {},
+      warn() {},
+      error() {},
+    };
+  }
+
+  return loggerInstance;
+}
+
+const logger = new Proxy({}, {
+  get(_, prop) {
+    const target = getLogger();
+    return typeof target[prop] === "function"
+      ? target[prop].bind(target)
+      : target[prop];
+  },
+});
 
 class MetricsService extends EventEmitter {
   constructor() {
@@ -66,12 +94,11 @@ class MetricsService extends EventEmitter {
     this.promCounters =
       new Map();
 
-    this.promGauges =
-      new Map();
-
     this.promHistograms =
       new Map();
 
+    // Initialize metrics service synchronously to avoid asynchronous callbacks
+    // running after Jest teardown and causing require/import errors.
     this.initialize();
   }
 

@@ -140,9 +140,6 @@ router.post(
   asyncHandler(emailController.sendVerificationEmailRequest)
 );
 
-module.exports = router;
-``;
-
 /**
  * POST /api/email/verify
  * Verifies email using token sent to user's email

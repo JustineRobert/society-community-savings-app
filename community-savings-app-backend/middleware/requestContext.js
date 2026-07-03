@@ -10,8 +10,39 @@
 const crypto = require("crypto");
 const { AsyncLocalStorage } = require("async_hooks");
 
-const logger = require("../utils/logger");
-const metricsService = require("../services/metricsService");
+let logger = null;
+function getLogger() {
+  if (logger) return logger;
+
+  try {
+    logger = require("../utils/logger");
+  } catch (_) {
+    logger = {
+      debug() {},
+      info() {},
+      warn() {},
+      error() {},
+    };
+  }
+
+  return logger;
+}
+
+let metricsService = null;
+function getMetricsService() {
+  if (metricsService) return metricsService;
+
+  try {
+    metricsService = require("../services/metricsService");
+  } catch (_) {
+    metricsService = {
+      increment() {},
+      timing() {},
+    };
+  }
+
+  return metricsService;
+}
 
 let correlationMiddleware = null;
 let auditService = null;
@@ -297,7 +328,7 @@ function requestContext(
   asyncLocalStorage.run(
     context,
     () => {
-      logger.debug(
+      getLogger().debug(
         "Request context created",
         {
           requestId:
@@ -311,7 +342,7 @@ function requestContext(
         }
       );
 
-      metricsService.increment(
+      getMetricsService().increment(
         "request_context.created"
       );
 
@@ -328,12 +359,12 @@ function requestContext(
           context.duration =
             duration;
 
-          metricsService.timing(
+          getMetricsService().timing(
             "request_context.duration",
             duration
           );
 
-          logger.debug(
+          getLogger().debug(
             "Request context completed",
             {
               requestId:

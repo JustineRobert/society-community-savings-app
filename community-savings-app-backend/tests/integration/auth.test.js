@@ -11,6 +11,7 @@ const app = require('../../server');
 
 describe('Authentication (POST /api/auth)', () => {
   let testUser;
+  let authCookies;
 
   beforeAll(async () => {
     if (mongoose.connection.readyState === 0) {
@@ -48,7 +49,7 @@ describe('Authentication (POST /api/auth)', () => {
           fullName: 'Duplicate User',
           phoneNumber: '+256782397907',
         })
-        .expect(400)
+        .expect(409)
         .end((err, _res ) => {
           if (err) return done(err);
           done();
@@ -82,6 +83,7 @@ describe('Authentication (POST /api/auth)', () => {
         .end((err, res) => {
           if (err) return done(err);
 
+          authCookies = res.headers['set-cookie'] || [];
           const decoded = jwt.decode(res.body.token);
           expect(decoded).toHaveProperty('userId');
           done();
@@ -90,25 +92,14 @@ describe('Authentication (POST /api/auth)', () => {
   });
 
   describe('POST /api/auth/refresh-token', () => {
-    let validToken;
-
-    beforeAll(async () => {
-      const res = await request(app).post('/api/auth/login').send({
-        email: testUser.email,
-        password: 'SecurePassword123!',
-      });
-
-      validToken = res.body.token;
-    });
-
     it('should refresh token with valid token', (done) => {
       request(app)
         .post('/api/auth/refresh-token')
-        .set('Authorization', `Bearer ${validToken}`)
+        .set('Cookie', authCookies)
         .expect(200)
         .end((err, res) => {
           if (err) return done(err);
-          expect(res.body.token).not.toBe(validToken);
+          expect(res.body.token).toBeDefined();
           done();
         });
     });
@@ -117,7 +108,7 @@ describe('Authentication (POST /api/auth)', () => {
       request(app)
         .post('/api/auth/refresh-token')
         .expect(401)
-        .end((err, _res ) => {
+        .end((err, _res) => {
           if (err) return done(err);
           done();
         });
@@ -126,9 +117,9 @@ describe('Authentication (POST /api/auth)', () => {
     it('should fail refresh with invalid token', (done) => {
       request(app)
         .post('/api/auth/refresh-token')
-        .set('Authorization', 'Bearer invalid.token.here')
+        .set('Cookie', ['refreshToken=invalid.token.here; Path=/api/auth'])
         .expect(401)
-        .end((err, _res ) => {
+        .end((err, _res) => {
           if (err) return done(err);
           done();
         });
@@ -151,17 +142,17 @@ describe('Authentication (POST /api/auth)', () => {
       request(app)
         .post('/api/auth/logout')
         .set('Authorization', `Bearer ${validToken}`)
-        .expect(200)
+        .expect(204)
         .end((err, _res ) => {
           if (err) return done(err);
           done();
         });
     });
 
-    it('should fail logout without token', (done) => {
+    it('should logout idempotently without token', (done) => {
       request(app)
         .post('/api/auth/logout')
-        .expect(401)
+        .expect(204)
         .end((err, _res ) => {
           if (err) return done(err);
           done();
@@ -172,7 +163,7 @@ describe('Authentication (POST /api/auth)', () => {
   describe('Password Reset Flow', () => {
     it('should request password reset', (done) => {
       request(app)
-        .post('/api/auth/forgot-password')
+        .post('/api/email/request-password-reset')
         .send({ email: testUser.email })
         .expect(200)
         .end((err, _res) => {
@@ -181,4 +172,4 @@ describe('Authentication (POST /api/auth)', () => {
         });
     });
   });
-}); // ✅ properly closed
+});

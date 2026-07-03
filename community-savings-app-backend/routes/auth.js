@@ -170,6 +170,12 @@ router.post(
 );
 
 router.post(
+  '/refresh-token',
+  refreshLimiter,
+  asyncHandler(authController.refresh)
+);
+
+router.post(
   '/logout',
   logoutLimiter,
   asyncHandler(authController.logout)

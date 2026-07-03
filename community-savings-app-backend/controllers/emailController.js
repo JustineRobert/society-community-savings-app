@@ -33,7 +33,7 @@ const {
  * Send email verification
  * POST /api/email/send-verification
  */
-exports.sendEmailVerification = asyncHandler(async (req, res) => {
+async function sendEmailVerification(req, res) {
   try {
     const result = await emailService.sendEmailVerification(req.user._id);
 
@@ -48,13 +48,13 @@ exports.sendEmailVerification = asyncHandler(async (req, res) => {
       error: error.message || 'Failed to send verification email',
     });
   }
-});
+}
 
 /**
  * Verify email with token
  * POST /api/email/verify
  */
-exports.verifyEmail = asyncHandler(async (req, res) => {
+async function verifyEmail(req, res) {
   const { token } = req.body;
 
   if (!token) {
@@ -79,13 +79,13 @@ exports.verifyEmail = asyncHandler(async (req, res) => {
       error: error.message || 'Email verification failed',
     });
   }
-});
+}
 
 /**
  * Send password reset email
  * POST /api/email/send-password-reset
  */
-exports.sendPasswordReset = asyncHandler(async (req, res) => {
+async function sendPasswordReset(req, res) {
   const { email } = req.body;
 
   if (!email) {
@@ -120,13 +120,13 @@ exports.sendPasswordReset = asyncHandler(async (req, res) => {
       message: 'If an account with that email exists, a reset link has been sent',
     });
   }
-});
+}
 
 /**
  * Reset password with token
  * POST /api/email/reset-password
  */
-exports.resetPassword = asyncHandler(async (req, res) => {
+async function resetPassword(req, res) {
   const { token, newPassword } = req.body;
 
   if (!token || !newPassword) {
@@ -158,7 +158,7 @@ exports.resetPassword = asyncHandler(async (req, res) => {
       error: error.message || 'Password reset failed',
     });
   }
-});
+}
 
 /**
  * Resend email verification (if needed)
@@ -786,9 +786,17 @@ module.exports = {
   verifyEmailLimiter,
 
   // Controllers
+  sendEmailVerification,
   sendVerificationEmailRequest,
+  sendPasswordReset,
   verifyEmail,
   requestPasswordReset,
   resetPassword,
   changePassword,
+
+  // Also export handlers attached via exports.* earlier
+  resendEmailVerification: exports.resendEmailVerification,
+  getEmailVerificationStatus: exports.getEmailVerificationStatus,
+  testEmailConfiguration: exports.testEmailConfiguration,
+  sendTestEmail: exports.sendTestEmail,
 };

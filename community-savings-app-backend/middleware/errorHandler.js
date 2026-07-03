@@ -6,7 +6,7 @@
 // - Avoids leaking internals in production.
 // ============================================================================
 
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('crypto');
 const logger = require('../utils/logger');
 
 const isProd = (process.env.NODE_ENV || 'development') === 'production';
@@ -75,7 +75,7 @@ function sendError(res, { errorId, statusCode, message, type, errors, meta }) {
  */
 const errorHandler = (err, req, res, next) => {
   // Prefer the requestId provided by server.js middleware; fallback to a new UUID
-  const errorId = req.requestId || uuidv4();
+  const errorId = req.requestId || randomUUID();
   const statusFromErr = err?.statusCode;
 
   // --------------------------------------------------------------------------

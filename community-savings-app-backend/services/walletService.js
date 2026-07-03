@@ -12,6 +12,7 @@ const EventEmitter = require("events");
 
 const logger = require("../utils/logger");
 const metrics = require("./metricsService");
+const auditService = require('./auditService');
 
 let Wallet;
 let Transaction;
@@ -83,8 +84,8 @@ class WalletService extends EventEmitter {
 
       const wallet =
         await Wallet.findOne({
-          user: userId,
-          tenant:
+          userId: userId,
+          tenantId:
             tenantId,
         });
 
@@ -137,15 +138,15 @@ class WalletService extends EventEmitter {
 
       const wallet =
         await Wallet.create({
-          user: userId,
-          tenant:
+          userId: userId,
+          tenantId:
             tenantId,
           balance: 0,
           currency,
           walletNumber:
             this.generateWalletNumber(),
           status:
-            "ACTIVE",
+            "active",
         });
 
       metrics.increment(
@@ -234,6 +235,13 @@ class WalletService extends EventEmitter {
           "wallet.deposit.success"
         );
 
+        // Audit log
+        try {
+          await auditService.logAction({ action: 'wallet:deposit', userId: wallet.user, tenantId: wallet.tenant, entityType: 'Wallet', entityId: wallet._id, metadata: { amount, reference } });
+        } catch (e) {
+          logger.error('Failed to write audit for wallet.deposit', { error: e.message });
+        }
+
         this.emit(
           "wallet.deposit",
           {
@@ -313,6 +321,12 @@ class WalletService extends EventEmitter {
           "wallet.withdraw.success"
         );
 
+        try {
+          await auditService.logAction({ action: 'wallet:withdraw', userId: wallet.user, tenantId: wallet.tenant, entityType: 'Wallet', entityId: wallet._id, metadata: { amount, reference } });
+        } catch (e) {
+          logger.error('Failed to write audit for wallet.withdraw', { error: e.message });
+        }
+
         this.emit(
           "wallet.withdraw",
           {
@@ -367,6 +381,12 @@ class WalletService extends EventEmitter {
     metrics.increment(
       "wallet.transfer.success"
     );
+
+    try {
+      await auditService.logAction({ action: 'wallet:transfer', userId: null, tenantId: null, entityType: 'Wallet', entityId: null, metadata: { fromWalletId, toWalletId, amount, reference } });
+    } catch (e) {
+      logger.error('Failed to write audit for wallet.transfer', { error: e.message });
+    }
 
     return {
       transactionId,
@@ -487,6 +507,12 @@ class WalletService extends EventEmitter {
       createdAt:
         new Date(),
     });
+    // Audit log for recorded transaction
+    try {
+      await auditService.logAction({ action: 'wallet:record_transaction', userId: payload.wallet.user, tenantId: payload.wallet.tenant, entityType: 'Transaction', entityId: null, metadata: { type: payload.type, amount: payload.amount, reference: payload.reference } });
+    } catch (e) {
+      logger.error('Failed to write audit for wallet.recordTransaction', { error: e.message });
+    }
   }
 
   // ===========================================================================
@@ -514,6 +540,12 @@ class WalletService extends EventEmitter {
       currency:
         wallet.currency,
     };
+  }
+
+  async getBalanceByUser(userId, tenantId) {
+    const wallet = await Wallet.findOne({ userId: userId, tenantId: tenantId });
+    if (!wallet) throw new Error('Wallet not found for user');
+    return { walletId: wallet._id, balance: wallet.balance, currency: wallet.currency };
   }
 
   // ===========================================================================

@@ -1,7 +1,7 @@
 // middleware/requestId.js
 'use strict';
 
-const { v4: uuidv4 } = require("uuid");
+const { randomUUID } = require('crypto');
 
 /**
  * Middleware to attach a correlation ID to each request.
@@ -11,7 +11,7 @@ const { v4: uuidv4 } = require("uuid");
  * - Ensures downstream services can propagate the same ID.
  */
 module.exports = (req, res, next) => {
-  const requestId = req.headers["x-request-id"] || uuidv4();
+  const requestId = req.headers["x-request-id"] || randomUUID();
 
   // Attach to request object
   req.requestId = requestId;

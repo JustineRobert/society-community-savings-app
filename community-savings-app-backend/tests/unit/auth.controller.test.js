@@ -4,12 +4,12 @@
  * @group unit/controllers
  */
 
-jest.mock('../models/User');
-jest.mock('../models/RefreshToken');
+jest.mock('../../models/User');
+jest.mock('../../models/RefreshToken');
 
-const User = require('../models/User');
-const RefreshToken = require('../models/RefreshToken');
-const authController = require('../controllers/authController');
+const User = require('../../models/User');
+const RefreshToken = require('../../models/RefreshToken');
+const authController = require('../../controllers/authController');
 
 describe('authController', () => {
   beforeEach(() => {
@@ -29,18 +29,20 @@ describe('authController', () => {
           lastName: 'User',
           phoneNumber: '+256701234567',
         },
+        ip: '127.0.0.1',
+        get: jest.fn().mockReturnValue('jest-agent'),
       };
       const res = {
         status: jest.fn().mockReturnThis(),
         json: jest.fn(),
+        cookie: jest.fn(),
       };
 
       User.findOne = jest.fn().mockResolvedValue(null);
       User.create = jest.fn().mockResolvedValue({
         _id: 'user-123',
         email: req.body.email,
-        firstName: req.body.firstName,
-        lastName: req.body.lastName,
+        name: 'Test User',
         role: 'user',
       });
 
@@ -57,6 +59,7 @@ describe('authController', () => {
         body: {
           email: 'existing@example.com',
           password: 'SecurePassword123!',
+          name: 'Existing User',
         },
       };
       const res = {
@@ -68,7 +71,7 @@ describe('authController', () => {
 
       if (authController.register) {
         await authController.register(req, res);
-        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.status).toHaveBeenCalledWith(409);
       }
     });
 
@@ -77,6 +80,7 @@ describe('authController', () => {
         body: {
           email: 'test@example.com',
           password: 'weak', // Too weak
+          name: 'Test User',
         },
       };
       const res = {
@@ -99,6 +103,8 @@ describe('authController', () => {
           email: 'test@example.com',
           password: 'SecurePassword123!',
         },
+        ip: '127.0.0.1',
+        get: jest.fn().mockReturnValue('jest-agent'),
       };
       const res = {
         status: jest.fn().mockReturnThis(),
@@ -110,14 +116,22 @@ describe('authController', () => {
         _id: 'user-123',
         email: 'test@example.com',
         role: 'user',
-        comparePassword: jest.fn().mockResolvedValue(true),
+        status: 'active',
+        matchPassword: jest.fn().mockResolvedValue(true),
+        resetFailedLogin: jest.fn().mockResolvedValue(true),
+        save: jest.fn().mockResolvedValue(true),
+        security: {},
       };
 
-      User.findOne = jest.fn().mockResolvedValue(mockUser);
+      User.findOne = jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        exec: jest.fn().mockResolvedValue(mockUser),
+      });
 
       if (authController.login) {
         await authController.login(req, res);
         expect(User.findOne).toHaveBeenCalledWith({ email: req.body.email });
+        expect(res.status).toHaveBeenCalledWith(200);
       }
     });
 
@@ -127,6 +141,8 @@ describe('authController', () => {
           email: 'test@example.com',
           password: 'wrongpassword',
         },
+        ip: '127.0.0.1',
+        get: jest.fn().mockReturnValue('jest-agent'),
       };
       const res = {
         status: jest.fn().mockReturnThis(),
@@ -136,10 +152,15 @@ describe('authController', () => {
       const mockUser = {
         _id: 'user-123',
         email: 'test@example.com',
-        comparePassword: jest.fn().mockResolvedValue(false),
+        role: 'user',
+        status: 'active',
+        matchPassword: jest.fn().mockResolvedValue(false),
       };
 
-      User.findOne = jest.fn().mockResolvedValue(mockUser);
+      User.findOne = jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        exec: jest.fn().mockResolvedValue(mockUser),
+      });
 
       if (authController.login) {
         await authController.login(req, res);
@@ -152,14 +173,20 @@ describe('authController', () => {
         body: {
           email: 'nonexistent@example.com',
           password: 'SecurePassword123!',
+          name: 'Existing User',
         },
+        ip: '127.0.0.1',
+        get: jest.fn().mockReturnValue('jest-agent'),
       };
       const res = {
         status: jest.fn().mockReturnThis(),
         json: jest.fn(),
       };
 
-      User.findOne = jest.fn().mockResolvedValue(null);
+      User.findOne = jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        exec: jest.fn().mockResolvedValue(null),
+      });
 
       if (authController.login) {
         await authController.login(req, res);
@@ -181,17 +208,39 @@ describe('authController', () => {
         cookie: jest.fn(),
       };
 
+      const session = {
+        startTransaction: jest.fn(),
+        commitTransaction: jest.fn(),
+        abortTransaction: jest.fn(),
+        endSession: jest.fn(),
+        inTransaction: jest.fn().mockReturnValue(true),
+      };
+
       const mockUser = {
         _id: 'user-123',
         email: 'test@example.com',
         role: 'user',
       };
 
-      RefreshToken.findOne = jest.fn().mockResolvedValue({
-        userId: 'user-123',
-        revokedAt: null,
+      RefreshToken.startSession = jest.fn().mockResolvedValue(session);
+      RefreshToken.findOne = jest.fn().mockReturnValue({
+        session: jest.fn().mockResolvedValue({
+          userId: 'user-123',
+          revokedAt: null,
+          expiresAt: new Date(Date.now() + 10000),
+          save: jest.fn().mockResolvedValue(true),
+        }),
       });
-      User.findById = jest.fn().mockResolvedValue(mockUser);
+      User.findById = jest.fn().mockReturnValue({
+        session: jest.fn().mockResolvedValue(mockUser),
+      });
+      RefreshToken.create = jest.fn().mockResolvedValue({
+        id: 'new-session-id',
+        userId: 'user-123',
+        tokenHash: 'hash',
+        lastUsedAt: new Date(),
+        save: jest.fn().mockResolvedValue(true),
+      });
 
       if (authController.refresh) {
         await authController.refresh(req, res);
@@ -210,7 +259,17 @@ describe('authController', () => {
         json: jest.fn(),
       };
 
-      RefreshToken.findOne = jest.fn().mockResolvedValue(null);
+      const session = {
+        startTransaction: jest.fn(),
+        commitTransaction: jest.fn(),
+        abortTransaction: jest.fn(),
+        endSession: jest.fn(),
+        inTransaction: jest.fn().mockReturnValue(true),
+      };
+      RefreshToken.startSession = jest.fn().mockResolvedValue(session);
+      RefreshToken.findOne = jest.fn().mockReturnValue({
+        session: jest.fn().mockResolvedValue(null),
+      });
 
       if (authController.refresh) {
         await authController.refresh(req, res);
@@ -229,9 +288,19 @@ describe('authController', () => {
         json: jest.fn(),
       };
 
-      RefreshToken.findOne = jest.fn().mockResolvedValue({
-        userId: 'user-123',
-        revokedAt: new Date(),
+      const session = {
+        startTransaction: jest.fn(),
+        commitTransaction: jest.fn(),
+        abortTransaction: jest.fn(),
+        endSession: jest.fn(),
+        inTransaction: jest.fn().mockReturnValue(true),
+      };
+      RefreshToken.startSession = jest.fn().mockResolvedValue(session);
+      RefreshToken.findOne = jest.fn().mockReturnValue({
+        session: jest.fn().mockResolvedValue({
+          userId: 'user-123',
+          revokedAt: new Date(),
+        }),
       });
 
       if (authController.refresh) {
@@ -252,12 +321,18 @@ describe('authController', () => {
         status: jest.fn().mockReturnThis(),
         json: jest.fn(),
         clearCookie: jest.fn(),
+        end: jest.fn(),
       };
 
+      RefreshToken.findOne = jest.fn().mockResolvedValue({
+        _id: 'token-123',
+        revokedAt: null,
+      });
       RefreshToken.updateOne = jest.fn().mockResolvedValue({ modifiedCount: 1 });
 
       if (authController.logout) {
         await authController.logout(req, res);
+        expect(RefreshToken.findOne).toHaveBeenCalled();
         expect(RefreshToken.updateOne).toHaveBeenCalled();
         expect(res.clearCookie).toHaveBeenCalled();
       }

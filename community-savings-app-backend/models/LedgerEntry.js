@@ -272,16 +272,6 @@ const LedgerEntrySchema = new Schema(
 // INDEXES
 // ============================================================================
 
-LedgerEntrySchema.index({ tenantId: 1, createdAt: -1 });
-LedgerEntrySchema.index({ journalId: 1 });
-LedgerEntrySchema.index({ transactionId: 1 });
-LedgerEntrySchema.index({ accountCode: 1 });
-LedgerEntrySchema.index({ source: 1 });
-LedgerEntrySchema.index({ sourceId: 1 });
-LedgerEntrySchema.index({ userId: 1 });
-LedgerEntrySchema.index({ posted: 1 });
-LedgerEntrySchema.index({ reversed: 1 });
-
 LedgerEntrySchema.index({
   journalId: 1,
   accountCode: 1,

@@ -8,7 +8,7 @@
 
 const axios = require('axios');
 const crypto = require('crypto');
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('crypto');
 const BasePaymentProvider = require('./baseProvider');
 const logger = require('../../../utils/logger');
 
@@ -128,7 +128,7 @@ class AirtelProvider extends BasePaymentProvider {
 
     try {
       const accessToken = await this.getAccessToken();
-      const transactionId = uuidv4();
+      const transactionId = randomUUID();
       const normalizedPhone = this.normalizePhoneNumber(phone);
 
       const payload = {
@@ -360,7 +360,7 @@ class AirtelProvider extends BasePaymentProvider {
   async refundPayment(originalTransactionId, amount) {
     try {
       const accessToken = await this.getAccessToken();
-      const refundId = uuidv4();
+      const refundId = randomUUID();
 
       const payload = {
         originalTransaction: originalTransactionId,

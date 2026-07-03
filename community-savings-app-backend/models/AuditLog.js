@@ -1,118 +1,40 @@
-// models/AuditLog.js
-const mongoose = require("mongoose");
-const { Schema } = mongoose;
+const mongoose = require('mongoose');
+const crypto = require('crypto');
 
-const AuditLogSchema = new Schema(
-  {
-    level: {
-      type: String,
-      enum: ["INFO", "WARN", "ERROR", "DEBUG"],
-      default: "INFO",
-      uppercase: true,
-      trim: true,
-    },
+const AuditLogSchema = new mongoose.Schema({
+  action: { type: String, required: true },
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: false },
+  tenantId: { type: mongoose.Schema.Types.ObjectId, ref: 'Tenant', required: false },
+  entityType: { type: String, required: true },
+  entityId: { type: mongoose.Schema.Types.ObjectId, required: false },
+  metadata: { type: mongoose.Schema.Types.Mixed },
+  prevHash: { type: String, default: null },
+  currentHash: { type: String, default: null },
+}, { timestamps: true });
 
-    message: {
-      type: String,
-      trim: true,
-      maxlength: 1024,
-    },
-
-    // 🔹 Persist correlation ID for distributed tracing
-    requestId: {
-      type: String,
-      //index: true,
-      trim: true,
-    },
-
-    meta: {
-      type: Schema.Types.Mixed,
-      default: {},
-    },
-
-    timestamp: {
-      type: Date,
-      default: Date.now,
-      //index: true,
-    },
-
-    tenantId: {
-      type: Schema.Types.ObjectId,
-      ref: "Tenant",
-      //index: true,
-    },
-
-    actor: {
-      type: Schema.Types.ObjectId,
-      ref: "User",
-      //index: true,
-    },
-
-    resourceType: {
-      type: String,
-      trim: true,
-      maxlength: 64,
-      //index: true,
-    },
-
-    resourceId: {
-      type: Schema.Types.ObjectId,
-      //index: true,
-    },
-
-    success: {
-      type: Boolean,
-      default: true,
-      //index: true,
-    },
-
-    error: {
-      type: String,
-      trim: true,
-      maxlength: 1024,
-    },
-  },
-  {
-    collection: "auditlogs",
-    timestamps: { createdAt: "createdAt", updatedAt: false },
-    toJSON: { getters: true },
-    toObject: { getters: true },
+AuditLogSchema.pre('save', async function(next) {
+  try {
+    const doc = this;
+    // find last audit for the tenant
+    const query = {};
+    if (doc.tenantId) query.tenantId = doc.tenantId;
+    const last = await mongoose.model('AuditLog').findOne(query).sort({ createdAt: -1 }).lean();
+    doc.prevHash = last ? last.currentHash : null;
+    const payload = JSON.stringify({
+      action: doc.action,
+      userId: doc.userId,
+      tenantId: doc.tenantId,
+      entityType: doc.entityType,
+      entityId: doc.entityId,
+      metadata: doc.metadata,
+      prevHash: doc.prevHash,
+      ts: new Date().toISOString(),
+    });
+    doc.currentHash = crypto.createHash('sha256').update(payload).digest('hex');
+    next();
+  } catch (err) {
+    next(err);
   }
-);
+});
 
-// 🔹 Indexes for fast queries
-AuditLogSchema.index({ tenantId: 1, requestId: 1, createdAt: -1 }); // compound index
-AuditLogSchema.index({ requestId: 1, timestamp: -1 });              // single-field index
-
-// 🔹 Static helper to record logs
-AuditLogSchema.statics.record = async function (entry = {}) {
-  const AuditLog = this;
-  const payload = {
-    level: entry.level || "INFO",
-    message: entry.message || null,
-    requestId: entry.requestId || entry.meta?.requestId || null,
-    meta: entry.meta || {},
-    tenantId: entry.tenantId || null,
-    actor: entry.actor || null,
-    resourceType: entry.resourceType || null,
-    resourceId: entry.resourceId || null,
-    success: typeof entry.success === "boolean" ? entry.success : true,
-    error: entry.error || null,
-  };
-  return AuditLog.create(payload);
-};
-
-// 🔹 Instance method for summaries
-AuditLogSchema.methods.summary = function () {
-  return {
-    id: this._id,
-    level: this.level,
-    message: this.message,
-    requestId: this.requestId,
-    tenantId: this.tenantId,
-    createdAt: this.createdAt,
-    success: this.success,
-  };
-};
-
-module.exports = mongoose.models.AuditLog || mongoose.model("AuditLog", AuditLogSchema);
+module.exports = mongoose.model('AuditLog', AuditLogSchema);
