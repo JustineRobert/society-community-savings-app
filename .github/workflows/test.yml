@@ -1,0 +1,261 @@
+name: Enterprise CI Test Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - release/**
+      - feature/**
+  pull_request:
+    branches:
+      - "*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_ENV: test
+
+jobs:
+
+################################################################################
+# Frontend
+################################################################################
+
+  frontend:
+
+    name: Frontend Tests (Node ${{ matrix.node }})
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 20
+
+    strategy:
+
+      fail-fast: false
+
+      matrix:
+        node: [20, 22]
+
+    defaults:
+      run:
+        working-directory: community-savings-app-frontend
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: community-savings-app-frontend/package-lock.json
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint --if-present
+
+      - name: Type Check
+        run: npm run typecheck --if-present
+
+      - name: Run Unit Tests
+        run: npm run test -- --coverage
+
+      - name: Build Application
+        run: npm run build
+
+      - name: Upload Coverage
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frontend-coverage-node-${{ matrix.node }}
+          path: |
+            community-savings-app-frontend/coverage
+
+      - name: Upload Test Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frontend-test-results-${{ matrix.node }}
+          path: |
+            community-savings-app-frontend/test-results
+
+################################################################################
+# Backend
+################################################################################
+
+  backend:
+
+    name: Backend Tests (Node ${{ matrix.node }})
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 30
+
+    strategy:
+
+      fail-fast: false
+
+      matrix:
+        node: [20, 22]
+
+    defaults:
+      run:
+        working-directory: community-savings-app-backend
+
+    services:
+
+      mongodb:
+
+        image: mongo:7
+
+        ports:
+          - 27017:27017
+
+        options: >-
+          --health-cmd="mongosh --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+      redis:
+
+        image: redis:7
+
+        ports:
+          - 6379:6379
+
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+
+      NODE_ENV: test
+
+      PORT: 5001
+
+      JWT_SECRET: github-actions-secret
+
+      MONGO_URI: mongodb://localhost:27017/titech_test
+
+      REDIS_URL: redis://localhost:6379
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: community-savings-app-backend/package-lock.json
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint --if-present
+
+      - name: Security Audit
+        run: npm audit --audit-level=high || true
+
+      - name: Run Unit Tests
+        run: npm test -- --coverage
+
+      - name: Upload Coverage
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-coverage-node-${{ matrix.node }}
+          path: |
+            community-savings-app-backend/coverage
+
+      - name: Upload Logs
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: backend-logs-${{ matrix.node }}
+          path: |
+            community-savings-app-backend/logs
+
+################################################################################
+# Coverage
+################################################################################
+
+  coverage:
+
+    name: Coverage Summary
+
+    runs-on: ubuntu-latest
+
+    needs:
+
+      - frontend
+      - backend
+
+    if: always()
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+      - name: Download Coverage
+        uses: actions/download-artifact@v4
+
+      - name: Upload Coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          fail_ci_if_error: false
+
+################################################################################
+# Build Verification
+################################################################################
+
+  verify:
+
+    name: Enterprise Verification
+
+    runs-on: ubuntu-latest
+
+    needs:
+
+      - frontend
+      - backend
+
+    if: success()
+
+    steps:
+
+      - name: CI Summary
+
+        run: |
+
+          echo "======================================="
+          echo " TITech Community Capital LTD CI Pipeline"
+          echo "======================================="
+          echo ""
+          echo "Frontend ............. PASSED"
+          echo "Backend .............. PASSED"
+          echo "MongoDB .............. PASSED"
+          echo "Redis ................ PASSED"
+          echo "Coverage ............. GENERATED"
+          echo "Artifacts ............ UPLOADED"
+          echo ""
+          echo "Enterprise pipeline completed."

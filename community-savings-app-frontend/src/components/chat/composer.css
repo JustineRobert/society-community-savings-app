@@ -1,0 +1,325 @@
+/**
+ * ============================================================================
+ * TITechChat - Composer Styles
+ * ============================================================================
+ * TITech Community Capital LTD (ACFOS)
+ *
+ * Enterprise production styling for the message composer.
+ *
+ * Features
+ * ----------------------------------------------------------------------------
+ * ✅ Responsive layout
+ * ✅ Desktop and mobile support
+ * ✅ Accessibility focused
+ * ✅ Attachment previews
+ * ✅ Error states
+ * ✅ Loading/disabled states
+ * ✅ Auto-growing textarea support
+ * ✅ Dark mode ready using CSS variables
+ * ============================================================================
+ */
+
+:root {
+  --chat-bg: #ffffff;
+  --chat-border: #e5e7eb;
+  --chat-border-focus: #2563eb;
+  --chat-border-hover: #d1d5db;
+  --chat-primary: #2563eb;
+  --chat-primary-hover: #1d4ed8;
+  --chat-primary-disabled: #93c5fd;
+  --chat-danger: #dc2626;
+  --chat-danger-bg: #fef2f2;
+  --chat-text: #111827;
+  --chat-text-muted: #6b7280;
+  --chat-surface: #f9fafb;
+  --chat-surface-hover: #f3f4f6;
+  --chat-radius: 12px;
+  --chat-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Container
+|--------------------------------------------------------------------------
+*/
+
+.chat-composer {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  background: var(--chat-bg);
+  border-top: 1px solid var(--chat-border);
+  padding: 12px;
+  box-sizing: border-box;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Main Row
+|--------------------------------------------------------------------------
+*/
+
+.chat-composer-container {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  width: 100%;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Text Input
+|--------------------------------------------------------------------------
+*/
+
+.chat-composer-input {
+  flex: 1;
+  min-height: 44px;
+  max-height: 180px;
+  resize: none;
+
+  border: 1px solid var(--chat-border);
+  border-radius: var(--chat-radius);
+
+  background: var(--chat-bg);
+  color: var(--chat-text);
+
+  padding: 10px 14px;
+  font-size: 14px;
+  line-height: 1.5;
+
+  outline: none;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    background-color 0.2s ease;
+}
+
+.chat-composer-input:hover {
+  border-color: var(--chat-border-hover);
+}
+
+.chat-composer-input:focus {
+  border-color: var(--chat-border-focus);
+  box-shadow:
+    0 0 0 3px rgba(
+      37,
+      99,
+      235,
+      0.15
+    );
+}
+
+.chat-composer-input:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Attachment Section
+|--------------------------------------------------------------------------
+*/
+
+.chat-composer-attachments {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-composer-attach-btn {
+  width: 42px;
+  height: 42px;
+
+  border: 1px solid var(--chat-border);
+  background: var(--chat-surface);
+
+  border-radius: 10px;
+  cursor: pointer;
+
+  font-size: 18px;
+
+  transition:
+    background 0.2s,
+    border-color 0.2s,
+    transform 0.15s ease;
+}
+
+.chat-composer-attach-btn:hover {
+  background: var(--chat-surface-hover);
+  border-color: var(--chat-border-hover);
+}
+
+.chat-composer-attach-btn:active {
+  transform: scale(0.96);
+}
+
+.chat-composer-attach-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Send Button
+|--------------------------------------------------------------------------
+*/
+
+.chat-composer-send-btn {
+  min-width: 90px;
+  height: 42px;
+
+  border: none;
+  border-radius: 10px;
+
+  background: var(--chat-primary);
+  color: #fff;
+
+  font-size: 14px;
+  font-weight: 600;
+
+  cursor: pointer;
+
+  transition:
+    background 0.2s ease,
+    transform 0.15s ease,
+    opacity 0.2s ease;
+}
+
+.chat-composer-send-btn:hover:not(:disabled) {
+  background: var(--chat-primary-hover);
+}
+
+.chat-composer-send-btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.chat-composer-send-btn:disabled {
+  background: var(--chat-primary-disabled);
+  cursor: not-allowed;
+  opacity: 0.75;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Attachment Preview
+|--------------------------------------------------------------------------
+*/
+
+.chat-composer-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.chat-composer-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  padding: 8px 12px;
+
+  background: var(--chat-surface);
+  border: 1px solid var(--chat-border);
+  border-radius: 999px;
+
+  font-size: 13px;
+  color: var(--chat-text);
+
+  box-shadow: var(--chat-shadow);
+}
+
+.chat-composer-file button {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+
+  color: var(--chat-text-muted);
+  font-size: 14px;
+
+  padding: 0;
+  margin: 0;
+}
+
+.chat-composer-file button:hover {
+  color: var(--chat-danger);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Error Message
+|--------------------------------------------------------------------------
+*/
+
+.chat-composer-error {
+  margin-top: 10px;
+
+  padding: 10px 12px;
+
+  background: var(--chat-danger-bg);
+  color: var(--chat-danger);
+
+  border-radius: 10px;
+
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Footer
+|--------------------------------------------------------------------------
+*/
+
+.chat-composer-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.chat-composer-footer small {
+  color: var(--chat-text-muted);
+  font-size: 12px;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Responsive
+|--------------------------------------------------------------------------
+*/
+
+@media (max-width: 768px) {
+  .chat-composer {
+    padding: 10px;
+  }
+
+  .chat-composer-container {
+    gap: 8px;
+  }
+
+  .chat-composer-send-btn {
+    min-width: 70px;
+  }
+
+  .chat-composer-input {
+    font-size: 16px;
+  }
+}
+
+/*
+|--------------------------------------------------------------------------
+| Dark Theme Support
+|--------------------------------------------------------------------------
+*/
+
+[data-theme='dark'] {
+  --chat-bg: #111827;
+  --chat-border: #374151;
+  --chat-border-hover: #4b5563;
+  --chat-surface: #1f2937;
+  --chat-surface-hover: #374151;
+  --chat-text: #f9fafb;
+  --chat-text-muted: #9ca3af;
+}

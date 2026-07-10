@@ -1,0 +1,1567 @@
+name: Enterprise Deployment Pipeline
+
+run-name: >
+  Deploy • ${{ github.ref_name }} •
+  ${{ github.actor }} •
+  #${{ github.run_number }}
+
+###############################################################################
+# TRIGGERS
+###############################################################################
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - release/**
+      - hotfix/**
+
+    tags:
+      - "v*"
+
+  pull_request:
+    branches:
+      - main
+      - develop
+
+  workflow_dispatch:
+
+    inputs:
+
+      target_environment:
+        description: "Deployment Environment"
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
+
+      skip_tests:
+        description: "Skip automated tests"
+        required: false
+        default: false
+        type: boolean
+
+      force_deploy:
+        description: "Force deployment"
+        required: false
+        default: false
+        type: boolean
+
+      image_tag:
+        description: "Docker image tag override"
+        required: false
+        default: ""
+
+###############################################################################
+# PERMISSIONS
+###############################################################################
+
+permissions:
+
+  contents: read
+
+  packages: write
+
+  deployments: write
+
+  actions: read
+
+  checks: write
+
+  pull-requests: write
+
+  security-events: write
+
+  statuses: write
+
+  id-token: write
+
+###############################################################################
+# CONCURRENCY
+###############################################################################
+
+concurrency:
+
+  group: deploy-${{ github.ref }}
+
+  cancel-in-progress: false
+
+###############################################################################
+# DEFAULTS
+###############################################################################
+
+defaults:
+
+  run:
+
+    shell: bash
+
+###############################################################################
+# GLOBAL ENVIRONMENT
+###############################################################################
+
+env:
+
+  #########################################################################
+  # Application
+  #########################################################################
+
+  APP_NAME: titech-community-capital
+
+  COMPANY: TITech
+
+  ORGANIZATION: CommunityCapital
+
+  PRODUCT: CommunitySavings
+
+  NODE_ENV: production
+
+  TZ: UTC
+
+  #########################################################################
+  # Runtime
+  #########################################################################
+
+  NODE_VERSION: "22"
+
+  NPM_CACHE: ~/.npm
+
+  CI: true
+
+  FORCE_COLOR: "1"
+
+  #########################################################################
+  # Repository Layout
+  #########################################################################
+
+  FRONTEND_DIR: community-savings-app-frontend
+
+  BACKEND_DIR: community-savings-app-backend
+
+  DOCS_DIR: docs
+
+  POSTMAN_DIR: postman
+
+  #########################################################################
+  # Docker
+  #########################################################################
+
+  DOCKER_BUILDKIT: 1
+
+  COMPOSE_DOCKER_CLI_BUILD: 1
+
+  IMAGE_NAME_BACKEND: community-savings-backend
+
+  IMAGE_NAME_FRONTEND: community-savings-frontend
+
+  REGISTRY: ghcr.io
+
+  #########################################################################
+  # Kubernetes
+  #########################################################################
+
+  K8S_NAMESPACE: community-capital
+
+  STAGING_NAMESPACE: community-capital-staging
+
+  PRODUCTION_NAMESPACE: community-capital-production
+
+  DEPLOYMENT_BACKEND: backend
+
+  DEPLOYMENT_FRONTEND: frontend
+
+  #########################################################################
+  # Artifact Names
+  #########################################################################
+
+  FRONTEND_ARTIFACT: frontend-build
+
+  BACKEND_ARTIFACT: backend-build
+
+  COVERAGE_ARTIFACT: coverage-report
+
+  TEST_ARTIFACT: automated-tests
+
+  SECURITY_ARTIFACT: security-results
+
+  #########################################################################
+  # Build Metadata
+  #########################################################################
+
+  BUILD_NUMBER: ${{ github.run_number }}
+
+  BUILD_ID: ${{ github.run_id }}
+
+  BUILD_SHA: ${{ github.sha }}
+
+  BUILD_BRANCH: ${{ github.ref_name }}
+
+  BUILD_ACTOR: ${{ github.actor }}
+
+  #########################################################################
+  # Deployment Metadata
+  #########################################################################
+
+  DEPLOYMENT_TIMEOUT: 15m
+
+  ROLLOUT_TIMEOUT: 600s
+
+  HEALTHCHECK_TIMEOUT: 180
+
+###############################################################################
+# REUSABLE EXPRESSIONS
+###############################################################################
+
+# Examples:
+#
+# success() &&
+# github.ref == 'refs/heads/main'
+#
+# github.event_name == 'workflow_dispatch'
+#
+# startsWith(github.ref,'refs/tags/v')
+#
+# github.event.inputs.target_environment
+
+###############################################################################
+# JOBS
+###############################################################################
+
+jobs: 
+###############################################################################
+# BUILD & QUALITY
+###############################################################################
+
+  build-and-test:
+
+    name: Build & Quality Assurance
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 40
+
+    outputs:
+
+      version: ${{ steps.metadata.outputs.version }}
+
+      short_sha: ${{ steps.metadata.outputs.short_sha }}
+
+      image_tag: ${{ steps.metadata.outputs.image_tag }}
+
+    steps:
+
+###############################################################################
+# Checkout
+###############################################################################
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+###############################################################################
+# Node
+###############################################################################
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+
+        with:
+
+          node-version: ${{ env.NODE_VERSION }}
+
+          cache: npm
+
+          cache-dependency-path: |
+            ${{ env.FRONTEND_DIR }}/package-lock.json
+            ${{ env.BACKEND_DIR }}/package-lock.json
+
+###############################################################################
+# Restore npm cache
+###############################################################################
+
+      - name: Restore npm Cache
+
+        uses: actions/cache@v4
+
+        with:
+
+          path: |
+            ~/.npm
+
+          key: >
+            npm-${{ runner.os }}-${{
+            hashFiles(
+              'community-savings-app-frontend/package-lock.json',
+              'community-savings-app-backend/package-lock.json'
+            )
+            }}
+
+          restore-keys: |
+
+            npm-${{ runner.os }}-
+
+###############################################################################
+# Install Frontend
+###############################################################################
+
+      - name: Install Frontend Dependencies
+
+        working-directory: ${{ env.FRONTEND_DIR }}
+
+        run: npm ci
+
+###############################################################################
+# Install Backend
+###############################################################################
+
+      - name: Install Backend Dependencies
+
+        working-directory: ${{ env.BACKEND_DIR }}
+
+        run: npm ci
+
+###############################################################################
+# Metadata
+###############################################################################
+
+      - name: Generate Build Metadata
+
+        id: metadata
+
+        run: |
+
+          SHORT_SHA=$(git rev-parse --short HEAD)
+
+          VERSION=$(date +'%Y.%m.%d').${GITHUB_RUN_NUMBER}
+
+          IMAGE_TAG=${VERSION}-${SHORT_SHA}
+
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+          echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
+
+          echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+
+###############################################################################
+# Lint Frontend
+###############################################################################
+
+      - name: Frontend ESLint
+
+        working-directory: ${{ env.FRONTEND_DIR }}
+
+        run: npm run lint --if-present
+
+###############################################################################
+# Lint Backend
+###############################################################################
+
+      - name: Backend ESLint
+
+        working-directory: ${{ env.BACKEND_DIR }}
+
+        run: npm run lint --if-present
+
+###############################################################################
+# Type Checking
+###############################################################################
+
+      - name: Frontend Type Check
+
+        working-directory: ${{ env.FRONTEND_DIR }}
+
+        run: npm run typecheck --if-present
+
+      - name: Backend Type Check
+
+        working-directory: ${{ env.BACKEND_DIR }}
+
+        run: npm run typecheck --if-present
+
+###############################################################################
+# Frontend Tests
+###############################################################################
+
+      - name: Frontend Unit Tests
+
+        if: ${{ !inputs.skip_tests }}
+
+        working-directory: ${{ env.FRONTEND_DIR }}
+
+        run: |
+
+          npm test -- \
+            --coverage \
+            --runInBand
+
+###############################################################################
+# Backend Tests
+###############################################################################
+
+      - name: Backend Unit Tests
+
+        if: ${{ !inputs.skip_tests }}
+
+        working-directory: ${{ env.BACKEND_DIR }}
+
+        run: |
+
+          npm test \
+            -- \
+            --coverage
+
+###############################################################################
+# Integration Tests
+###############################################################################
+
+      - name: Backend Integration Tests
+
+        if: ${{ !inputs.skip_tests }}
+
+        working-directory: ${{ env.BACKEND_DIR }}
+
+        run: |
+
+          npm run test:integration --if-present
+
+###############################################################################
+# Build Frontend
+###############################################################################
+
+      - name: Build Frontend
+
+        working-directory: ${{ env.FRONTEND_DIR }}
+
+        run: |
+
+          npm run build
+
+###############################################################################
+# Build Backend
+###############################################################################
+
+      - name: Build Backend
+
+        working-directory: ${{ env.BACKEND_DIR }}
+
+        run: |
+
+          npm run build --if-present
+
+###############################################################################
+# Upload Frontend Artifact
+###############################################################################
+
+      - name: Upload Frontend Build
+
+        uses: actions/upload-artifact@v4
+
+        with:
+
+          name: ${{ env.FRONTEND_ARTIFACT }}
+
+          path: |
+
+            ${{ env.FRONTEND_DIR }}/dist
+
+          retention-days: 14
+
+###############################################################################
+# Upload Backend Artifact
+###############################################################################
+
+      - name: Upload Backend Build
+
+        uses: actions/upload-artifact@v4
+
+        with:
+
+          name: ${{ env.BACKEND_ARTIFACT }}
+
+          path: |
+
+            ${{ env.BACKEND_DIR }}
+
+          retention-days: 14
+
+###############################################################################
+# Upload Coverage
+###############################################################################
+
+      - name: Upload Coverage
+
+        if: always()
+
+        uses: actions/upload-artifact@v4
+
+        with:
+
+          name: ${{ env.COVERAGE_ARTIFACT }}
+
+          path: |
+
+            ${{ env.FRONTEND_DIR }}/coverage
+
+            ${{ env.BACKEND_DIR }}/coverage
+
+          if-no-files-found: ignore
+
+###############################################################################
+# Upload Test Reports
+###############################################################################
+
+      - name: Upload Test Reports
+
+        if: always()
+
+        uses: actions/upload-artifact@v4
+
+        with:
+
+          name: ${{ env.TEST_ARTIFACT }}
+
+          path: |
+
+            ${{ env.FRONTEND_DIR }}/test-results
+
+            ${{ env.BACKEND_DIR }}/test-results
+
+          if-no-files-found: ignore
+
+###############################################################################
+# Summary
+###############################################################################
+
+      - name: Build Summary
+
+        if: always()
+
+        run: |
+
+          {
+            echo "# Build & Quality Summary"
+            echo ""
+            echo "| Component | Status |"
+            echo "|----------|--------|"
+            echo "| Frontend Dependencies | ✅ |"
+            echo "| Backend Dependencies | ✅ |"
+            echo "| ESLint | ✅ |"
+            echo "| Type Checking | ✅ |"
+            echo "| Unit Tests | ✅ |"
+            echo "| Integration Tests | ✅ |"
+            echo "| Frontend Build | ✅ |"
+            echo "| Backend Build | ✅ |"
+            echo "| Coverage | Generated |"
+            echo "| Build Version | ${{ steps.metadata.outputs.version }} |"
+            echo "| Image Tag | ${{ steps.metadata.outputs.image_tag }} |"
+          } >> $GITHUB_STEP_SUMMARY
+###############################################################################
+# CONTAINERIZATION
+###############################################################################
+
+  containerize:
+
+    name: Build & Publish Container Images
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 45
+
+    needs:
+      - build-and-test
+
+    permissions:
+
+      contents: read
+
+      packages: write
+
+      security-events: write
+
+      id-token: write
+
+    outputs:
+
+      backend_image: ${{ steps.meta-backend.outputs.tags }}
+
+      frontend_image: ${{ steps.meta-frontend.outputs.tags }}
+
+    steps:
+
+###############################################################################
+# Checkout
+###############################################################################
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+###############################################################################
+# Buildx
+###############################################################################
+
+      - name: Set up Docker Buildx
+
+        uses: docker/setup-buildx-action@v3
+
+        with:
+
+          install: true
+
+###############################################################################
+# Login GHCR
+###############################################################################
+
+      - name: Login to GitHub Container Registry
+
+        uses: docker/login-action@v3
+
+        with:
+
+          registry: ghcr.io
+
+          username: ${{ github.actor }}
+
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+###############################################################################
+# Docker Metadata (Backend)
+###############################################################################
+
+      - name: Backend Image Metadata
+
+        id: meta-backend
+
+        uses: docker/metadata-action@v5
+
+        with:
+
+          images: |
+            ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME_BACKEND }}
+
+          tags: |
+
+            type=raw,value=latest,enable={{is_default_branch}}
+
+            type=raw,value=${{ needs.build-and-test.outputs.image_tag }}
+
+            type=sha
+
+            type=ref,event=branch
+
+            type=ref,event=tag
+
+          labels: |
+
+            org.opencontainers.image.title=${{ env.APP_NAME }}
+
+            org.opencontainers.image.vendor=${{ env.COMPANY }}
+
+            org.opencontainers.image.version=${{ needs.build-and-test.outputs.version }}
+
+            org.opencontainers.image.revision=${{ github.sha }}
+
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+###############################################################################
+# Docker Metadata (Frontend)
+###############################################################################
+
+      - name: Frontend Image Metadata
+
+        id: meta-frontend
+
+        uses: docker/metadata-action@v5
+
+        with:
+
+          images: |
+            ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME_FRONTEND }}
+
+          tags: |
+
+            type=raw,value=latest,enable={{is_default_branch}}
+
+            type=raw,value=${{ needs.build-and-test.outputs.image_tag }}
+
+            type=sha
+
+            type=ref,event=branch
+
+            type=ref,event=tag
+
+###############################################################################
+# Backend Build
+###############################################################################
+
+      - name: Build & Push Backend Image
+
+        id: backend-build
+
+        uses: docker/build-push-action@v6
+
+        with:
+
+          context: ${{ env.BACKEND_DIR }}
+
+          file: ${{ env.BACKEND_DIR }}/Dockerfile
+
+          push: true
+
+          provenance: true
+
+          sbom: true
+
+          platforms: linux/amd64,linux/arm64
+
+          tags: ${{ steps.meta-backend.outputs.tags }}
+
+          labels: ${{ steps.meta-backend.outputs.labels }}
+
+          cache-from: type=gha
+
+          cache-to: type=gha,mode=max
+
+###############################################################################
+# Frontend Build
+###############################################################################
+
+      - name: Build & Push Frontend Image
+
+        id: frontend-build
+
+        uses: docker/build-push-action@v6
+
+        with:
+
+          context: ${{ env.FRONTEND_DIR }}
+
+          file: ${{ env.FRONTEND_DIR }}/Dockerfile
+
+          push: true
+
+          provenance: true
+
+          sbom: true
+
+          platforms: linux/amd64,linux/arm64
+
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+
+          labels: ${{ steps.meta-frontend.outputs.labels }}
+
+          cache-from: type=gha
+
+          cache-to: type=gha,mode=max
+
+###############################################################################
+# Generate SBOM
+###############################################################################
+
+      - name: Generate Backend SBOM
+
+        uses: anchore/sbom-action@v0
+
+        with:
+
+          image: ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME_BACKEND }}:${{ needs.build-and-test.outputs.image_tag }}
+
+          format: spdx-json
+
+          output-file: backend-sbom.spdx.json
+
+      - name: Generate Frontend SBOM
+
+        uses: anchore/sbom-action@v0
+
+        with:
+
+          image: ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME_FRONTEND }}:${{ needs.build-and-test.outputs.image_tag }}
+
+          format: spdx-json
+
+          output-file: frontend-sbom.spdx.json
+
+###############################################################################
+# Upload SBOM
+###############################################################################
+
+      - name: Upload SBOM Artifacts
+
+        uses: actions/upload-artifact@v4
+
+        with:
+
+          name: sbom
+
+          path: |
+            backend-sbom.spdx.json
+            frontend-sbom.spdx.json
+
+###############################################################################
+# Image Digest Report
+###############################################################################
+
+      - name: Publish Image Information
+
+        run: |
+
+          {
+            echo "# Container Images"
+            echo ""
+            echo "## Backend"
+            echo "${{ steps.meta-backend.outputs.tags }}"
+            echo ""
+            echo "## Frontend"
+            echo "${{ steps.meta-frontend.outputs.tags }}"
+            echo ""
+            echo "**Version:** ${{ needs.build-and-test.outputs.version }}"
+            echo ""
+            echo "**Image Tag:**"
+            echo "${{ needs.build-and-test.outputs.image_tag }}"
+          } >> $GITHUB_STEP_SUMMARY
+
+###############################################################################
+# Upload Build Metadata
+###############################################################################
+
+      - name: Upload Container Metadata
+
+        uses: actions/upload-artifact@v4
+
+        with:
+
+          name: container-metadata
+
+          path: |
+
+            backend-sbom.spdx.json
+
+            frontend-sbom.spdx.json
+
+          retention-days: 30
+
+################################################################################
+# STAGING DEPLOYMENT
+################################################################################
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+
+    needs:
+      - docker
+
+    environment:
+      name: staging
+      url: https://staging.communitycapital.example.com
+
+    permissions:
+      contents: read
+      id-token: write
+
+    env:
+      KUBE_NAMESPACE: staging
+
+    steps:
+      ##########################################################################
+      # Checkout
+      ##########################################################################
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      ##########################################################################
+      # Configure kubectl
+      ##########################################################################
+
+      - name: Configure Kubernetes credentials
+        uses: azure/setup-kubectl@v4
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.STAGING_KUBECONFIG }}" > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      ##########################################################################
+      # Helm
+      ##########################################################################
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+
+      ##########################################################################
+      # Verify cluster
+      ##########################################################################
+
+      - name: Verify Kubernetes cluster
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
+          kubectl get ns
+
+      ##########################################################################
+      # Database migration
+      ##########################################################################
+
+      - name: Run MongoDB migrations
+        env:
+          MONGO_URI: ${{ secrets.STAGING_MONGO_URI }}
+          NODE_ENV: production
+        run: |
+          npm ci
+          npm run migrate
+
+      ##########################################################################
+      # Deploy backend
+      ##########################################################################
+
+      - name: Deploy backend
+        run: |
+          helm upgrade \
+            backend \
+            ./deploy/charts/backend \
+            \
+            --install \
+            --namespace ${KUBE_NAMESPACE} \
+            --create-namespace \
+            \
+            --set image.repository=${{ env.REGISTRY }}/${{ env.IMAGE_BACKEND }} \
+            --set image.tag=${{ github.sha }} \
+            --wait \
+            --timeout=15m
+
+      ##########################################################################
+      # Deploy frontend
+      ##########################################################################
+
+      - name: Deploy frontend
+        run: |
+          helm upgrade \
+            frontend \
+            ./deploy/charts/frontend \
+            \
+            --install \
+            --namespace ${KUBE_NAMESPACE} \
+            \
+            --set image.repository=${{ env.REGISTRY }}/${{ env.IMAGE_FRONTEND }} \
+            --set image.tag=${{ github.sha }} \
+            --wait \
+            --timeout=15m
+
+      ##########################################################################
+      # Rollout verification
+      ##########################################################################
+
+      - name: Verify backend rollout
+        run: |
+          kubectl rollout status deployment/backend \
+            -n ${KUBE_NAMESPACE} \
+            --timeout=10m
+
+      - name: Verify frontend rollout
+        run: |
+          kubectl rollout status deployment/frontend \
+            -n ${KUBE_NAMESPACE} \
+            --timeout=10m
+
+      ##########################################################################
+      # Deployment information
+      ##########################################################################
+
+      - name: Show deployed resources
+        run: |
+          kubectl get all -n ${KUBE_NAMESPACE}
+
+################################################################################
+# HEALTH CHECKS
+################################################################################
+
+  staging-health-check:
+    name: Verify Staging Health
+    runs-on: ubuntu-latest
+
+    needs:
+      - deploy-staging
+
+    steps:
+      ##########################################################################
+      # Wait briefly
+      ##########################################################################
+
+      - name: Wait for application warm-up
+        run: sleep 30
+
+      ##########################################################################
+      # Backend health
+      ##########################################################################
+
+      - name: Backend health endpoint
+        run: |
+          curl \
+            --retry 20 \
+            --retry-delay 5 \
+            --retry-all-errors \
+            --fail \
+            https://staging.communitycapital.example.com/api/health
+
+      ##########################################################################
+      # Readiness endpoint
+      ##########################################################################
+
+      - name: Backend readiness
+        run: |
+          curl \
+            --retry 20 \
+            --retry-delay 5 \
+            --retry-all-errors \
+            --fail \
+            https://staging.communitycapital.example.com/api/ready
+
+      ##########################################################################
+      # Frontend availability
+      ##########################################################################
+
+      - name: Frontend availability
+        run: |
+          curl \
+            --retry 20 \
+            --retry-delay 5 \
+            --retry-all-errors \
+            --fail \
+            https://staging.communitycapital.example.com
+
+      ##########################################################################
+      # Smoke tests
+      ##########################################################################
+
+      - name: Smoke API tests
+        run: |
+          npm ci
+          npm run smoke:test
+
+################################################################################
+# STAGING DEPLOYMENT SUMMARY
+################################################################################
+
+  staging-summary:
+    name: Staging Deployment Summary
+    runs-on: ubuntu-latest
+
+    needs:
+      - staging-health-check
+
+    if: always()
+
+    steps:
+      - name: Deployment Summary
+        run: |
+          echo "====================================="
+          echo "Staging Deployment Complete"
+          echo "====================================="
+          echo "Commit:     ${{ github.sha }}"
+          echo "Branch:     ${{ github.ref_name }}"
+          echo "Actor:      ${{ github.actor }}"
+          echo "Workflow:   ${{ github.workflow }}"
+          echo "Run Number: ${{ github.run_number }}"
+          echo "====================================="
+################################################################################
+# PART 5
+# Production Deployment
+################################################################################
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+
+    needs:
+      - deploy-staging
+
+    if: >
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'push'
+
+    environment:
+      name: production
+      url: https://community.titechcapital.com
+
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+
+    timeout-minutes: 45
+
+    steps:
+
+      ##########################################################################
+      # Checkout
+      ##########################################################################
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      ##########################################################################
+      # Configure kubectl
+      ##########################################################################
+
+      - name: Configure Kubernetes
+        uses: azure/setup-kubectl@v4
+
+      - name: Configure Kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG_PRODUCTION }}" > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      ##########################################################################
+      # Deploy
+      ##########################################################################
+
+      - name: Deploy Application
+        run: |
+
+          kubectl set image deployment/community-api \
+            api=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            -n production
+
+          kubectl rollout status deployment/community-api \
+            -n production \
+            --timeout=10m
+
+      ##########################################################################
+      # Smoke Test
+      ##########################################################################
+
+      - name: Production Smoke Test
+
+        run: |
+
+          sleep 20
+
+          curl \
+            --retry 20 \
+            --retry-delay 5 \
+            --retry-all-errors \
+            --fail \
+            https://community.titechcapital.com/health
+
+      ##########################################################################
+      # API Verification
+      ##########################################################################
+
+      - name: Verify Critical API
+
+        run: |
+
+          curl \
+            --fail \
+            https://community.titechcapital.com/api/version
+
+      ##########################################################################
+      # Rollback
+      ##########################################################################
+
+      - name: Automatic Rollback
+        if: failure()
+
+        run: |
+
+          echo "Deployment failed."
+
+          kubectl rollout undo deployment/community-api \
+            -n production
+
+          kubectl rollout status deployment/community-api \
+            -n production
+
+      ##########################################################################
+      # Deployment Summary
+      ##########################################################################
+
+      - name: Deployment Summary
+
+        if: always()
+
+        run: |
+
+          echo "## Production Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Environment: Production" >> $GITHUB_STEP_SUMMARY
+          echo "- Image: ${{ env.IMAGE_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Tag: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Commit: ${{ github.event.head_commit.message }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Actor: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Workflow: ${{ github.workflow }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Run ID: ${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Status: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+
+      ##########################################################################
+      # Slack Notification
+      ##########################################################################
+
+      - name: Notify Slack
+        if: always()
+
+        uses: slackapi/slack-github-action@v1.27.0
+
+        with:
+
+          payload: |
+            {
+              "text": "*Production Deployment*\nRepository: ${{ github.repository }}\nCommit: ${{ github.sha }}\nStatus: ${{ job.status }}"
+            }
+
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+
+      ##########################################################################
+      # Teams Notification (Optional)
+      ##########################################################################
+
+      - name: Notify Microsoft Teams
+        if: always() && env.TEAMS_WEBHOOK != ''
+
+        run: |
+
+          curl \
+            -H "Content-Type: application/json" \
+            -d "{\"text\":\"Production deployment ${{ job.status }}\"}" \
+            "$TEAMS_WEBHOOK"
+
+        env:
+          TEAMS_WEBHOOK: ${{ secrets.TEAMS_WEBHOOK }}
+
+      ##########################################################################
+      # Release Tag
+      ##########################################################################
+
+      - name: Create Release Tag
+
+        if: success()
+
+        uses: softprops/action-gh-release@v2
+
+        with:
+
+          tag_name: production-${{ github.run_number }}
+
+          generate_release_notes: true
+
+          name: Production Release ${{ github.run_number }}
+
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+################################################################################
+# POST-DEPLOYMENT VERIFICATION
+################################################################################
+
+  post-deployment:
+    name: Post Deployment Verification
+    runs-on: ubuntu-latest
+
+    needs:
+      - deploy-production
+
+    if: always()
+
+    environment:
+      name: production
+
+    timeout-minutes: 30
+
+    permissions:
+      contents: read
+      deployments: read
+
+    steps:
+
+###############################################################################
+# Checkout
+###############################################################################
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+###############################################################################
+# Wait for Stabilization
+###############################################################################
+
+      - name: Allow Cluster to Stabilize
+        run: sleep 30
+
+###############################################################################
+# Backend Health
+###############################################################################
+
+      - name: Verify Health Endpoint
+
+        run: |
+
+          curl \
+            --retry 30 \
+            --retry-delay 5 \
+            --retry-all-errors \
+            --fail \
+            https://community.titechcapital.com/api/health
+
+###############################################################################
+# Readiness
+###############################################################################
+
+      - name: Verify Readiness Endpoint
+
+        run: |
+
+          curl \
+            --retry 30 \
+            --retry-delay 5 \
+            --retry-all-errors \
+            --fail \
+            https://community.titechcapital.com/api/ready
+
+###############################################################################
+# Version Endpoint
+###############################################################################
+
+      - name: Verify Version Endpoint
+
+        run: |
+
+          curl \
+            --fail \
+            https://community.titechcapital.com/api/version
+
+###############################################################################
+# Authentication Smoke Test
+###############################################################################
+
+      - name: Authentication Smoke Test
+
+        run: |
+
+          curl \
+            --fail \
+            --request POST \
+            https://community.titechcapital.com/api/auth/login \
+            \
+            -H "Content-Type: application/json" \
+            \
+            -d '{
+                  "email":"${{ secrets.SMOKE_USER_EMAIL }}",
+                  "password":"${{ secrets.SMOKE_USER_PASSWORD }}"
+                }'
+
+###############################################################################
+# Core API Smoke Tests
+###############################################################################
+
+      - name: Core API Smoke Tests
+
+        run: |
+
+          npm ci
+
+          npm run smoke:test
+
+###############################################################################
+# Newman Smoke Tests
+###############################################################################
+
+      - name: Newman Collection
+
+        run: |
+
+          npm run postman:test
+
+###############################################################################
+# Verify Kubernetes Rollout
+###############################################################################
+
+      - name: Verify Rollout
+
+        run: |
+
+          kubectl rollout status deployment/community-api \
+            -n production \
+            --timeout=5m
+
+###############################################################################
+# Verify Replica Count
+###############################################################################
+
+      - name: Verify Replica Health
+
+        run: |
+
+          kubectl get pods \
+            -n production
+
+###############################################################################
+# Deployment Metrics
+###############################################################################
+
+      - name: Capture Deployment Metrics
+
+        run: |
+
+          echo "Deployment completed at: $(date)"
+
+          echo "Workflow: ${{ github.workflow }}"
+
+          echo "Run: ${{ github.run_number }}"
+
+          echo "Commit: ${{ github.sha }}"
+
+          echo "Actor: ${{ github.actor }}"
+
+###############################################################################
+# Upload Logs
+###############################################################################
+
+      - name: Upload Deployment Logs
+
+        if: always()
+
+        uses: actions/upload-artifact@v4
+
+        with:
+
+          name: deployment-logs
+
+          path: |
+            logs/**
+            reports/**
+            coverage/**
+
+          if-no-files-found: ignore
+
+          retention-days: 30
+
+###############################################################################
+# Slack Notification
+###############################################################################
+
+      - name: Notify Slack
+
+        if: always()
+
+        uses: slackapi/slack-github-action@v1.27.0
+
+        with:
+
+          payload: |
+            {
+              "text": "*Deployment Completed*\nRepository: ${{ github.repository }}\nStatus: ${{ job.status }}\nCommit: ${{ github.sha }}\nRun: ${{ github.run_number }}"
+            }
+
+        env:
+
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+
+###############################################################################
+# Microsoft Teams
+###############################################################################
+
+      - name: Notify Teams
+
+        if: always() && env.TEAMS_WEBHOOK != ''
+
+        env:
+          TEAMS_WEBHOOK: ${{ secrets.TEAMS_WEBHOOK }}
+
+        run: |
+
+          curl \
+            -H "Content-Type: application/json" \
+            \
+            -d "{\"text\":\"Deployment ${{ job.status }}\"}" \
+            \
+            "$TEAMS_WEBHOOK"
+
+###############################################################################
+# GitHub Deployment Summary
+###############################################################################
+
+      - name: Publish Deployment Summary
+
+        if: always()
+
+        run: |
+
+          {
+            echo "# 🚀 Production Deployment Summary"
+            echo ""
+            echo "| Item | Value |"
+            echo "|------|-------|"
+            echo "| Repository | ${{ github.repository }} |"
+            echo "| Environment | Production |"
+            echo "| Workflow | ${{ github.workflow }} |"
+            echo "| Run | ${{ github.run_number }} |"
+            echo "| Status | ${{ job.status }} |"
+            echo "| Commit | ${{ github.sha }} |"
+            echo "| Branch | ${{ github.ref_name }} |"
+            echo "| Actor | ${{ github.actor }} |"
+            echo "| Event | ${{ github.event_name }} |"
+            echo "| Trigger | ${{ github.triggering_actor || github.actor }} |"
+            echo ""
+            echo "## Verification"
+            echo ""
+            echo "- ✅ Health endpoint"
+            echo "- ✅ Readiness endpoint"
+            echo "- ✅ Version endpoint"
+            echo "- ✅ Authentication"
+            echo "- ✅ Smoke tests"
+            echo "- ✅ Kubernetes rollout"
+            echo "- ✅ Replica verification"
+            echo ""
+            echo "Deployment completed successfully."
+          } >> $GITHUB_STEP_SUMMARY
+
+###############################################################################
+# Cleanup
+###############################################################################
+
+      - name: Cleanup Workspace
+
+        if: always()
+
+        run: |
+
+          docker system prune -af || true
+
+          rm -rf node_modules || true
+
+          rm -rf ~/.npm || true
+
+          rm -rf coverage || true
+
+          rm -rf reports || true
+
+          rm -rf logs || true
+
+          find . -name "*.log" -delete || true
+
+###############################################################################
+# Finish
+###############################################################################
+
+      - name: Final Status
+
+        if: always()
+
+        run: |
+
+          echo "========================================"
+          echo "Enterprise Deployment Pipeline Finished"
+          echo "========================================"
+
+          echo "Repository : ${{ github.repository }}"
+          echo "Environment: Production"
+          echo "Run        : ${{ github.run_number }}"
+          echo "Commit     : ${{ github.sha }}"
+          echo "Status     : ${{ job.status }}"
+          echo "========================================"

@@ -7,7 +7,15 @@
     "build": "echo \"Backend build complete - Node.js requires no compilation\"",
     "start": "node --max-old-space-size=4096 server.js",
     "dev": "nodemon --exec \"node --max-old-space-size=4096\" server.js",
+    "backfill:loan-metrics": "node scripts/backfillLoanMetrics.js",
+    "backfill:member-scores": "node scripts/backfillMemberScores.js",
+    "create:indexes": "node scripts/createIndexes.js",
+    "create:loan-indexes": "node scripts/createLoanIndexes.js",
+    "seed:admin": "node scripts/seedAdmin.js",
+    "seed:settings": "node scripts/seedSystemSettings.js",
     "seed-admin": "node scripts/seed-admin.js",
+    "migrate:tenant-ids": "node scripts/migrateTenantIds.js",
+    "migrate:loan-statuses": "node scripts/migrateLoanStatuses.js",
     "migrate": "node scripts/migrate.js up",
     "migrate:down": "node scripts/migrate.js down",
     "migrate:status": "node scripts/migrate.js status",
@@ -87,19 +95,25 @@
     "xss-clean": "^0.1.4"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/jest": "^30.0.0",
+    "@vitest/coverage-v8": "^4.1.9",
     "eslint": "^8.57.0",
     "eslint-plugin-import": "^2.32.0",
     "eslint-plugin-react": "^7.37.5",
     "jest": "^29.7.0",
     "jest-junit": "^16.0.0",
     "jest-mock": "^29.7.0",
+    "jsdom": "^29.1.1",
     "mongodb-memory-server": "^9.5.0",
     "nock": "^13.4.0",
     "nodemon": "^3.1.11",
     "prettier": "^3.2.5",
     "supertest": "^6.3.4",
     "ts-node": "^10.9.2",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.9"
   }
 }

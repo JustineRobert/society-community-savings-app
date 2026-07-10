@@ -30,7 +30,7 @@
     "backend": "npm --prefix community-savings-app-backend run dev",
     "frontend": "npm --prefix community-savings-app-frontend start",
     "build": "npm --prefix community-savings-app-frontend run build",
-    "test": "npm --prefix community-savings-app-backend test && npm --prefix community-savings-app-frontend test",
+    "test": "npm --prefix community-savings-app-backend test && npm --prefix community-savings-app-frontend test && jest --watchAll=false",
     "install-all": "npm install && npm --prefix community-savings-app-backend install && npm --prefix community-savings-app-frontend install",
     "postman:test": "newman run postman/Community-auth-tests.postman_collection.json -e postman/Group-env.postman_environment.json --reporters cli,json --reporter-json-export postman/reports/newman-report.json",
     "seed-admin": "npm --prefix community-savings-app-backend run seed-admin",

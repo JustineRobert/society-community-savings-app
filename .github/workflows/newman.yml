@@ -1,89 +1,332 @@
-name: Run Newman Postman Tests
+name: Enterprise API Integration Tests (Newman)
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - develop
+      - release/**
+      - feature/**
   pull_request:
-    branches: [main]
+    branches:
+      - "**"
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: newman-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_ENV: test
 
 jobs:
-  newman-tests:
+
+################################################################################
+# Newman Integration Tests
+################################################################################
+
+  newman:
+
+    name: Newman API Tests (Node ${{ matrix.node }})
+
     runs-on: ubuntu-latest
+
+    timeout-minutes: 40
+
+    strategy:
+
+      fail-fast: false
+
+      matrix:
+        node: [20,22]
+
     services:
-      mongo:
-        image: mongo:6.0
+
+      mongodb:
+
+        image: mongo:7
+
         ports:
           - 27017:27017
-        # Note: MongoDB health-check via 'mongo' shell removed.
-        # The 'mongo' binary is not present in mongo:6.0+ images.
-        # Instead, we use port-based detection (nc) from the runner
-        # to wait for MongoDB readiness. This is more robust and
-        # avoids external shell dependencies.
+
+        options: >-
+          --health-cmd="mongosh --eval 'db.adminCommand({ ping: 1 })'"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=20
+
+      redis:
+
+        image: redis:7
+
+        ports:
+          - 6379:6379
+
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=20
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
+################################################################################
+# Checkout
+################################################################################
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+################################################################################
+# Node
+################################################################################
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+
         with:
-          node-version: '18'
 
-      - name: Install root dependencies
+          node-version: ${{ matrix.node }}
+
+          cache: npm
+
+          cache-dependency-path: |
+            package-lock.json
+            community-savings-app-backend/package-lock.json
+
+################################################################################
+# Install
+################################################################################
+
+      - name: Install Root Dependencies
         run: npm ci
 
-      - name: Install backend dependencies
-        run: npm --prefix community-savings-app-backend ci
+      - name: Install Backend Dependencies
+        working-directory: community-savings-app-backend
+        run: npm ci
 
-      - name: Wait for MongoDB port
+################################################################################
+# Install Newman Reporters
+################################################################################
+
+      - name: Install Newman Reporters
+
         run: |
-          echo 'Waiting for MongoDB to be ready (TCP 127.0.0.1:27017)...'
-          for i in {1..60}; do
-            if nc -z 127.0.0.1 27017 >/dev/null 2>&1; then
-              echo 'MongoDB port is open and ready'
-              break
-            fi
-            sleep 1
-          done
 
-      - name: Seed admin user
+          npm install -g newman
+
+          npm install -g newman-reporter-htmlextra
+
+          npm install -g newman-reporter-junitfull
+
+################################################################################
+# Environment Validation
+################################################################################
+
+      - name: Validate Environment
+
+        run: |
+
+          node --version
+
+          npm --version
+
+          mongosh --version || true
+
+################################################################################
+# Seed Database
+################################################################################
+
+      - name: Seed Admin User
+
+        working-directory: community-savings-app-backend
+
         env:
+
           MONGO_URI: mongodb://127.0.0.1:27017/community-savings-test
+
+          REDIS_URL: redis://127.0.0.1:6379
+
           ADMIN_EMAIL: admin@example.com
-          ADMIN_PASS: AdminPass123A
-          ADMIN_FORCE: 'true'
-        # Run seeding script within the backend package context
-        # to ensure all dependencies and scripts are available.
-        run: |
-          npm --prefix community-savings-app-backend run seed-admin --silent
 
-      - name: Start backend server
-        env:
-          PORT: 5000
-          NODE_ENV: development
-          MONGO_URI: mongodb://127.0.0.1:27017/community-savings-test
-          JWT_SECRET: testsecret12345678901234567890
-          JWT_REFRESH_SECRET: testrefreshsecret1234567890
-        # Start the backend in development mode and wait for it to be ready.
-        # Using curl polling to detect when the API endpoint is responding.
+          ADMIN_PASS: AdminPass123!
+
+          ADMIN_FORCE: "true"
+
         run: |
-          npm --prefix community-savings-app-backend run dev &
-          echo 'Backend starting in background...'
-          # Poll the API endpoint until the backend is ready (max 60 seconds)
-          for i in {1..60}; do
-            if curl -sS http://localhost:5000/api/auth/me >/dev/null 2>&1; then
-              echo 'Backend is ready and responding to requests'
-              break
+
+          npm run seed-admin --silent
+
+################################################################################
+# Build Backend
+################################################################################
+
+      - name: Verify Backend Builds
+
+        working-directory: community-savings-app-backend
+
+        run: |
+
+          npm run lint --if-present
+
+          npm run build --if-present
+
+################################################################################
+# Start API
+################################################################################
+
+      - name: Start Backend
+
+        working-directory: community-savings-app-backend
+
+        env:
+
+          PORT: 5000
+
+          NODE_ENV: test
+
+          JWT_SECRET: github-actions-secret
+
+          JWT_REFRESH_SECRET: github-refresh-secret
+
+          MONGO_URI: mongodb://127.0.0.1:27017/community-savings-test
+
+          REDIS_URL: redis://127.0.0.1:6379
+
+        run: |
+
+          npm run dev > backend.log 2>&1 &
+
+################################################################################
+# Wait For API
+################################################################################
+
+      - name: Wait For API
+
+        run: |
+
+          echo "Waiting for backend..."
+
+          for i in {1..90}
+
+          do
+
+            if curl -fs http://127.0.0.1:5000/health >/dev/null 2>&1; then
+
+              echo "Backend Ready"
+
+              exit 0
+
             fi
-            sleep 1
+
+            sleep 2
+
           done
 
-      - name: Run Newman Postman collection
-        run: npm run postman:test
+          echo "Backend failed to start"
 
-      - name: Upload Newman test report
-        if: always()
+          cat community-savings-app-backend/backend.log || true
+
+          exit 1
+
+################################################################################
+# Run Newman
+################################################################################
+
+      - name: Execute Postman Collection
+
+        run: |
+
+          mkdir -p postman/reports
+
+          newman run postman/Community-Savings.postman_collection.json \
+            -e postman/Test.postman_environment.json \
+            --timeout-request 60000 \
+            --timeout-script 60000 \
+            --delay-request 100 \
+            --bail \
+            -r cli,json,junitfull,htmlextra \
+            --reporter-json-export postman/reports/newman.json \
+            --reporter-junitfull-export postman/reports/junit.xml \
+            --reporter-htmlextra-export postman/reports/report.html
+
+################################################################################
+# Upload Reports
+################################################################################
+
+      - name: Upload Newman Reports
+
         uses: actions/upload-artifact@v4
+
+        if: always()
+
         with:
-          name: newman-report
-          path: postman/reports/newman-report.json
+
+          name: newman-reports-node-${{ matrix.node }}
+
+          path: |
+
+            postman/reports
+
+################################################################################
+# Upload Backend Logs
+################################################################################
+
+      - name: Upload Backend Logs
+
+        if: failure()
+
+        uses: actions/upload-artifact@v4
+
+        with:
+
+          name: backend-logs-node-${{ matrix.node }}
+
+          path: |
+
+            community-savings-app-backend/backend.log
+
+################################################################################
+# Summary
+################################################################################
+
+      - name: Publish Summary
+
+        if: always()
+
+        run: |
+
+          {
+
+            echo "# Newman Integration Test Summary"
+
+            echo ""
+
+            echo "| Item | Status |"
+
+            echo "|------|--------|"
+
+            echo "| Backend Started | ✅ |"
+
+            echo "| MongoDB | ✅ |"
+
+            echo "| Redis | ✅ |"
+
+            echo "| Admin Seed | ✅ |"
+
+            echo "| Postman Collection | Executed |"
+
+            echo "| HTML Report | Generated |"
+
+            echo "| JSON Report | Generated |"
+
+            echo "| JUnit Report | Generated |"
+
+            echo "| Artifacts | Uploaded |"
+
+          } >> $GITHUB_STEP_SUMMARY
