@@ -3,7 +3,7 @@
  * tests/OnboardingFlow.integration.test.jsx
  * ============================================================================
  * Enterprise Integration Tests
- * TITech Community Capital
+ * TITech Community Capital LTD
  * SACCO Onboarding Flow
  * ============================================================================
  */

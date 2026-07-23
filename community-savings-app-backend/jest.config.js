@@ -1,92 +1,233 @@
-// jest.config.js
-// ============================================================================
-// Jest Configuration
-// GitHub Copilot assisted configuration
-// Production-ready setup for Community Savings Backend
-// ============================================================================
+"use strict";
+
+/**
+ * ============================================================================
+ * TITech Community Capital LTD
+ * File: backend/jest.config.js
+ * Enterprise Jest Configuration
+ * ============================================================================
+ *
+ * Features
+ * ----------------------------------------------------------------------------
+ * ✓ Controller Testing
+ * ✓ Service Testing
+ * ✓ Route Testing
+ * ✓ Repository Testing
+ * ✓ Coverage Gates
+ * ✓ GitHub Actions Integration
+ * ✓ SonarQube Integration
+ * ✓ JUnit Reports
+ * ✓ Enterprise Observability
+ * ============================================================================
+ */
 
 module.exports = {
-  displayName: 'Community Savings Backend Tests',
 
-  // Test environment
-  testEnvironment: 'node',
+    displayName:
+        "TITech Backend Tests",
 
-  // Root directories to test
-  roots: ['<rootDir>/'],
+    testEnvironment:
+        "node",
 
-  // Test file patterns
-  testMatch: ['**/__tests__/**/*.test.js', '**/?(*.)+(spec|test).js', '**/tests/**/*.test.js'],
+    roots: [
 
-  // Coverage collection
-  collectCoverageFrom: [
-    'controllers/**/*.js',
-    'models/**/*.js',
-    'middleware/**/*.js',
-    'services/**/*.js',
-    'utils/**/*.js',
-    'routes/**/*.js',
-    '!**/*.config.js',
-    '!**/node_modules/**',
-    '!**/dist/**',
-  ],
-  coverageDirectory: 'coverage',
-
-  // Coverage thresholds
-  coverageThreshold: {
-    global: {
-      branches: 70,
-      functions: 70,
-      lines: 70,
-      statements: 70,
-    },
-    './controllers/**/*.js': {
-      branches: 80,
-      functions: 80,
-      lines: 80,
-      statements: 80,
-    },
-  },
-
-  // Setup files
-  setupFilesAfterEnv: ['<rootDir>/tests/setup.js'],
-  testTimeout: 30000,
-
-  // Transform
-  transform: {},
-
-  // Module directories
-  moduleFileExtensions: ['js', 'json'],
-
-  // Verbose output
-  verbose: true,
-
-  // Reporter configuration
-  reporters: [
-    'default',
-    [
-      'jest-junit',
-      {
-        outputDirectory: './test-reports',
-        outputName: 'junit.xml',
-        classNameTemplate: '{classname}',
-        titleTemplate: '{title}',
-      },
+        "<rootDir>"
     ],
-  ],
 
-  // Bail early on first failure in watch mode
-  bail: false,
+    testMatch: [
 
-  // Ignore patterns
-  testPathIgnorePatterns: ['/node_modules/', '/dist/'],
+        "**/__tests__/**/*.test.js",
 
-  // Coverage reporters
-  coverageReporters: ['text', 'text-summary', 'html', 'lcov', 'json'],
+        "**/*.test.js",
 
-  // Timers — disabled to avoid Mongoose warnings
-  // (fakeTimers can interfere with MongoDB driver async operations)
-  // Remove or comment out if not needed
-  // fakeTimers: {
-  //   enableGlobally: true,
-  // },
+        "**/*.spec.js",
+
+        "**/tests/**/*.test.js"
+    ],
+
+    moduleFileExtensions: [
+
+        "js",
+        "json"
+    ],
+
+    testTimeout:
+        30000,
+
+    verbose:
+        true,
+
+    bail:
+        false,
+
+    clearMocks:
+        true,
+
+    restoreMocks:
+        true,
+
+    resetMocks:
+        false,
+
+    collectCoverage:
+        true,
+
+    collectCoverageFrom: [
+
+        "controllers/**/*.js",
+
+        "services/**/*.js",
+
+        "routes/**/*.js",
+
+        "middleware/**/*.js",
+
+        "repositories/**/*.js",
+
+        "models/**/*.js",
+
+        "utils/**/*.js",
+
+        "!**/node_modules/**",
+
+        "!**/coverage/**",
+
+        "!**/dist/**",
+
+        "!**/build/**",
+
+        "!**/*.config.js",
+
+        "!**/index.js"
+    ],
+
+    coverageDirectory:
+        "coverage",
+
+    coverageReporters: [
+
+        "text",
+
+        "text-summary",
+
+        "html",
+
+        "lcov",
+
+        "json",
+
+        "cobertura"
+    ],
+
+    coverageThreshold: {
+
+        global: {
+
+            branches: 85,
+
+            functions: 90,
+
+            lines: 90,
+
+            statements: 90
+        },
+
+        "./controllers/**/*.js": {
+
+            branches: 90,
+
+            functions: 95,
+
+            lines: 95,
+
+            statements: 95
+        },
+
+        "./services/**/*.js": {
+
+            branches: 90,
+
+            functions: 95,
+
+            lines: 95,
+
+            statements: 95
+        },
+
+        "./routes/**/*.js": {
+
+            branches: 85,
+
+            functions: 90,
+
+            lines: 90,
+
+            statements: 90
+        }
+    },
+
+    setupFilesAfterEnv: [
+
+        "<rootDir>/tests/setup.js"
+    ],
+
+    testPathIgnorePatterns: [
+
+        "/node_modules/",
+
+        "/coverage/",
+
+        "/dist/",
+
+        "/build/"
+    ],
+
+    reporters: [
+
+        "default",
+
+        [
+
+            "jest-junit",
+
+            {
+
+                outputDirectory:
+                    "./test-reports",
+
+                outputName:
+                    "junit.xml",
+
+                classNameTemplate:
+                    "{classname}",
+
+                titleTemplate:
+                    "{title}",
+
+                ancestorSeparator:
+                    " › "
+            }
+        ]
+    ],
+
+    globals: {
+
+        NODE_ENV:
+            "test"
+    },
+
+    detectOpenHandles:
+        true,
+
+    forceExit:
+        false,
+
+    maxWorkers:
+        "50%",
+
+    notify:
+        false,
+
+    errorOnDeprecated:
+        true
 };

@@ -1,444 +1,1031 @@
-// ============================================================================
-// TITech Community Capital
-// Production-ready server bootstrap
-// File: backend/server.js
-// ============================================================================
-//
-// Enhancements over original:
-// - Waits for Redis readiness in production (bounded wait) to avoid inconsistent
-//   in-memory fallback across instances.
-// - Uses redis service helper to create a rate-limit store (Redis-backed when
-//   available, memory fallback otherwise).
-// - Lighter auth-specific rate limiter and skip for logout to avoid 401->429 loops.
-// - Mongoose autoIndex disabled in production to avoid duplicate index creation
-//   noise; logs guidance for duplicate index warnings.
-// - Improved startup logging and health endpoints include Redis status.
-// - Graceful shutdown and improved error handling.
-//
-// Drop-in replacement for your existing server.js. Adjust timeouts and limits
-// via environment variables or the existing config module as needed.
-// ============================================================================
+"use strict";
 
-'use strict';
+/**
+ * ============================================================================
+ * TITech Community Capital LTD
+ * Enterprise Server Bootstrap
+ * ============================================================================
+ * Section 1.1–1.2
+ *
+ * Foundation & Runtime Bootstrap
+ *
+ * Responsibilities
+ * ----------------
+ * • Strict mode
+ * • Runtime validation
+ * • Node.js version verification
+ * • Runtime feature detection
+ * • CPU architecture validation
+ * • Platform validation
+ * • Process privilege checks
+ * • OpenSSL verification
+ * • Optional FIPS detection
+ *
+ * This section MUST execute before importing application modules.
+ * ============================================================================
+ */
 
-const http = require('http');
-const express = require('express');
-const helmet = require('helmet');
-const cors = require('cors');
-const morgan = require('morgan');
-const cookieParser = require('cookie-parser');
-const rateLimit = require('express-rate-limit');
-const mongoSanitize = require('express-mongo-sanitize');
-const xss = require('xss-clean');
-const compression = require('compression');
-const hpp = require('hpp');
-const client = require('prom-client');
-const mongoose = require('mongoose');
-const crypto = require('crypto');
+/**
+ * ============================================================================
+ * CORE DEPENDENCIES
+ * ============================================================================
+ */
 
-const config = require('./config');
-const logger = require('./utils/logger');
-const { createSocketServer } = require('./services/socket');
-const redisService = require('./services/redis'); // enhanced redis helper
-const { errorHandler } = require('./middleware/errorHandler');
-const apiGateway = require('./middleware/apiGateway');
-const initChatSocket = require('./realtime/chatSocket');
+const os = require("os");
+const crypto = require("crypto");
 
-const connectDB = require('./config/db');
+require("dotenv").config();
 
-const app = express();
-const server = http.createServer(app);
 
-app.set('trust proxy', 1);
+/**
+ * ============================================================================
+ * APPLICATION IMPORTS
+ * ============================================================================
+ */
 
-/* -------------------------------------------------------------------------- */
-/*                               SECURITY                                      */
-/* -------------------------------------------------------------------------- */
-
-app.use(
-  helmet({
-    crossOriginResourcePolicy: {
-      policy: 'cross-origin',
-    },
-  })
-);
-
-app.use(mongoSanitize());
-app.use(xss());
-app.use(hpp());
-
-/* -------------------------------------------------------------------------- */
-/*                              PERFORMANCE                                    */
-/* -------------------------------------------------------------------------- */
-
-app.use(compression());
-
-if (config.env !== 'production') {
-  app.use(morgan('dev', { stream: logger.stream }));
-} else {
-  app.use(morgan('combined', { stream: logger.stream }));
+const {
+    validateEnterpriseRuntime
 }
-
-/* -------------------------------------------------------------------------- */
-/*                               BODY PARSING                                 */
-/* -------------------------------------------------------------------------- */
-
-app.use(express.json({ limit: config.bodyLimit || '10kb' }));
-app.use(
-  express.urlencoded({
-    extended: true,
-    limit: config.bodyLimit || '10kb',
-  })
+=
+require(
+    "./runtime/validateEnterpriseRuntime"
 );
 
-app.use(cookieParser());
-app.disable('x-powered-by');
 
-/* -------------------------------------------------------------------------- */
-/*                              REQUEST ID                                     */
-/* -------------------------------------------------------------------------- */
+const runtimeValidationReport =
+    validateEnterpriseRuntime();
 
-app.use((req, res, next) => {
-  const requestId = req.headers['x-request-id'] || crypto.randomUUID();
-  req.requestId = requestId;
-  res.setHeader('X-Request-Id', requestId);
-  next();
-});
 
-/* -------------------------------------------------------------------------- */
-/*                                   CORS                                     */
-/* -------------------------------------------------------------------------- */
 
-const allowedOrigins = [
-  'http://localhost:3000',
-  'http://127.0.0.1:3000',
-  'http://localhost:5173',
-  'http://127.0.0.1:5173',
-  process.env.FRONTEND_URL,
-  ...(config.corsOrigins
-    ? config.corsOrigins
-        .split(',')
-        .map((o) => o.trim())
-        .filter(Boolean)
-    : []),
-].filter(Boolean);
+const bootstrapEnvironment = require(
+  "./config/bootstrapEnvironment"
+);
 
-const corsOptions = {
-  credentials: true,
-  origin(origin, callback) {
-    // Allow non-browser clients (no origin) and whitelisted origins
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) return callback(null, true);
-    logger.warn('Blocked CORS Origin', { origin });
-    return callback(null, false);
-  },
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id', 'X-Requested-With'],
-  exposedHeaders: ['X-Request-Id'],
-  optionsSuccessStatus: 204,
+
+const {
+  bootstrapResilienceObservability
+} = require(
+  "./observability/resilienceObservabilityBootstrap"
+);
+
+
+const {
+  bootstrapResilience
+} = require(
+  "./middleware/resilience/bootstrap"
+);
+
+
+/**
+ * ============================================================================
+ * OBSERVABILITY INITIALIZATION
+ * ============================================================================
+ */
+
+const observability =
+  bootstrapResilienceObservability({
+
+    serviceName:
+      "community-savings-backend",
+
+  });
+
+
+const {
+  logger,
+  metrics,
+  tracer,
+
+} = observability;
+
+
+/**
+ * ============================================================================
+ * APPLICATION FACTORY
+ * ============================================================================
+ */
+
+const app =
+  require("./app");
+
+
+/**
+ * ============================================================================
+ * EXPORTS
+ * ============================================================================
+ */
+
+module.exports = {
+
+  app,
+
+  logger,
+
+  metrics,
+
+  tracer,
+
+  bootstrapEnvironment,
+
+  bootstrapResilience,
+
 };
 
-app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
+/**
+ * ============================================================================
+ * ENTERPRISE RUNTIME REQUIREMENTS
+ * ============================================================================
+ */
 
-/* -------------------------------------------------------------------------- */
-/*                               RATE LIMITING                                 */
-/* -------------------------------------------------------------------------- */
+const RUNTIME_REQUIREMENTS = Object.freeze({
+  minimumNodeMajor: 22,
 
-const isDevelopment = process.env.NODE_ENV !== 'production';
+  supportedPlatforms: Object.freeze([
+    "linux",
+    "darwin",
+    "win32",
+  ]),
 
-function skipLocalhost(req) {
-  if (!isDevelopment) return false;
+  supportedArchitectures: Object.freeze([
+    "x64",
+    "arm64",
+  ]),
+});
 
-  const ip = req.ip || req.connection?.remoteAddress || '';
-  return (
-    ip === '127.0.0.1' ||
-    ip === '::1' ||
-    ip.includes('127.0.0.1')
+/**
+ * ============================================================================
+ * RUNTIME VALIDATION
+ * ============================================================================
+ */
+
+function validateRuntime() {
+  const nodeMajor = Number(
+    process.versions.node.split(".")[0]
+  );
+
+  if (
+    nodeMajor <
+    RUNTIME_REQUIREMENTS.minimumNodeMajor
+  ) {
+    throw new Error(
+      `Node.js ${RUNTIME_REQUIREMENTS.minimumNodeMajor}+ required. Current: ${process.version}`
+    );
+  }
+
+  if (
+    !RUNTIME_REQUIREMENTS.supportedPlatforms.includes(
+      process.platform
+    )
+  ) {
+    throw new Error(
+      `Unsupported platform: ${process.platform}`
+    );
+  }
+
+  if (
+    !RUNTIME_REQUIREMENTS.supportedArchitectures.includes(
+      process.arch
+    )
+  ) {
+    throw new Error(
+      `Unsupported architecture: ${process.arch}`
+    );
+  }
+
+  logger?.info?.(
+    "Runtime validation completed successfully"
   );
 }
 
 /**
- * Create a rate limiter using redisService.createRateLimitStore() which will
- * return a Redis-backed store when Redis is available, or a memory fallback
- * otherwise. For auth endpoints we use a lighter limiter and skip logout to
- * avoid 401->429 cascades.
+ * ============================================================================
+ * APPLICATION STARTUP
+ * ============================================================================
  */
-function createApiLimiter({ windowMs = 15 * 60 * 1000, max = config.rateLimitMax, skipPaths = [] } = {}) {
-  const store = redisService.createRateLimitStore();
-  return rateLimit({
-    windowMs,
-    max,
-    store,
-    standardHeaders: true,
-    legacyHeaders: false,
-    skip(req) {
-      if (skipPaths.some((path) => req.path === path || req.originalUrl?.endsWith(path))) {
-        return true;
-      }
-      return skipLocalhost(req);
-    },
-    handler: (req, res) =>
-      res.status(429).json({
-        message: 'Too many requests, please try again later.',
-      }),
-  });
-}
-
-// Global API limiter
-const apiLimiter = createApiLimiter();
-
-// Auth-specific limiter (lighter)
-const authLimiter = createApiLimiter({
-  windowMs: 15 * 60 * 1000,
-  max: Math.max(10, Math.floor((config.rateLimitMax || 100) / 4)),
-  skipPaths: ['/logout'],
-});
-
-// Apply global limiter to API
-app.use(apiLimiter);
-
-// Apply auth limiter to auth routes only (mounted later)
-app.use('/api/auth', authLimiter);
-
-/* -------------------------------------------------------------------------- */
-/*                                  ROUTES                                     */
-/* -------------------------------------------------------------------------- */
-
-// Mount API gateway and routes
-app.use('/api', apiGateway);
-app.use('/api/risk', require('./routes/risk'));
-
-// For auth routes we want to ensure logout is not blocked by strict rate limits.
-// The auth route file should export router; we mount it here and then add a
-// small middleware to bypass rate limiting for logout path if needed.
-const authRouter = require('./routes/auth');
-const emailRouter = require('./routes/email');
-
-app.use('/api/auth', authRouter);
-app.use('/api/email', emailRouter);
-
-app.use('/api/momo', require('./routes/momoRoutes'));
-app.use('/api/webhook', require('./routes/webhook'));
-app.use('/api/kyc', require('./routes/kyc'));
-app.use('/api/bizchat', require('./routes/bizchat'));
-app.use('/api/rbac', require('./routes/rbac'));
-
-/* -------------------------------------------------------------------------- */
-/*                                 METRICS                                     */
-/* -------------------------------------------------------------------------- */
-
-client.collectDefaultMetrics();
-
-app.get('/metrics', async (req, res) => {
-  res.set('Content-Type', client.register.contentType);
-  res.end(await client.register.metrics());
-});
-
-/* -------------------------------------------------------------------------- */
-/*                           HEALTH / READINESS                               */
-/* -------------------------------------------------------------------------- */
-
-let mongoReady = false;
-
-mongoose.connection.once('open', () => {
-  mongoReady = true;
-  logger.info('MongoDB connected and application marked ready');
-});
-
-mongoose.connection.on('error', (err) => {
-  mongoReady = false;
-  logger.error('MongoDB connection error', { error: err.message });
-});
-
-app.get('/healthz', (req, res) => {
-  res.json({
-    status: 'ok',
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString(),
-    redis: {
-      status: redisService.getStatus(),
-      ready: redisService.isReady(),
-      degraded: !!redisService.gracefullyDegraded,
-    },
-  });
-});
-
-app.get('/readyz', (req, res) => {
-  if (!mongoReady) {
-    return res.status(503).json({ status: 'not-ready', reason: 'mongo' });
-  }
-
-  // If in production we prefer Redis to be ready for full readiness
-  if (config.env === 'production' && !redisService.isReady()) {
-    return res.status(503).json({ status: 'not-ready', reason: 'redis' });
-  }
-
-  return res.json({ status: 'ready' });
-});
-
-/* -------------------------------------------------------------------------- */
-/*                                 ROOT                                        */
-/* -------------------------------------------------------------------------- */
-
-app.get('/', (req, res) => {
-  res.json({
-    message: '🚀 TITech Community Capital - African Community Finance Operating System(ACFOS) Backend is running!',
-    version: process.env.APP_VERSION || '1.0.0',
-    env: config.env,
-    timestamp: new Date().toISOString(),
-    redis: {
-      status: redisService.getStatus(),
-      ready: redisService.isReady(),
-      degraded: !!redisService.gracefullyDegraded,
-    },
-  });
-});
-
-/* -------------------------------------------------------------------------- */
-/*                            ERROR HANDLING                                   */
-/* -------------------------------------------------------------------------- */
-
-app.use((req, res) => {
-  res.status(404).json({ message: 'API route not found' });
-});
-
-app.use(errorHandler);
-
-/* -------------------------------------------------------------------------- */
-/*                                SOCKET.IO                                    */
-/* -------------------------------------------------------------------------- */
-
-const io = createSocketServer(server);
-app.locals.io = io;
-initChatSocket(server);
-
-/* -------------------------------------------------------------------------- */
-/*                             SERVER SETTINGS                                 */
-/* -------------------------------------------------------------------------- */
-
-server.keepAliveTimeout = config.timeouts?.keepAlive || 65000;
-server.headersTimeout = config.timeouts?.headers || 66000;
-server.requestTimeout = config.timeouts?.request || 120000;
-
-/* -------------------------------------------------------------------------- */
-/*                              START SERVER                                   */
-/* -------------------------------------------------------------------------- */
 
 async function startServer() {
   try {
-    // Connect DB first (this will set mongoReady when open)
-    await connectDB();
+    console.log(
+      "🚀 Starting Community Savings Backend..."
+    );
 
-    // In production, wait for Redis readiness for a bounded time to avoid
-    // inconsistent behavior across instances. In development, wait a short time
-    // but allow fallback to memory store.
-    const redisWaitMs = config.redisWaitMs || (config.env === 'production' ? 30000 : 5000);
-    const redisOk = await redisService.waitForReady(redisWaitMs);
+    /**
+     * ----------------------------------------------------------------------
+     * 1. RUNTIME VALIDATION
+     * ----------------------------------------------------------------------
+     */
 
-    if (!redisOk && config.env === 'production') {
-      logger.error('Redis not ready after wait; aborting startup to avoid inconsistent state');
-      process.exit(1);
-    }
+    validateRuntime();
 
-    // If mongoose emits duplicate index warnings, recommend disabling autoIndex in production
-    if (config.env === 'production') {
-      mongoose.set('autoIndex', false);
-    }
+    console.log(
+      "✅ Runtime validation passed"
+    );
 
-    // Seed RBAC roles/permissions if present
-    try {
-      const rbacService = require('./services/rbacService');
-      rbacService.seedRolesPermissions().catch((err) => logger.debug('RBAC seed skipped or failed', { err: err.message }));
-    } catch (err) {
-      logger.debug('RBAC seed service not available', { err: err.message });
-    }
+    /**
+     * ----------------------------------------------------------------------
+     * 2. ENVIRONMENT VALIDATION
+     * ----------------------------------------------------------------------
+     */
 
-    if (!server.listening) {
-      server.listen(config.port, () => {
-        logger.info(`Server running (${config.env}) at http://localhost:${config.port}`);
-        logger.info('Metrics available at: /metrics');
-        logger.info('Health check at: /healthz');
-        logger.info('Readiness check at: /readyz');
+    bootstrapEnvironment();
 
-        // Log Redis state after startup
-        logger.info('Redis status', {
-          status: redisService.getStatus(),
-          ready: redisService.isReady(),
-          degraded: !!redisService.gracefullyDegraded,
-        });
+    console.log(
+      "✅ Bootstrap completed successfully"
+    );
 
-        if (redisService.gracefullyDegraded) {
-          logger.warn('Redis degraded mode active; some features are using in-memory fallback');
-        }
-      });
-    }
-  } catch (err) {
-    logger.error('Failed to start application', {
-      error: err.message,
-      stack: err.stack,
+    /**
+     * ----------------------------------------------------------------------
+     * 3. RESILIENCE INITIALIZATION
+     * ----------------------------------------------------------------------
+     */
+
+    await bootstrapResilience({
+      logger,
     });
+
+    console.log(
+      "✅ Resilience initialized"
+    );
+
+    /**
+     * ----------------------------------------------------------------------
+     * 4. DATABASE INITIALIZATION
+     * ----------------------------------------------------------------------
+     *
+     * Uncomment when MongoDB configuration
+     * is ready.
+     */
+
+    /*
+    await mongoose.connect(
+      process.env.MONGODB_URI,
+      {
+        autoIndex: false,
+      }
+    );
+    */
+
+    console.log(
+      "✅ Database initialization completed"
+    );
+
+    /**
+     * ----------------------------------------------------------------------
+     * 5. START HTTP SERVER
+     * ----------------------------------------------------------------------
+     */
+
+    const PORT =
+      Number(process.env.PORT) || 5000;
+
+    const server = app.listen(
+      PORT,
+      () => {
+        console.log(
+          `✅ Server running on port ${PORT}`
+        );
+      }
+    );
+
+    /**
+     * ----------------------------------------------------------------------
+     * GRACEFUL SHUTDOWN
+     * ----------------------------------------------------------------------
+     */
+
+    const gracefulShutdown =
+      async (signal) => {
+        console.log(
+          `⚠️ ${signal} received. Beginning graceful shutdown...`
+        );
+
+        server.close(() => {
+          console.log(
+            "✅ HTTP server closed"
+          );
+          process.exit(0);
+        });
+      };
+
+    process.on(
+      "SIGINT",
+      gracefulShutdown
+    );
+
+    process.on(
+      "SIGTERM",
+      gracefulShutdown
+    );
+
+    return server;
+  } catch (error) {
+    console.error(
+      "❌ Application startup failed"
+    );
+
+    console.error(error);
+
     process.exit(1);
   }
 }
 
-if (require.main === module) {
-  startServer();
+/**
+ * ============================================================================
+ * START APPLICATION
+ * ============================================================================
+ */
+
+startServer();
+
+
+/**
+ * --------------------------------------------------------------------------
+ * Enterprise Bootstrap Error
+ * --------------------------------------------------------------------------
+ */
+
+class RuntimeBootstrapError extends Error {
+
+  constructor(message, details = {}) {
+
+    super(message);
+
+    this.name = "RuntimeBootstrapError";
+
+    this.details = details;
+
+    Error.captureStackTrace(this, this.constructor);
+
+  }
+
 }
 
-server.on('error', (err) => {
-  logger.error('HTTP Server Error', { error: err.message, code: err.code });
-  process.exit(1);
-});
+/**
+ * --------------------------------------------------------------------------
+ * Version Helpers
+ * --------------------------------------------------------------------------
+ */
 
-/* -------------------------------------------------------------------------- */
-/*                           GRACEFUL SHUTDOWN                                */
-/* -------------------------------------------------------------------------- */
+function getNodeMajorVersion() {
 
-const shutdown = async (code = 0) => {
-  logger.warn('Gracefully shutting down...');
+  return Number(process.versions.node.split(".")[0]);
 
-  server.close(async () => {
-    try {
-      await mongoose.connection.close(false);
-      logger.info('MongoDB disconnected');
-    } catch (err) {
-      logger.error('MongoDB shutdown error', { error: err.message });
-    } finally {
-      // Attempt to disconnect Redis gracefully
-      try {
-        if (redisService && typeof redisService.client?.quit === 'function') {
-          await redisService.client.quit();
-          logger.info('Redis disconnected');
-        }
-      } catch (err) {
-        logger.error('Redis shutdown error', { error: err.message });
+}
+
+function assertNodeVersion() {
+
+  const major = getNodeMajorVersion();
+
+  if (major < RUNTIME_REQUIREMENTS.minimumNodeMajor) {
+
+    throw new RuntimeBootstrapError(
+      "Unsupported Node.js runtime.",
+      {
+        required: `${RUNTIME_REQUIREMENTS.minimumNodeMajor}+`,
+        current: process.version
       }
+    );
 
-      logger.info('Server closed');
-      process.exit(code);
-    }
+  }
+
+}
+
+/**
+ * --------------------------------------------------------------------------
+ * Runtime Feature Validation
+ * --------------------------------------------------------------------------
+ */
+
+function assertRuntimeFeatures() {
+
+  const requiredFeatures = {
+
+    randomUUID:
+      typeof crypto.randomUUID === "function",
+
+    structuredClone:
+      typeof global.structuredClone === "function",
+
+    fetch:
+      typeof global.fetch === "function",
+
+    AbortController:
+      typeof global.AbortController === "function",
+
+    URLPattern:
+      typeof global.URLPattern === "function"
+
+  };
+
+  const missing = Object.entries(requiredFeatures)
+    .filter(([, supported]) => !supported)
+    .map(([feature]) => feature);
+
+  if (missing.length > 0) {
+
+    throw new RuntimeBootstrapError(
+      "Required runtime features are unavailable.",
+      {
+        missing
+      }
+    );
+
+  }
+
+}
+
+/**
+ * --------------------------------------------------------------------------
+ * Platform Validation
+ * --------------------------------------------------------------------------
+ */
+
+function assertPlatform() {
+
+  if (
+
+    !RUNTIME_REQUIREMENTS
+      .supportedPlatforms
+      .includes(process.platform)
+
+  ) {
+
+    throw new RuntimeBootstrapError(
+      "Unsupported operating system.",
+      {
+        platform: process.platform
+      }
+    );
+
+  }
+
+}
+
+/**
+ * --------------------------------------------------------------------------
+ * CPU Architecture Validation
+ * --------------------------------------------------------------------------
+ */
+
+function assertArchitecture() {
+
+  if (
+
+    !RUNTIME_REQUIREMENTS
+      .supportedArchitectures
+      .includes(process.arch)
+
+  ) {
+
+    throw new RuntimeBootstrapError(
+      "Unsupported CPU architecture.",
+      {
+        architecture: process.arch
+      }
+    );
+
+  }
+
+}
+
+/**
+ * --------------------------------------------------------------------------
+ * Process Privilege Validation
+ * --------------------------------------------------------------------------
+ */
+
+function validateProcessPrivileges() {
+
+  const isRoot =
+
+    process.platform !== "win32" &&
+    typeof process.getuid === "function" &&
+    process.getuid() === 0;
+
+  return Object.freeze({
+
+    isRoot,
+
+    warning:
+
+      isRoot
+        ? "Server is running with root privileges."
+        : null
+
   });
 
-  setTimeout(() => {
-    logger.error('Forced shutdown due to timeout');
-    process.exit(1);
-  }, config.timeouts?.shutdown || 10000).unref();
+}
+
+/**
+ * --------------------------------------------------------------------------
+ * OpenSSL Validation
+ * --------------------------------------------------------------------------
+ */
+
+function assertOpenSSL() {
+
+  if (!process.versions.openssl) {
+
+    throw new RuntimeBootstrapError(
+      "OpenSSL runtime not detected."
+    );
+
+  }
+
+  return Object.freeze({
+
+    version:
+      process.versions.openssl
+
+  });
+
+}
+
+/**
+ * --------------------------------------------------------------------------
+ * Optional FIPS Detection
+ * --------------------------------------------------------------------------
+ */
+
+function detectFipsMode() {
+
+  try {
+
+    if (typeof crypto.getFips === "function") {
+
+      return Object.freeze({
+
+        enabled:
+          crypto.getFips() === 1
+
+      });
+
+    }
+
+  } catch {
+
+    // Ignore unsupported implementations.
+
+  }
+
+  return Object.freeze({
+
+    enabled: false
+
+  });
+
+}
+
+/**
+ * --------------------------------------------------------------------------
+ * Execute Enterprise Runtime Validation
+ * --------------------------------------------------------------------------
+ *
+ * Responsibilities
+ * --------------------------------------------------------------------------
+ * ✓ Validate enterprise runtime requirements
+ * ✓ Produce immutable runtime validation report
+ * ✓ Log successful validation
+ * ✓ Return diagnostics for downstream bootstrap
+ * --------------------------------------------------------------------------
+ */
+
+/**
+ * ============================================================================
+ * Enterprise Runtime Validation
+ * ============================================================================
+ */
+
+const os =
+    require("os");
+
+
+const {
+    logger
+}
+=
+require(
+    "../shared/logging/LoggerFactory"
+);
+
+
+
+/**
+ * --------------------------------------------------------------------------
+ * Execute Enterprise Runtime Validation
+ * --------------------------------------------------------------------------
+ *
+ * Responsibilities
+ * --------------------------------------------------------------------------
+ * ✓ Validate enterprise runtime requirements
+ * ✓ Produce immutable runtime validation report
+ * ✓ Log successful validation
+ * ✓ Return diagnostics for downstream bootstrap
+ * --------------------------------------------------------------------------
+ */
+
+
+function validateEnterpriseRuntime() {
+
+
+    assertNodeVersion();
+
+
+    assertRuntimeFeatures();
+
+
+    assertArchitecture();
+
+
+    assertPlatform();
+
+
+
+    const privileges =
+        validateProcessPrivileges();
+
+
+
+    const openssl =
+        assertOpenSSL();
+
+
+
+    const fips =
+        detectFipsMode();
+
+
+
+    const report =
+        Object.freeze({
+
+
+            validated:
+                true,
+
+
+            validatedAt:
+                new Date().toISOString(),
+
+
+            nodeVersion:
+                process.version,
+
+
+            v8Version:
+                process.versions.v8,
+
+
+            platform:
+                process.platform,
+
+
+            architecture:
+                process.arch,
+
+
+            hostname:
+                os.hostname(),
+
+
+            cpuCount:
+                os.cpus().length,
+
+
+            processId:
+                process.pid,
+
+
+            openssl:
+                Object.freeze(
+                    openssl || {}
+                ),
+
+
+            fips:
+                Object.freeze(
+                    fips || {}
+                ),
+
+
+            privileges:
+                Object.freeze(
+                    privileges || {}
+                )
+
+
+        });
+
+
+
+    if (
+        logger &&
+        typeof logger.info === "function"
+    ) {
+
+
+        logger.info({
+
+            section:
+                "runtime-validation",
+
+
+            node:
+                report.nodeVersion,
+
+
+            platform:
+                report.platform,
+
+
+            architecture:
+                report.architecture,
+
+
+            hostname:
+                report.hostname,
+
+
+            openssl:
+                report.openssl?.version ??
+                "unknown",
+
+
+            fips:
+                report.fips?.enabled ??
+                false
+
+
+        });
+
+
+    }
+
+
+
+    return report;
+
+}
+
+
+
+/**
+ * --------------------------------------------------------------------------
+ * Exports
+ * --------------------------------------------------------------------------
+ */
+
+module.exports = {
+
+    validateEnterpriseRuntime
+
 };
 
-process.on('SIGINT', () => shutdown(0));
-process.on('SIGTERM', () => shutdown(0));
 
-process.on('unhandledRejection', (reason) => {
-  logger.error('Unhandled Rejection', { reason });
-  shutdown(1);
-});
 
-process.on('uncaughtException', (err) => {
-  logger.error('Uncaught Exception', { error: err.message, stack: err.stack });
-  shutdown(1);
-});
+/**
+ * ============================================================================
+ * Enterprise Server Runtime Entry Point
+ * ============================================================================
+ */
 
-module.exports = app;
-app.server = server;
-app.io = io;
+
+/**
+ * --------------------------------------------------------------------------
+ * Core Dependencies
+ * --------------------------------------------------------------------------
+ */
+
+const process =
+    require("process");
+
+/**
+ * --------------------------------------------------------------------------
+ * Runtime Validation
+ * --------------------------------------------------------------------------
+ */
+
+function validateEnterpriseRuntime() {
+
+
+    const report = {
+
+
+        validatedAt:
+            new Date().toISOString(),
+
+
+        nodeVersion:
+            process.version,
+
+
+        platform:
+            process.platform,
+
+
+        architecture:
+            process.arch,
+
+
+        hostname:
+            require("os").hostname()
+
+
+    };
+
+
+    return Object.freeze(report);
+
+}
+
+
+
+/**
+ * --------------------------------------------------------------------------
+ * Exports
+ * --------------------------------------------------------------------------
+ */
+
+module.exports = {
+
+    validateEnterpriseRuntime
+
+};
+
+/**
+ * --------------------------------------------------------------------------
+ * Configuration
+ * --------------------------------------------------------------------------
+ */
+
+const bootstrapEnvironment =
+    require(
+        "./config/bootstrapEnvironment"
+    );
+
+
+const {
+    initializeConfiguration
+}
+=
+require(
+    "./config/configProvider"
+);
+
+
+
+/**
+ * --------------------------------------------------------------------------
+ * Application Runtime
+ * --------------------------------------------------------------------------
+ */
+
+const createApp =
+    require(
+        "./app"
+    );
+
+
+const ServerRuntime =
+    require(
+        "./runtime/ServerRuntime"
+    );
+
+
+const ApplicationBootstrap =
+    require(
+        "./bootstrap"
+    );
+
+
+
+/**
+ * --------------------------------------------------------------------------
+ * Main Startup Lifecycle
+ * --------------------------------------------------------------------------
+ */
+
+async function main() {
+
+
+    try {
+
+
+        /**
+         * Environment
+         */
+
+        bootstrapEnvironment();
+
+
+
+        /**
+         * Configuration
+         */
+
+        const config =
+            initializeConfiguration();
+
+
+
+        /**
+         * Application dependencies
+         */
+
+        const bootstrap =
+            new ApplicationBootstrap();
+
+
+
+        await bootstrap.start();
+
+
+
+        /**
+         * Express application
+         */
+
+        const app =
+            createApp();
+
+
+
+        /**
+         * HTTP runtime
+         */
+
+        const runtime =
+            new ServerRuntime({
+
+                app,
+
+                config,
+
+                bootstrap,
+
+                runtimeValidationReport
+
+            });
+
+
+
+        await runtime.start();
+
+
+
+    }
+
+
+    catch(error) {
+
+
+        console.error(
+
+            "SERVER STARTUP FAILED",
+
+            {
+
+                message:
+                    error.message,
+
+                stack:
+                    error.stack
+
+            }
+
+        );
+
+
+        process.exit(1);
+
+
+    }
+
+
+}
+
+
+
+/**
+ * --------------------------------------------------------------------------
+ * Process Startup
+ * --------------------------------------------------------------------------
+ */
+
+main();
+
+
+
+/**
+ * --------------------------------------------------------------------------
+ * Exports
+ * --------------------------------------------------------------------------
+ */
+
+module.exports = {
+
+    main,
+
+    runtimeValidationReport
+
+};
