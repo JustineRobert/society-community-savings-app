@@ -1,1050 +1,2429 @@
-// community-savings-app-backend/controllers/paymentController.js
-
 /**
- * Payment Controller
+ * ============================================================================
+ * TITech Community Capital
+ * Enterprise Payment Controller
+ * ============================================================================
  *
- * Handles payment-related HTTP requests including:
- * - Payment initiation
- * - Payment processing
- * - Payment verification
- * - Refunds
- * - Payment history
- * - Payment analytics
+ * Enterprise Features
+ * -------------------
+ * • Multi-Tenant Aware
+ * • Mobile Money (MTN, Airtel)
+ * • Bank Integration Ready
+ * • Double Entry Ledger Integration
+ * • Fraud / AML / KYC Orchestration
+ * • Idempotent Operations
+ * • Distributed Transaction Support
+ * • Audit Logging
+ * • Event Publishing
+ * • OpenTelemetry Ready
+ * • Structured Logging
+ * • Enterprise Error Handling
+ * • MongoDB Transaction Support
+ * * This controller is intentionally orchestration-only.
+ * Business logic belongs inside dedicated services.
+ * ============================================================================
  */
 
-// controllers/paymentController.js (top of file)
-const FraudDetectionService = require('../services/fraudDetectionService');
-const EventStreamService = require('../services/eventStreamService');
-const FraudLog = require('../models/FraudLog');
-const ComplianceLog = require('../models/ComplianceLog');
-const asyncHandler = require('../utils/asyncHandler');
-const paymentService = require('../services/paymentService');
-const Payment = require('../models/Payment');
-const logger = require('../utils/logger');
+"use strict";
 
-// Support both named and class-style exports from the fraud service
-const detectFraud = FraudDetectionService.detectFraud || FraudDetectionService.checkTransaction || FraudDetectionService.check || FraudDetectionService;
+/* ============================================================================
+ * Core Dependencies
+ * ==========================================================================*/
 
+const mongoose = require("mongoose");
+const crypto = require("crypto");
 
-/**
- * Initiate a new payment
- * POST /api/payments/initiate
- */
-exports.initiatePayment = asyncHandler(async (req, res) => {
-  const { groupId, amount, currency = 'KES', method, type, description, metadata = {} } = req.body;
+/* ============================================================================
+ * Models
+ * ==========================================================================*/
 
-  // Validate required fields
-  if (!groupId || !amount || !method || !type) {
-    return res.status(400).json({
-      success: false,
-      error: 'Missing required fields: groupId, amount, method, type',
-    });
-  }
+const Payment = require("../models/Payment");
 
-  // Validate payment method
-  const validMethods = Object.values(paymentService.PAYMENT_METHODS);
-  if (!validMethods.includes(method)) {
-    return res.status(400).json({
-      success: false,
-      error: `Invalid payment method. Valid methods: ${validMethods.join(', ')}`,
-    });
-  }
+/* ============================================================================
+ * Services
+ * ==========================================================================*/
 
-  // Validate payment type
-  const validTypes = Object.values(paymentService.PAYMENT_TYPES);
-  if (!validTypes.includes(type)) {
-    return res.status(400).json({
-      success: false,
-      error: `Invalid payment type. Valid types: ${validTypes.join(', ')}`,
-    });
-  }
+const paymentService = require("../services/paymentService");
+const ledgerService = require("../services/ledgerService");
+const auditService = require("../services/auditService");
+const momoService = require("../services/momoService");
 
-  try {
-    // Add user context to metadata
-    const enrichedMetadata = {
-      ...metadata,
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent'),
-      userId: req.user._id,
-    };
+const fraudDetectionService =
+    require("../services/fraudDetectionService");
 
-    // Build a lightweight transaction object for fraud check
-    const transactionForCheck = {
-      _id: `intent-${req.user._id}-${Date.now()}`,
-      type,
-      amount: parseFloat(amount),
-      method,
-      metadata: enrichedMetadata,
-      // optional signals
-      frequency: 9999,
-      newDevice: !!enrichedMetadata.newDevice,
-      locationMismatch: !!enrichedMetadata.locationMismatch,
-      device: { deviceId: enrichedMetadata.deviceId || null, userAgent: enrichedMetadata.userAgent || null },
-      geo: enrichedMetadata.geo || {}
-    };
+const amlService =
+    require("../services/amlService");
 
-    // Run synchronous fraud check (fast path)
-    let fraudResult = { fraudScore: 0, decision: 'ALLOW' };
-    try {
-      const r = await detectFraud(req.user, transactionForCheck);
-      // Support different return shapes
-      fraudResult.fraudScore = r?.fraudScore ?? r?.score ?? 0;
-      fraudResult.decision = (r?.decision || r?.action || 'ALLOW').toUpperCase();
-    } catch (err) {
-      // Non-fatal: log and continue with conservative posture
-      logger.warn('[PaymentController] Fraud detection failed (initiatePayment)', { error: err?.message || err });
-      fraudResult = { fraudScore: 0.0, decision: 'STEP_UP' };
+const sanctionsService =
+    require("../services/sanctionsService");
+
+const kycService =
+    require("../services/kycService");
+
+const settlementService =
+    require("../services/settlementService");
+
+const reconciliationService =
+    require("../services/reconciliationService");
+
+const eventBus =
+    require("../services/eventBus");
+
+/* ============================================================================
+ * Shared Utilities
+ * ==========================================================================*/
+
+const logger =
+    require("../utils/logger");
+
+const asyncHandler =
+    require("../utils/asyncHandler");
+
+/* ============================================================================
+ * Enterprise Constants
+ * ==========================================================================*/
+
+const PAYMENT_PROVIDER = Object.freeze({
+
+    MTN: "MTN",
+
+    AIRTEL: "AIRTEL",
+
+    BANK: "BANK",
+
+    CARD: "CARD"
+
+});
+
+const PAYMENT_STATUS = Object.freeze({
+
+    CREATED: "CREATED",
+
+    PENDING: "PENDING",
+
+    PROCESSING: "PROCESSING",
+
+    SUCCESS: "SUCCESS",
+
+    FAILED: "FAILED",
+
+    CANCELLED: "CANCELLED",
+
+    REVERSED: "REVERSED",
+
+    REFUNDED: "REFUNDED"
+
+});
+
+const PAYMENT_TYPE = Object.freeze({
+
+    CONTRIBUTION: "CONTRIBUTION",
+
+    LOAN_REPAYMENT: "LOAN_REPAYMENT",
+
+    LOAN_DISBURSEMENT: "LOAN_DISBURSEMENT",
+
+    SAVINGS: "SAVINGS",
+
+    WITHDRAWAL: "WITHDRAWAL",
+
+    PENALTY: "PENALTY",
+
+    REGISTRATION: "REGISTRATION"
+
+});
+
+/* ============================================================================
+ * Enterprise Controller Configuration
+ * ==========================================================================*/
+
+const CONFIG = Object.freeze({
+
+    MAX_RETRIES: 5,
+
+    CALLBACK_TIMEOUT_MS: 15000,
+
+    PAYMENT_TIMEOUT_MS: 120000,
+
+    LEDGER_TIMEOUT_MS: 15000,
+
+    EVENT_TIMEOUT_MS: 5000,
+
+    ENABLE_TRACING: true,
+
+    ENABLE_AUDIT: true,
+
+    ENABLE_FRAUD_CHECKS: true,
+
+    ENABLE_AML: true,
+
+    ENABLE_SANCTIONS: true,
+
+    ENABLE_KYC: true
+
+});
+
+/* ============================================================================
+ * Enterprise Helper Functions
+ * ==========================================================================*/
+
+function generateCorrelationId() {
+
+    return crypto.randomUUID();
+}
+
+function generateRequestId() {
+
+    return crypto.randomUUID();
+}
+
+function generateIdempotencyKey() {
+
+    return crypto.randomBytes(32).toString("hex");
+}
+
+function now() {
+
+    return new Date().toISOString();
+}
+
+/* ============================================================================
+ * Base Enterprise Controller
+ * ==========================================================================*/
+
+class PaymentController {
+
+    constructor({
+
+        payment = paymentService,
+
+        ledger = ledgerService,
+
+        audit = auditService,
+
+        momo = momoService,
+
+        fraud = fraudDetectionService,
+
+        aml = amlService,
+
+        sanctions = sanctionsService,
+
+        kyc = kycService,
+
+        settlement = settlementService,
+
+        reconciliation = reconciliationService,
+
+        events = eventBus
+
+    } = {}) {
+
+        this.paymentService = payment;
+
+        this.ledgerService = ledger;
+
+        this.auditService = audit;
+
+        this.momoService = momo;
+
+        this.fraudService = fraud;
+
+        this.amlService = aml;
+
+        this.sanctionsService = sanctions;
+
+        this.kycService = kyc;
+
+        this.settlementService = settlement;
+
+        this.reconciliationService = reconciliation;
+
+        this.eventBus = events;
     }
 
-    // Persist fraud log (best-effort)
-    try {
-      await FraudLog.createLog({
-        tenantId: req.user.tenantId || 'default',
-        userId: req.user._id,
-        transactionId: transactionForCheck._id,
-        transactionSnapshot: {
-          type: transactionForCheck.type,
-          amount: transactionForCheck.amount,
-          metadata: transactionForCheck.metadata
-        },
-        fraudScore: Number(fraudResult.fraudScore) || 0,
-        decision: fraudResult.decision === 'BLOCK' ? 'BLOCK' : fraudResult.decision === 'STEP_UP' ? 'STEP_UP' : 'ALLOW',
-        engine: 'hybrid',
-        explain: { source: 'initiatePayment' },
-        modelVersion: process.env.FRAUD_MODEL_VERSION || 'v1'
-      });
-    } catch (err) {
-      logger.warn('[PaymentController] Failed to persist FraudLog (initiatePayment)', err?.message || err);
+    /* =====================================================================
+     * Context Helpers
+     * ===================================================================*/
+
+    getTenant(req) {
+
+        return req.tenant ||
+            req.context?.tenant ||
+            req.user?.tenantId ||
+            null;
     }
 
-    // If blocked, return 403
-    if (fraudResult.decision === 'BLOCK') {
-      // Create compliance STR (best-effort)
-      try {
-        await ComplianceLog.createSTR({
-          tenantId: req.user.tenantId || 'default',
-          userId: req.user._id,
-          activity: 'STR_GENERATED',
-          flagged: true,
-          reason: 'Transaction blocked by fraud engine',
-          details: { fraudScore: fraudResult.fraudScore, transactionId: transactionForCheck._id },
-          reporter: 'fraud-engine'
+    getUser(req) {
+
+        return req.user || null;
+    }
+
+    getRequestId(req) {
+
+        return (
+            req.headers["x-request-id"] ||
+            generateRequestId()
+        );
+    }
+
+    getCorrelationId(req) {
+
+        return (
+            req.headers["x-correlation-id"] ||
+            generateCorrelationId()
+        );
+    }
+
+    getIdempotencyKey(req) {
+
+        return (
+            req.headers["idempotency-key"] ||
+            generateIdempotencyKey()
+        );
+    }
+
+    /* =====================================================================
+     * MongoDB Transaction Helpers
+     * ===================================================================*/
+
+    async startSession() {
+
+        const session =
+            await mongoose.startSession();
+
+        session.startTransaction();
+
+        return session;
+    }
+
+    async commit(session) {
+
+        await session.commitTransaction();
+
+        session.endSession();
+    }
+
+    async rollback(session) {
+
+        await session.abortTransaction();
+
+        session.endSession();
+    }
+
+    /* =====================================================================
+     * Logging Helpers
+     * ===================================================================*/
+
+    log(level, message, metadata = {}) {
+
+        logger[level](message, {
+
+            timestamp: now(),
+
+            component: "PaymentController",
+
+            ...metadata
+
         });
-      } catch (e) {
-        logger.warn('[PaymentController] Failed to create STR for blocked transaction', e?.message || e);
-      }
-
-      return res.status(403).json({
-        success: false,
-        message: 'Transaction blocked by fraud detection',
-        data: { fraudScore: fraudResult.fraudScore }
-      });
     }
 
-    // Enqueue to event stream for async feature extraction / ML (best-effort)
-    try {
-      await EventStreamService.pushTransaction({
-        _id: transactionForCheck._id,
-        userId: req.user._id,
-        tenantId: req.user.tenantId || 'default',
-        type: transactionForCheck.type,
-        amount: transactionForCheck.amount,
-        metadata: { ...transactionForCheck.metadata, fraudScore: fraudResult.fraudScore, decision: fraudResult.decision }
-      });
-    } catch (e) {
-      logger.warn('[PaymentController] EventStream push failed (initiatePayment)', e?.message || e);
+    info(message, metadata) {
+
+        this.log("info", message, metadata);
     }
 
-    // If STEP_UP, instruct caller to perform step-up auth (OTP/KYC)
-    if (fraudResult.decision === 'STEP_UP') {
-      return res.status(202).json({
-        success: true,
-        message: 'Transaction requires step-up authentication',
-        data: { action: 'step_up_auth', fraudScore: fraudResult.fraudScore }
-      });
+    warn(message, metadata) {
+
+        this.log("warn", message, metadata);
     }
 
-    // Proceed to create payment intent via paymentService
-    const result = await paymentService.initiatePayment({
-      userId: req.user._id,
-      groupId,
-      amount: parseFloat(amount),
-      currency,
-      method,
-      type,
-      description,
-      metadata: enrichedMetadata,
-    });
+    error(message, metadata) {
 
-    res.status(201).json({
-      success: true,
-      data: result,
-      message: 'Payment initiated successfully',
-    });
-  } catch (error) {
-    logger.error('Payment initiation error:', error);
-    res.status(400).json({
-      success: false,
-      error: error.message || 'Payment initiation failed',
-    });
-  }
-});
+        this.log("error", message, metadata);
+    }
+
+    debug(message, metadata) {
+
+        this.log("debug", message, metadata);
+    }
+
+/* ==========================================================================
+ * Request Validation & Context Resolution
+ * ==========================================================================*/
 
 /**
- * Process mobile money payment
- * POST /api/payments/:paymentId/mobile-money
+ * Build enterprise request context.
+ * This context is propagated throughout the payment lifecycle.
  */
-exports.processMobileMoneyPayment = asyncHandler(async (req, res) => {
-  const { paymentId } = req.params;
-  const { phoneNumber, provider = 'mpesa', accountReference } = req.body;
+buildRequestContext(req) {
 
-  if (!phoneNumber) {
-    return res.status(400).json({
-      success: false,
-      error: 'Phone number is required',
-    });
-  }
+    const tenant =
+        this.getTenant(req);
 
-  try {
-    // Build transaction object for fraud check
-    const transactionForCheck = {
-      _id: paymentId,
-      type: 'mobile_money',
-      amount: req.body.amount || 0,
-      frequency: req.body.frequency || 9999,
-      newDevice: !!req.body.newDevice,
-      locationMismatch: !!req.body.locationMismatch,
-      device: { deviceId: req.body.deviceId || null, userAgent: req.get('User-Agent') },
-      geo: req.body.geo || {},
-      metadata: { phoneNumber, provider, accountReference }
-    };
+    const user =
+        this.getUser(req);
 
-    // Run fraud detection
-    let fraudResult = { fraudScore: 0, decision: 'ALLOW' };
-    try {
-      const r = await detectFraud(req.user, transactionForCheck);
-      fraudResult.fraudScore = r?.fraudScore ?? r?.score ?? 0;
-      fraudResult.decision = (r?.decision || r?.action || 'ALLOW').toUpperCase();
-    } catch (err) {
-      logger.warn('[PaymentController] Fraud detection failed (mobile money)', { error: err?.message || err });
-      fraudResult = { fraudScore: 0.0, decision: 'STEP_UP' };
-    }
+    return Object.freeze({
 
-    // Persist fraud log (best-effort)
-    try {
-      await FraudLog.createLog({
-        tenantId: req.user.tenantId || 'default',
-        userId: req.user._id,
-        transactionId: paymentId,
-        transactionSnapshot: {
-          type: transactionForCheck.type,
-          amount: transactionForCheck.amount,
-          metadata: transactionForCheck.metadata
-        },
-        fraudScore: Number(fraudResult.fraudScore) || 0,
-        decision: fraudResult.decision === 'BLOCK' ? 'BLOCK' : fraudResult.decision === 'STEP_UP' ? 'STEP_UP' : 'ALLOW',
-        engine: 'hybrid',
-        explain: { source: 'processMobileMoneyPayment' },
-        modelVersion: process.env.FRAUD_MODEL_VERSION || 'v1'
-      });
-    } catch (err) {
-      logger.warn('[PaymentController] Failed to persist FraudLog (mobile money)', err?.message || err);
-    }
+        requestId:
+            this.getRequestId(req),
 
-    // Block if necessary
-    if (fraudResult.decision === 'BLOCK') {
-      try {
-        await ComplianceLog.createSTR({
-          tenantId: req.user.tenantId || 'default',
-          userId: req.user._id,
-          activity: 'STR_GENERATED',
-          flagged: true,
-          reason: 'Mobile money transaction blocked by fraud engine',
-          details: { fraudScore: fraudResult.fraudScore, paymentId },
-          reporter: 'fraud-engine'
-        });
-      } catch (e) {
-        logger.warn('[PaymentController] Failed to create STR for blocked mobile money', e?.message || e);
-      }
+        correlationId:
+            this.getCorrelationId(req),
 
-      return res.status(403).json({
-        success: false,
-        message: 'Transaction blocked by fraud detection',
-        data: { fraudScore: fraudResult.fraudScore }
-      });
-    }
+        idempotencyKey:
+            this.getIdempotencyKey(req),
 
-    // If step-up required, return 202 instructing caller to perform OTP/KYC
-    if (fraudResult.decision === 'STEP_UP') {
-      return res.status(202).json({
-        success: true,
-        message: 'Transaction requires step-up authentication',
-        data: { action: 'step_up_auth', fraudScore: fraudResult.fraudScore }
-      });
-    }
+        tenantId:
+            tenant?.id ||
+            tenant?._id ||
+            tenant,
 
-    // Enqueue to event stream for async processing (best-effort)
-    try {
-      await EventStreamService.pushTransaction({
-        _id: paymentId,
-        userId: req.user._id,
-        tenantId: req.user.tenantId || 'default',
-        type: 'mobile_money',
-        amount: transactionForCheck.amount,
-        metadata: { phoneNumber, provider, accountReference, fraudScore: fraudResult.fraudScore }
-      });
-    } catch (e) {
-      logger.warn('[PaymentController] EventStream push failed (mobile money)', e?.message || e);
-    }
+        tenant,
 
-    // Proceed to process payment via paymentService
-    const result = await paymentService.processMobileMoneyPayment({
-      paymentId,
-      phoneNumber,
-      provider,
-      accountReference,
+        userId:
+            user?.id ||
+            user?._id,
+
+        user,
+
+        ipAddress:
+            req.ip,
+
+        userAgent:
+            req.get("user-agent"),
+
+        source:
+
+            req.get("x-client-type") ||
+
+            "web",
+
+        timestamp:
+
+            new Date(),
+
+        traceId:
+
+            req.headers["traceparent"] ||
+
+            null
+
     });
 
-    if (result.success) {
-      res.json({
-        success: true,
-        data: result,
-        message: 'Mobile money payment processed successfully',
-      });
-    } else {
-      res.status(400).json({
-        success: false,
-        error: result.error || 'Payment processing failed',
-      });
-    }
-  } catch (error) {
-    logger.error('Mobile money payment error:', error);
-    res.status(400).json({
-      success: false,
-      error: error.message || 'Mobile money payment failed',
-    });
-  }
-});
-
+}
 
 /**
- * Process bank transfer payment
- * POST /api/payments/:paymentId/bank-transfer
+ * Validate required request payload.
  */
-exports.processBankTransfer = asyncHandler(async (req, res) => {
-  const { paymentId } = req.params;
-  const { bankCode, accountNumber, accountName, routingNumber } = req.body;
+validatePaymentRequest(body = {}) {
 
-  if (!bankCode || !accountNumber || !accountName) {
-    return res.status(400).json({
-      success: false,
-      error: 'Bank code, account number, and account name are required',
-    });
-  }
+    const errors = [];
 
-  try {
-    // Build transaction object for fraud check
-    const transactionForCheck = {
-      _id: paymentId,
-      type: 'bank_transfer',
-      amount: req.body.amount || 0,
-      frequency: req.body.frequency || 9999,
-      newDevice: !!req.body.newDevice,
-      locationMismatch: !!req.body.locationMismatch,
-      device: { deviceId: req.body.deviceId || null, userAgent: req.get('User-Agent') },
-      geo: req.body.geo || {},
-      metadata: { bankCode, accountNumber, accountName, routingNumber }
-    };
+    if (!body.amount)
+        errors.push("amount is required");
 
-    // Run fraud detection
-    let fraudResult = { fraudScore: 0, decision: 'ALLOW' };
-    try {
-      const r = await detectFraud(req.user, transactionForCheck);
-      fraudResult.fraudScore = r?.fraudScore ?? r?.score ?? 0;
-      fraudResult.decision = (r?.decision || r?.action || 'ALLOW').toUpperCase();
-    } catch (err) {
-      logger.warn('[PaymentController] Fraud detection failed (bank transfer)', { error: err?.message || err });
-      fraudResult = { fraudScore: 0.0, decision: 'STEP_UP' };
+    if (
+        body.amount &&
+        Number(body.amount) <= 0
+    ) {
+        errors.push(
+            "amount must be greater than zero"
+        );
     }
 
-    // Persist fraud log (best-effort)
-    try {
-      await FraudLog.createLog({
-        tenantId: req.user.tenantId || 'default',
-        userId: req.user._id,
-        transactionId: paymentId,
-        transactionSnapshot: {
-          type: transactionForCheck.type,
-          amount: transactionForCheck.amount,
-          metadata: transactionForCheck.metadata
-        },
-        fraudScore: Number(fraudResult.fraudScore) || 0,
-        decision: fraudResult.decision === 'BLOCK' ? 'BLOCK' : fraudResult.decision === 'STEP_UP' ? 'STEP_UP' : 'ALLOW',
-        engine: 'hybrid',
-        explain: { source: 'processBankTransfer' },
-        modelVersion: process.env.FRAUD_MODEL_VERSION || 'v1'
-      });
-    } catch (err) {
-      logger.warn('[PaymentController] Failed to persist FraudLog (bank transfer)', err?.message || err);
-    }
+    if (!body.groupId)
+        errors.push("groupId is required");
 
-    // Block if necessary
-    if (fraudResult.decision === 'BLOCK') {
-      try {
-        await ComplianceLog.createSTR({
-          tenantId: req.user.tenantId || 'default',
-          userId: req.user._id,
-          activity: 'STR_GENERATED',
-          flagged: true,
-          reason: 'Bank transfer blocked by fraud engine',
-          details: { fraudScore: fraudResult.fraudScore, paymentId },
-          reporter: 'fraud-engine'
-        });
-      } catch (e) {
-        logger.warn('[PaymentController] Failed to create STR for blocked bank transfer', e?.message || e);
-      }
+    if (!body.phoneNumber)
+        errors.push(
+            "phoneNumber is required"
+        );
 
-      return res.status(403).json({
-        success: false,
-        message: 'Transaction blocked by fraud detection',
-        data: { fraudScore: fraudResult.fraudScore }
-      });
-    }
+    if (!body.provider)
+        errors.push(
+            "provider is required"
+        );
 
-    // If step-up required, return 202 instructing caller to perform OTP/KYC
-    if (fraudResult.decision === 'STEP_UP') {
-      return res.status(202).json({
-        success: true,
-        message: 'Transaction requires step-up authentication',
-        data: { action: 'step_up_auth', fraudScore: fraudResult.fraudScore }
-      });
-    }
+    if (!body.type)
+        errors.push(
+            "payment type is required"
+        );
 
-    // Enqueue to event stream for async processing (best-effort)
-    try {
-      await EventStreamService.pushTransaction({
-        _id: paymentId,
-        userId: req.user._id,
-        tenantId: req.user.tenantId || 'default',
-        type: 'bank_transfer',
-        amount: transactionForCheck.amount,
-        metadata: { bankCode, accountNumber: 'REDACTED', accountName, fraudScore: fraudResult.fraudScore }
-      });
-    } catch (e) {
-      logger.warn('[PaymentController] EventStream push failed (bank transfer)', e?.message || e);
-    }
-
-    // Proceed to process bank transfer via paymentService
-    const result = await paymentService.processBankTransfer({
-      paymentId,
-      bankCode,
-      accountNumber,
-      accountName,
-      routingNumber,
-    });
-
-    res.json({
-      success: true,
-      data: result,
-      message: 'Bank transfer processed successfully',
-    });
-  } catch (error) {
-    logger.error('Bank transfer error:', error);
-    res.status(400).json({
-      success: false,
-      error: error.message || 'Bank transfer failed',
-    });
-  }
-});
-
-/**
- * Verify payment status
- * GET /api/payments/:paymentId
- */
-exports.verifyPayment = asyncHandler(async (req, res) => {
-  const { paymentId } = req.params;
-
-  try {
-    const payment = await paymentService.verifyPayment(paymentId);
-
-    // Check if user owns this payment or is admin
-    if (payment.user._id.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        error: 'Access denied',
-      });
-    }
-
-    res.json({
-      success: true,
-      data: payment,
-    });
-  } catch (error) {
-    logger.error('Payment verification error:', error);
-    res.status(404).json({
-      success: false,
-      error: error.message || 'Payment not found',
-    });
-  }
-});
-
-/**
- * Get user payment history
- * GET /api/payments/history
- */
-exports.getPaymentHistory = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 20, status, type, method, startDate, endDate } = req.query;
-
-  try {
-    const query = { user: req.user._id };
-
-    // Add filters
-    if (status) query.status = status;
-    if (type) query.type = type;
-    if (method) query.method = method;
-    if (startDate || endDate) {
-      query.createdAt = {};
-      if (startDate) query.createdAt.$gte = new Date(startDate);
-      if (endDate) query.createdAt.$lte = new Date(endDate);
-    }
-
-    const options = {
-      page: parseInt(page),
-      limit: parseInt(limit),
-      sort: { createdAt: -1 },
-      populate: [
-        { path: 'group', select: 'name' },
-        { path: 'user', select: 'name email' },
-      ],
-    };
-
-    const payments = await Payment.paginate(query, options);
-
-    res.json({
-      success: true,
-      data: {
-        payments: payments.docs,
-        pagination: {
-          page: payments.page,
-          pages: payments.totalPages,
-          total: payments.totalDocs,
-          limit: payments.limit,
-        },
-      },
-    });
-  } catch (error) {
-    logger.error('Payment history error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to retrieve payment history',
-    });
-  }
-});
-
-/**
- * Process refund
- * POST /api/payments/:paymentId/refund
- */
-exports.processRefund = asyncHandler(async (req, res) => {
-  const { paymentId } = req.params;
-  const { amount, reason } = req.body;
-
-  if (!amount || !reason) {
-    return res.status(400).json({
-      success: false,
-      error: 'Amount and reason are required for refund',
-    });
-  }
-
-  try {
-    // Verify payment ownership (only payment owner or admin can refund)
-    const payment = await Payment.findById(paymentId);
-    if (!payment) {
-      return res.status(404).json({
-        success: false,
-        error: 'Payment not found',
-      });
-    }
-
-    if (payment.user.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        error: 'Access denied',
-      });
-    }
-
-    const result = await paymentService.processRefund(paymentId, parseFloat(amount), reason);
-
-    res.json({
-      success: true,
-      data: result,
-      message: 'Refund processed successfully',
-    });
-  } catch (error) {
-    logger.error('Refund processing error:', error);
-    res.status(400).json({
-      success: false,
-      error: error.message || 'Refund processing failed',
-    });
-  }
-});
-
-/**
- * Get payment analytics
- * GET /api/payments/analytics
- */
-exports.getPaymentAnalytics = asyncHandler(async (req, res) => {
-  const {
-    userId,
-    groupId,
-    startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // 30 days ago
-    endDate = new Date(),
-  } = req.query;
-
-  // Only admins can view analytics for other users/groups
-  if ((userId && userId !== req.user._id.toString()) || (groupId && req.user.role !== 'admin')) {
-    return res.status(403).json({
-      success: false,
-      error: 'Access denied',
-    });
-  }
-
-  try {
-    const analytics = await paymentService.getPaymentAnalytics(
-      userId || req.user._id,
-      groupId,
-      new Date(startDate),
-      new Date(endDate)
-    );
-
-    res.json({
-      success: true,
-      data: analytics,
-    });
-  } catch (error) {
-    logger.error('Payment analytics error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to retrieve payment analytics',
-    });
-  }
-});
-
-/**
- * Get payment methods and fees
- * GET /api/payments/methods
- */
-exports.getPaymentMethods = asyncHandler(async (req, res) => {
-  const { amount, currency = 'KES' } = req.query;
-
-  const methods = Object.values(paymentService.PAYMENT_METHODS).map((method) => {
-    const fees = paymentService.calculateFees(method, parseFloat(amount) || 1000, currency);
     return {
-      method,
-      fees,
-      description: getMethodDescription(method),
-    };
-  });
 
-  res.json({
-    success: true,
-    data: {
-      methods,
-      providers: paymentService.MOBILE_MONEY_PROVIDERS,
-    },
-  });
-});
+        valid:
+            errors.length === 0,
 
-/**
- * Get payment statistics for dashboard
- * GET /api/payments/stats
- */
-exports.getPaymentStats = asyncHandler(async (req, res) => {
-  try {
-    const userId = req.user.role === 'admin' ? null : req.user._id;
+        errors
 
-    const matchConditions = {};
-    if (userId) matchConditions.user = userId;
-
-    // Get last 30 days stats
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    matchConditions.createdAt = { $gte: thirtyDaysAgo };
-
-    const stats = await Payment.aggregate([
-      { $match: matchConditions },
-      {
-        $group: {
-          _id: null,
-          totalPayments: { $sum: 1 },
-          totalAmount: { $sum: '$amount' },
-          totalFees: { $sum: '$fees' },
-          completedPayments: {
-            $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] },
-          },
-          pendingPayments: {
-            $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] },
-          },
-          failedPayments: {
-            $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] },
-          },
-        },
-      },
-    ]);
-
-    const result = stats[0] || {
-      totalPayments: 0,
-      totalAmount: 0,
-      totalFees: 0,
-      completedPayments: 0,
-      pendingPayments: 0,
-      failedPayments: 0,
     };
 
-    res.json({
-      success: true,
-      data: {
-        ...result,
-        successRate:
-          result.totalPayments > 0
-            ? ((result.completedPayments / result.totalPayments) * 100).toFixed(2)
-            : 0,
-      },
-    });
-  } catch (error) {
-    logger.error('Payment stats error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to retrieve payment statistics',
-    });
-  }
-});
-
-/**
- * Helper function to get payment method descriptions
- */
-function getMethodDescription(method) {
-  const descriptions = {
-    mobile_money: 'Pay using M-Pesa, Airtel Money, or MTN Mobile Money',
-    bank_transfer: 'Direct bank transfer to group account',
-    card: 'Credit/Debit card payment',
-    cash: 'Cash payment (in-person only)',
-  };
-  return descriptions[method] || 'Payment method';
 }
 
 /**
- * REQUIRED FIX #1:
- * Define missing createPaymentIntent
+ * Validate authenticated user.
  */
-async function createPaymentIntent(req, res) {
-  try {
-    const result = await req.app.locals.paymentService.createPaymentIntent(req.body, req.user._id);
+validateUser(context) {
 
-    return res.status(201).json({
-      success: true,
-      data: result,
-      message: 'Payment intent created successfully',
-    });
-  } catch (error) {
-    logger.error('[PaymentController] Error creating payment intent', {
-      error: error.message,
-    });
+    if (!context.user)
+        throw new Error(
+            "Authentication required."
+        );
 
-    return res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to create payment intent',
-    });
-  }
+    if (!context.userId)
+        throw new Error(
+            "User identifier missing."
+        );
+
+    return true;
+
 }
 
 /**
- * GET /api/payments/intents/:id
- * Get payment intent status
+ * Validate tenant.
  */
-async function getPaymentIntent(req, res) {
-  try {
-    const { id } = req.params;
-    const { refresh } = req.query;
-    const userId = req.user._id;
+validateTenant(context) {
 
-    logger.info('[PaymentController] Fetching payment intent', {
-      paymentIntentId: id,
-      userId,
-      refresh: refresh === 'true',
-    });
+    if (!context.tenantId) {
 
-    const paymentIntent = await req.app.locals.paymentService.getPaymentIntent(
-      id,
-      refresh === 'true'
+        throw new Error(
+            "Tenant context missing."
+        );
+
+    }
+
+    return true;
+
+}
+
+/**
+ * Validate payment type.
+ */
+validatePaymentType(type) {
+
+    if (
+        !Object.values(
+            PAYMENT_TYPE
+        ).includes(type)
+    ) {
+
+        throw new Error(
+
+            `Unsupported payment type: ${type}`
+
+        );
+
+    }
+
+    return type;
+
+}
+
+/**
+ * Resolve payment provider.
+ */
+resolveProvider(provider) {
+
+    const normalized =
+        String(provider)
+            .trim()
+            .toUpperCase();
+
+    switch (normalized) {
+
+        case PAYMENT_PROVIDER.MTN:
+
+            return {
+
+                provider:
+                    PAYMENT_PROVIDER.MTN,
+
+                service:
+                    this.momoService
+
+            };
+
+        case PAYMENT_PROVIDER.AIRTEL:
+
+            return {
+
+                provider:
+                    PAYMENT_PROVIDER.AIRTEL,
+
+                service:
+                    this.paymentService
+                        .airtel ||
+
+                    this.paymentService
+
+            };
+
+        case PAYMENT_PROVIDER.BANK:
+
+            return {
+
+                provider:
+                    PAYMENT_PROVIDER.BANK,
+
+                service:
+                    this.paymentService
+                        .bank ||
+
+                    this.paymentService
+
+            };
+
+        default:
+
+            throw new Error(
+
+                `Unsupported payment provider: ${provider}`
+
+            );
+
+    }
+
+}
+
+/**
+ * Resolve transaction currency.
+ */
+resolveCurrency(body) {
+
+    return (
+
+        body.currency ||
+
+        process.env
+            .DEFAULT_CURRENCY ||
+
+        "UGX"
+
+    ).toUpperCase();
+
+}
+
+/**
+ * Normalize monetary amount.
+ */
+normalizeAmount(amount) {
+
+    const value =
+        Number(amount);
+
+    if (
+        Number.isNaN(value) ||
+        value <= 0
+    ) {
+
+        throw new Error(
+            "Invalid payment amount."
+        );
+
+    }
+
+    return Number(
+
+        value.toFixed(2)
+
     );
 
-    // Verify user owns this intent
-    if (paymentIntent.user?.toString() !== userId.toString()) {
-      return res.status(403).json({
-        error: 'Access denied. You do not own this payment intent.',
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      data: paymentIntent,
-    });
-  } catch (error) {
-    logger.error('[PaymentController] Error getting payment intent', {
-      error: error.message,
-      paymentIntentId: req.params.id,
-    });
-
-    if (error.message.includes('not found')) {
-      return res.status(404).json({ error: 'Payment intent not found' });
-    }
-
-    return res.status(500).json({
-      error: 'Failed to retrieve payment intent',
-      message: error.message,
-    });
-  }
 }
 
 /**
- * POST /api/payments/webhooks/:provider
- * Handle webhook events from payment provider
+ * Validate mobile number.
  */
-async function handleWebhook(req, res) {
-  try {
-    const { provider } = req.params;
-    const rawBody = req.rawBody; // Must be provided by middleware
-    const headers = req.headers;
+validatePhoneNumber(phoneNumber) {
 
-    logger.info('[PaymentController] Received webhook', {
-      provider,
-      eventType: req.body?.type,
-    });
+    if (!phoneNumber) {
 
-    // Verify webhook signature
-    const adapter = req.app.locals.paymentService.providers[provider];
-    if (!adapter) {
-      logger.warn('[PaymentController] Unknown provider in webhook', { provider });
-      return res.status(400).json({ error: 'Unknown provider' });
+        throw new Error(
+            "Phone number is required."
+        );
+
     }
 
-    const isValid = adapter.verifyWebhook(rawBody, headers);
-    if (!isValid) {
-      logger.warn('[PaymentController] Webhook signature verification failed', {
+    const normalized =
+        phoneNumber
+            .replace(/\s+/g, "")
+            .replace(/-/g, "");
+
+    if (
+
+        normalized.length < 10 ||
+
+        normalized.length > 15
+
+    ) {
+
+        throw new Error(
+
+            "Invalid phone number."
+
+        );
+
+    }
+
+    return normalized;
+
+}
+
+/**
+ * Build provider request payload.
+ */
+buildProviderPayload(body, context) {
+
+    return {
+
+        amount:
+            this.normalizeAmount(
+                body.amount
+            ),
+
+        currency:
+            this.resolveCurrency(body),
+
+        phoneNumber:
+            this.validatePhoneNumber(
+                body.phoneNumber
+            ),
+
+        externalId:
+
+            context.correlationId,
+
+        payerMessage:
+
+            body.description ||
+
+            "Community Savings Contribution",
+
+        payeeNote:
+
+            body.reference ||
+
+            body.type,
+
+        metadata: {
+
+            tenantId:
+                context.tenantId,
+
+            userId:
+                context.userId,
+
+            groupId:
+                body.groupId,
+
+            paymentType:
+                body.type,
+
+            requestId:
+                context.requestId,
+
+            correlationId:
+                context.correlationId
+
+        }
+
+    };
+
+}
+
+/**
+ * Enterprise request bootstrap.
+ * Every payment entry point should invoke this first.
+ */
+initializePaymentRequest(req) {
+
+    const context =
+        this.buildRequestContext(req);
+
+    this.validateUser(context);
+
+    this.validateTenant(context);
+
+    const validation =
+        this.validatePaymentRequest(
+            req.body
+        );
+
+    if (!validation.valid) {
+
+        throw new Error(
+
+            validation.errors.join("; ")
+
+        );
+
+    }
+
+    const provider =
+        this.resolveProvider(
+            req.body.provider
+        );
+
+    const paymentType =
+        this.validatePaymentType(
+            req.body.type
+        );
+
+    const payload =
+        this.buildProviderPayload(
+            req.body,
+            context
+        );
+
+    return Object.freeze({
+
+        context,
+
         provider,
-      });
-      return res.status(401).json({ error: 'Invalid webhook signature' });
+
+        paymentType,
+
+        payload
+
+    });
+
+}
+
+/* ==========================================================================
+ * 2.2 Enterprise Fraud / AML / KYC / Sanctions Pipeline
+ * ==========================================================================*/
+
+/**
+ * Execute Fraud Detection
+ */
+async executeFraudAssessment(context, payload) {
+
+    if (!CONFIG.ENABLE_FRAUD_CHECKS) {
+
+        return {
+            passed: true,
+            score: 0,
+            decision: "ALLOW",
+            reasons: []
+        };
+
     }
 
-    // Process webhook event
-    const result = await req.app.locals.paymentService.handleProviderEvent(provider, req.body);
+    const result =
+        await this.fraudService.assess({
 
-    if (!result.success) {
-      logger.warn('[PaymentController] Webhook processing failed', {
-        provider,
-        reason: result.reason,
-      });
+            tenantId:
+                context.tenantId,
 
-      return res.status(200).json({
-        acknowledged: true,
-        processed: false,
-        reason: result.reason,
-      });
-    }
+            userId:
+                context.userId,
 
-    logger.info('[PaymentController] Webhook processed successfully', {
-      provider,
-      paymentIntentId: result.paymentIntentId,
-      status: result.status,
-    });
+            amount:
+                payload.amount,
 
-    return res.status(200).json({
-      acknowledged: true,
-      processed: true,
-      paymentIntentId: result.paymentIntentId,
-      status: result.status,
-    });
-  } catch (error) {
-    logger.error('[PaymentController] Error processing webhook', {
-      error: error.message,
-      provider: req.params.provider,
-    });
+            currency:
+                payload.currency,
 
-    return res.status(200).json({
-      acknowledged: true,
-      processed: false,
-      error: error.message,
-    });
-  }
+            paymentType:
+                payload.metadata.paymentType,
+
+            phoneNumber:
+                payload.phoneNumber,
+
+            ipAddress:
+                context.ipAddress,
+
+            userAgent:
+                context.userAgent,
+
+            correlationId:
+                context.correlationId
+
+        });
+
+    return {
+
+        passed:
+            result.passed !== false,
+
+        score:
+            result.score ?? 0,
+
+        decision:
+            result.decision ?? "ALLOW",
+
+        reasons:
+            result.reasons ?? []
+
+    };
+
 }
 
 /**
- * POST /api/payments/:id/cancel
- * Cancel a payment intent
+ * Execute AML Verification
  */
-async function cancelPaymentIntent(req, res) {
-  try {
-    const { id } = req.params;
-    const userId = req.user._id;
+async executeAMLAssessment(context, payload) {
 
-    logger.info('[PaymentController] Cancelling payment intent', {
-      paymentIntentId: id,
-      userId,
-    });
+    if (!CONFIG.ENABLE_AML) {
 
-    const paymentIntent = await req.app.locals.paymentService.cancelPaymentIntent(id);
+        return {
 
-    // Verify ownership
-    if (paymentIntent.user.toString() !== userId.toString()) {
-      return res.status(403).json({
-        error: 'Access denied. You do not own this payment intent.',
-      });
+            passed: true,
+
+            level: "LOW",
+
+            flags: []
+
+        };
+
     }
 
-    // Check if cancellable (can't cancel if already completed)
-    if (['succeeded', 'failed'].includes(paymentIntent.status)) {
-      return res.status(400).json({
-        error: `Cannot cancel payment intent with status '${paymentIntent.status}'`,
-      });
-    }
+    const result =
+        await this.amlService.verify({
 
-    return res.status(200).json({
-      success: true,
-      data: {
-        paymentIntentId: id,
-        status: paymentIntent.status,
-        message: 'Payment intent cancelled',
-      },
-    });
-  } catch (error) {
-    logger.error('[PaymentController] Error cancelling payment intent', {
-      error: error.message,
-      paymentIntentId: req.params.id,
-    });
+            tenantId:
+                context.tenantId,
 
-    return res.status(500).json({
-      error: 'Failed to cancel payment intent',
-      message: error.message,
-    });
-  }
+            userId:
+                context.userId,
+
+            amount:
+                payload.amount,
+
+            paymentType:
+                payload.metadata.paymentType,
+
+            correlationId:
+                context.correlationId
+
+        });
+
+    return {
+
+        passed:
+            result.passed !== false,
+
+        level:
+            result.level ?? "LOW",
+
+        flags:
+            result.flags ?? []
+
+    };
+
 }
 
 /**
- * GET /api/payments/transactions
+ * Execute Sanctions Screening
  */
-async function listTransactions(req, res) {
-  try {
-    const userId = req.user._id;
-    const { limit = '20', skip = '0', status, startDate, endDate } = req.query;
+async executeSanctionsAssessment(context, payload) {
 
-    logger.info('[PaymentController] Listing transactions', {
-      userId,
-      limit: parseInt(limit),
-      skip: parseInt(skip),
-    });
+    if (!CONFIG.ENABLE_SANCTIONS) {
 
-    const result = await req.app.locals.paymentService.listTransactions(userId, {
-      limit: Math.min(parseInt(limit), 100),
-      skip: parseInt(skip),
-      status: status || null,
-      startDate: startDate ? new Date(startDate) : null,
-      endDate: endDate ? new Date(endDate) : null,
-    });
+        return {
 
-    return res.status(200).json({
-      success: true,
-      data: result.transactions,
-      pagination: {
-        total: result.total,
-        limit: result.limit,
-        skip: result.skip,
-        pages: result.pages,
-        currentPage: result.currentPage,
-      },
-    });
-  } catch (error) {
-    logger.error('[PaymentController] Error listing transactions', {
-      error: error.message,
-      userId: req.user._id,
-    });
+            passed: true,
 
-    return res.status(500).json({
-      error: 'Failed to retrieve transactions',
-      message: error.message,
-    });
-  }
+            matched: false,
+
+            matches: []
+
+        };
+
+    }
+
+    const result =
+        await this.sanctionsService.screen({
+
+            tenantId:
+                context.tenantId,
+
+            userId:
+                context.userId,
+
+            phoneNumber:
+                payload.phoneNumber,
+
+            correlationId:
+                context.correlationId
+
+        });
+
+    return {
+
+        passed:
+            result.passed !== false,
+
+        matched:
+            result.matched ?? false,
+
+        matches:
+            result.matches ?? []
+
+    };
+
 }
 
 /**
- * REQUIRED FIX #2:
- * Rename the conflicting analytics function
+ * Execute KYC Verification
  */
-async function getPaymentAnalyticsSummary(req, res) {
-  try {
-    const { startDate, endDate } = req.query;
-    const userId = req.user._id;
+async executeKYCAssessment(context) {
 
-    logger.info('[PaymentController] Fetching payment analytics', { userId });
+    if (!CONFIG.ENABLE_KYC) {
 
-    const query = {};
-    if (startDate || endDate) {
-      query.createdAt = {};
-      if (startDate) query.createdAt.$gte = new Date(startDate);
-      if (endDate) query.createdAt.$lte = new Date(endDate);
+        return {
+
+            passed: true,
+
+            status: "VERIFIED"
+
+        };
+
     }
 
-    const Transaction = require('../models/Transaction');
+    const result =
+        await this.kycService.verify({
 
-    const [totalTransactions, successfulPayments, totalAmount, averageAmount] = await Promise.all([
-      Transaction.countDocuments(query),
-      Transaction.countDocuments({ ...query, status: 'completed', type: 'credit' }),
-      Transaction.aggregate([
-        { $match: { ...query, type: 'credit' } },
-        { $group: { _id: null, total: { $sum: '$amount' } } },
-      ]),
-      Transaction.aggregate([
-        { $match: { ...query, type: 'credit' } },
-        { $group: { _id: null, avg: { $avg: '$amount' } } },
-      ]),
+            tenantId:
+                context.tenantId,
+
+            userId:
+                context.userId
+
+        });
+
+    return {
+
+        passed:
+            result.passed !== false,
+
+        status:
+            result.status ?? "UNKNOWN",
+
+        expiry:
+            result.expiry,
+
+        level:
+            result.level
+
+    };
+
+}
+
+/**
+ * Enterprise Risk Decision Engine
+ */
+determineRiskDecision(results) {
+
+    const {
+
+        fraud,
+
+        aml,
+
+        sanctions,
+
+        kyc
+
+    } = results;
+
+    if (!kyc.passed) {
+
+        return {
+
+            action: "BLOCK",
+
+            reason:
+                "KYC verification failed"
+
+        };
+
+    }
+
+    if (!sanctions.passed) {
+
+        return {
+
+            action: "BLOCK",
+
+            reason:
+                "Sanctions screening failed"
+
+        };
+
+    }
+
+    if (!aml.passed) {
+
+        return {
+
+            action: "REVIEW",
+
+            reason:
+                "AML verification requires review"
+
+        };
+
+    }
+
+    if (!fraud.passed) {
+
+        return {
+
+            action: "REVIEW",
+
+            reason:
+                "Fraud engine requires manual review"
+
+        };
+
+    }
+
+    if (fraud.score >= 90) {
+
+        return {
+
+            action: "BLOCK",
+
+            reason:
+                "Critical fraud score"
+
+        };
+
+    }
+
+    if (fraud.score >= 70) {
+
+        return {
+
+            action: "CHALLENGE",
+
+            reason:
+                "Step-up authentication required"
+
+        };
+
+    }
+
+    return {
+
+        action: "ALLOW",
+
+        reason:
+            "Risk assessment passed"
+
+    };
+
+}
+
+/**
+ * Execute Complete Enterprise Risk Pipeline
+ */
+async executeRiskPipeline(context, payload) {
+
+    this.info(
+
+        "Executing enterprise payment risk pipeline",
+
+        {
+
+            correlationId:
+                context.correlationId,
+
+            userId:
+                context.userId
+
+        }
+
+    );
+
+    const [
+
+        fraud,
+
+        aml,
+
+        sanctions,
+
+        kyc
+
+    ] = await Promise.all([
+
+        this.executeFraudAssessment(
+            context,
+            payload
+        ),
+
+        this.executeAMLAssessment(
+            context,
+            payload
+        ),
+
+        this.executeSanctionsAssessment(
+            context,
+            payload
+        ),
+
+        this.executeKYCAssessment(
+            context
+        )
+
     ]);
 
-    return res.status(200).json({
-      success: true,
-      data: {
-        totalTransactions,
-        successfulPayments,
-        totalAmount: totalAmount[0]?.total || 0,
-        averageAmount: averageAmount[0]?.avg || 0,
-        successRate:
-          totalTransactions > 0
-            ? ((successfulPayments / totalTransactions) * 100).toFixed(2) + '%'
-            : '0%',
-      },
-    });
-  } catch (error) {
-    logger.error('[PaymentController] Error getting payment analytics', {
-      error: error.message,
+    const decision =
+        this.determineRiskDecision({
+
+            fraud,
+
+            aml,
+
+            sanctions,
+
+            kyc
+
+        });
+
+    return Object.freeze({
+
+        fraud,
+
+        aml,
+
+        sanctions,
+
+        kyc,
+
+        decision,
+
+        evaluatedAt:
+            new Date(),
+
+        correlationId:
+            context.correlationId
+
     });
 
-    return res.status(500).json({
-      error: 'Failed to retrieve payment analytics',
-      message: error.message,
-    });
-  }
 }
 
-// Previously we exported a subset of functions here, which unintentionally
-// overwrote the earlier `exports.*` assignments. That caused routes to receive
-// undefined handlers (e.g. initiatePayment). Instead of replacing the
-// exports object, add the remaining functions on the existing `exports`.
+/**
+ * Validate Enterprise Risk Decision
+ */
+enforceRiskDecision(risk) {
 
-// export newly defined helpers so they are accessible to routes/services
-exports.createPaymentIntent = createPaymentIntent;
-exports.getPaymentIntent = getPaymentIntent;
-exports.handleWebhook = handleWebhook;
-exports.cancelPaymentIntent = cancelPaymentIntent;
-exports.listTransactions = listTransactions;
-exports.getPaymentAnalytics = getPaymentAnalyticsSummary;
+    switch (risk.decision.action) {
 
-// Note: all other handler functions above were already attached to `exports` via
-// `exports.foo = ...` earlier in the file. We no longer reassign `module.exports`.
+        case "ALLOW":
+
+            return;
+
+        case "CHALLENGE":
+
+            throw Object.assign(
+
+                new Error(
+
+                    "Step-up authentication required."
+
+                ),
+
+                {
+
+                    code:
+                        "STEP_UP_REQUIRED",
+
+                    status: 202,
+
+                    risk
+
+                }
+
+            );
+
+        case "REVIEW":
+
+            throw Object.assign(
+
+                new Error(
+
+                    "Payment queued for manual review."
+
+                ),
+
+                {
+
+                    code:
+                        "MANUAL_REVIEW",
+
+                    status: 202,
+
+                    risk
+
+                }
+
+            );
+
+        case "BLOCK":
+
+            throw Object.assign(
+
+                new Error(
+
+                    risk.decision.reason
+
+                ),
+
+                {
+
+                    code:
+                        "PAYMENT_BLOCKED",
+
+                    status: 403,
+
+                    risk
+
+                }
+
+            );
+
+        default:
+
+            throw new Error(
+
+                "Unknown enterprise risk decision."
+
+            );
+
+    }
+
+}
+
+/* ==========================================================================
+ * 2.3A Enterprise Payment Creation Core
+ *
+ * Responsibilities
+ * --------------------------------------------------------------------------
+ * • Idempotency enforcement
+ * • MongoDB transaction management
+ * • Payment persistence
+ * • Provider invocation
+ * • Provider response normalization
+ * ==========================================================================*/
+
+/**
+ * Enforce idempotent payment creation.
+ */
+async enforceIdempotency(context) {
+
+    const existing =
+        await Payment.findOne({
+
+            tenantId:
+                context.tenantId,
+
+            idempotencyKey:
+                context.idempotencyKey
+
+        });
+
+    if (!existing) {
+
+        return null;
+
+    }
+
+    this.info(
+
+        "Duplicate payment request detected.",
+
+        {
+
+            paymentId:
+                existing._id,
+
+            correlationId:
+                context.correlationId
+
+        }
+
+    );
+
+    return existing;
+
+}
+
+/**
+ * Create enterprise payment record.
+ */
+async createPaymentRecord(
+    context,
+    payload,
+    provider,
+    session
+) {
+
+    return Payment.create([{
+
+        tenantId:
+            context.tenantId,
+
+        userId:
+            context.userId,
+
+        groupId:
+            payload.metadata.groupId,
+
+        provider:
+            provider.provider,
+
+        type:
+            payload.metadata.paymentType,
+
+        amount:
+            payload.amount,
+
+        currency:
+            payload.currency,
+
+        phoneNumber:
+            payload.phoneNumber,
+
+        status:
+            PAYMENT_STATUS.CREATED,
+
+        requestId:
+            context.requestId,
+
+        correlationId:
+            context.correlationId,
+
+        idempotencyKey:
+            context.idempotencyKey,
+
+        metadata:
+            payload.metadata
+
+    }], {
+
+        session
+
+    });
+
+}
+
+/**
+ * Execute provider payment request.
+ */
+async executeProviderRequest(
+    provider,
+    payment,
+    payload
+) {
+
+    switch (provider.provider) {
+
+        case PAYMENT_PROVIDER.MTN:
+
+            return provider.service.requestCollection({
+
+                amount:
+                    payload.amount,
+
+                currency:
+                    payload.currency,
+
+                phoneNumber:
+                    payload.phoneNumber,
+
+                externalId:
+                    payment.correlationId,
+
+                payerMessage:
+                    payload.payerMessage,
+
+                payeeNote:
+                    payload.payeeNote
+
+            });
+
+        case PAYMENT_PROVIDER.AIRTEL:
+
+            return provider.service.requestCollection({
+
+                amount:
+                    payload.amount,
+
+                currency:
+                    payload.currency,
+
+                phoneNumber:
+                    payload.phoneNumber,
+
+                externalId:
+                    payment.correlationId
+
+            });
+
+        case PAYMENT_PROVIDER.BANK:
+
+            return provider.service.initiateTransfer({
+
+                amount:
+                    payload.amount,
+
+                currency:
+                    payload.currency,
+
+                reference:
+                    payment.correlationId,
+
+                metadata:
+                    payload.metadata
+
+            });
+
+        default:
+
+            throw new Error(
+
+                `Unsupported provider ${provider.provider}`
+
+            );
+
+    }
+
+}
+
+/**
+ * Persist provider response.
+ */
+async persistProviderResponse(
+    payment,
+    providerResponse,
+    session
+) {
+
+    payment.transactionReference =
+
+        providerResponse.transactionReference ||
+
+        providerResponse.reference ||
+
+        providerResponse.externalId ||
+
+        payment.correlationId;
+
+    payment.providerReference =
+
+        providerResponse.providerReference ||
+
+        providerResponse.financialTransactionId ||
+
+        null;
+
+    payment.status =
+        PAYMENT_STATUS.PENDING;
+
+    payment.providerResponse =
+        providerResponse;
+
+    await payment.save({
+
+        session
+
+    });
+
+    return payment;
+
+}
+
+/**
+ * Enterprise Payment Creation Orchestrator.
+ */
+async createEnterprisePayment(
+    context,
+    provider,
+    payload
+) {
+
+    const duplicate =
+
+        await this.enforceIdempotency(
+            context
+        );
+
+    if (duplicate) {
+
+        return {
+
+            duplicate: true,
+
+            payment: duplicate
+
+        };
+
+    }
+
+    const session =
+        await this.startSession();
+
+    try {
+
+        const [payment] =
+
+            await this.createPaymentRecord(
+
+                context,
+
+                payload,
+
+                provider,
+
+                session
+
+            );
+
+        const providerResponse =
+
+            await this.executeProviderRequest(
+
+                provider,
+
+                payment,
+
+                payload
+
+            );
+
+        await this.persistProviderResponse(
+
+            payment,
+
+            providerResponse,
+
+            session
+
+        );
+
+        return {
+
+            duplicate: false,
+
+            session,
+
+            payment,
+
+            providerResponse
+
+        };
+
+    } catch (error) {
+
+        await this.rollback(session);
+
+        throw error;
+
+    }
+
+}
+
+/* ==========================================================================
+ * 2.3B Enterprise Completion Pipeline
+ *
+ * Responsibilities
+ * --------------------------------------------------------------------------
+ * • Audit logging
+ * • Domain / Outbox event publishing
+ * • MongoDB transaction commit
+ * • Telemetry emission
+ * • Standardized API response
+ * • Structured logging
+ * • Exception handling & compensation
+ * ==========================================================================*/
+
+/**
+ * Persist enterprise audit trail.
+ */
+async recordPaymentAudit(
+    context,
+    payment,
+    providerResponse
+) {
+
+    if (!CONFIG.ENABLE_AUDIT) {
+        return;
+    }
+
+    await this.auditService.record({
+
+        actorId:
+            context.userId,
+
+        actorType:
+            "MEMBER",
+
+        action:
+            "PAYMENT_CREATED",
+
+        entity:
+            "Payment",
+
+        entityId:
+            payment._id,
+
+        correlationId:
+            context.correlationId,
+
+        requestId:
+            context.requestId,
+
+        tenantId:
+            context.tenantId,
+
+        after:
+            payment.toObject(),
+
+        metadata: {
+
+            provider:
+                payment.provider,
+
+            transactionReference:
+                payment.transactionReference,
+
+            providerReference:
+                payment.providerReference,
+
+            providerStatus:
+                providerResponse.status
+
+        }
+
+    });
+
+}
+
+/**
+ * Publish enterprise payment event.
+ */
+async publishPaymentCreatedEvent(
+    context,
+    payment
+) {
+
+    await this.eventBus.publish({
+
+        type:
+            "payment.created",
+
+        aggregate:
+            "Payment",
+
+        aggregateId:
+            payment._id.toString(),
+
+        correlationId:
+            context.correlationId,
+
+        tenantId:
+            context.tenantId,
+
+        occurredAt:
+            new Date(),
+
+        payload: {
+
+            paymentId:
+                payment._id,
+
+            userId:
+                payment.userId,
+
+            groupId:
+                payment.groupId,
+
+            amount:
+                payment.amount,
+
+            currency:
+                payment.currency,
+
+            provider:
+                payment.provider,
+
+            status:
+                payment.status
+
+        }
+
+    });
+
+}
+
+/**
+ * Emit enterprise telemetry.
+ */
+emitPaymentTelemetry(
+    context,
+    payment
+) {
+
+    this.info(
+
+        "Enterprise payment initiated.",
+
+        {
+
+            paymentId:
+                payment._id,
+
+            tenantId:
+                context.tenantId,
+
+            userId:
+                context.userId,
+
+            provider:
+                payment.provider,
+
+            correlationId:
+                context.correlationId
+
+        }
+
+    );
+
+}
+
+/**
+ * Build enterprise API response.
+ */
+buildPaymentResponse(
+    payment,
+    duplicate = false
+) {
+
+    return {
+
+        success: true,
+
+        duplicate,
+
+        paymentId:
+            payment._id,
+
+        status:
+            payment.status,
+
+        provider:
+            payment.provider,
+
+        amount:
+            payment.amount,
+
+        currency:
+            payment.currency,
+
+        transactionReference:
+            payment.transactionReference,
+
+        correlationId:
+            payment.correlationId,
+
+        createdAt:
+            payment.createdAt
+
+    };
+
+}
+
+/**
+ * Complete enterprise payment orchestration.
+ */
+async finalizeEnterprisePayment(
+    context,
+    orchestration
+) {
+
+    const {
+
+        session,
+
+        payment,
+
+        providerResponse,
+
+        duplicate
+
+    } = orchestration;
+
+    if (duplicate) {
+
+        return this.buildPaymentResponse(
+
+            payment,
+
+            true
+
+        );
+
+    }
+
+    try {
+
+        await this.recordPaymentAudit(
+
+            context,
+
+            payment,
+
+            providerResponse
+
+        );
+
+        await this.publishPaymentCreatedEvent(
+
+            context,
+
+            payment
+
+        );
+
+        await this.commit(session);
+
+        this.emitPaymentTelemetry(
+
+            context,
+
+            payment
+
+        );
+
+        return this.buildPaymentResponse(
+
+            payment,
+
+            false
+
+        );
+
+    } catch (error) {
+
+        await this.rollback(session);
+
+        throw error;
+
+    }
+
+}
+
+/**
+ * Enterprise compensation handler.
+ */
+async compensatePaymentFailure(
+    context,
+    session,
+    payment,
+    error
+) {
+
+    try {
+
+        if (payment) {
+
+            payment.status =
+                PAYMENT_STATUS.FAILED;
+
+            payment.failureReason =
+                error.message;
+
+            if (session) {
+
+                await payment.save({
+                    session
+                });
+
+            } else {
+
+                await payment.save();
+
+            }
+
+        }
+
+        await this.auditService.record({
+
+            actorId:
+                "SYSTEM",
+
+            actorType:
+                "SYSTEM",
+
+            action:
+                "PAYMENT_FAILED",
+
+            entity:
+                "Payment",
+
+            entityId:
+                payment?._id,
+
+            correlationId:
+                context?.correlationId,
+
+            tenantId:
+                context?.tenantId,
+
+            metadata: {
+
+                error:
+                    error.message,
+
+                stack:
+                    error.stack
+
+            }
+
+        });
+
+        this.error(
+
+            "Enterprise payment orchestration failed.",
+
+            {
+
+                paymentId:
+                    payment?._id,
+
+                correlationId:
+                    context?.correlationId,
+
+                error:
+                    error.message
+
+            }
+
+        );
+
+    } finally {
+
+        if (session) {
+
+            try {
+
+                await this.rollback(session);
+
+            } catch (_) {
+
+                // Ignore rollback errors.
+
+            }
+
+        }
+
+    }
+
+}
+
+/* ==========================================================================
+ * 2.4 Enterprise Failure Handling & Recovery
+ *
+ * Responsibilities
+ * --------------------------------------------------------------------------
+ * • Transaction rollback
+ * • Retry metadata generation
+ * • Dead-letter queue publishing
+ * • Structured error responses
+ * • Metrics & tracing
+ * • Enterprise compensation
+ * • Recovery orchestration
+ * ==========================================================================*/
+
+/**
+ * Roll back active MongoDB transaction.
+ */
+async rollbackTransaction(session) {
+
+    if (!session) {
+        return;
+    }
+
+    try {
+
+        await session.abortTransaction();
+
+    } finally {
+
+        session.endSession();
+
+    }
+
+}
+
+/**
+ * Build retry metadata.
+ */
+buildRetryMetadata(error, context) {
+
+    const retryableCodes = [
+
+        "ETIMEDOUT",
+        "ECONNRESET",
+        "ECONNREFUSED",
+        "NETWORK_ERROR",
+        "PROVIDER_TIMEOUT"
+
+    ];
+
+    const retryable =
+
+        retryableCodes.includes(error.code) ||
+
+        error.retryable === true;
+
+    const attempts =
+
+        Number(context.retryAttempt || 0);
+
+    return {
+
+        retryable,
+
+        attempt: attempts,
+
+        nextAttempt: retryable
+            ? attempts + 1
+            : attempts,
+
+        maxAttempts:
+            CONFIG.MAX_RETRIES,
+
+        retryAfter:
+
+            retryable
+
+                ? Math.min(
+
+                    Math.pow(2, attempts) * 1000,
+
+                    30000
+
+                )
+
+                : null
+
+    };
+
+}
+
+/**
+ * Publish failed orchestration
+ * to enterprise dead-letter queue.
+ */
+async publishDeadLetter(
+    context,
+    payment,
+    error,
+    retry
+) {
+
+    if (!this.eventBus) {
+
+        return;
+
+    }
+
+    await this.eventBus.publish({
+
+        type:
+
+            "payment.deadletter",
+
+        aggregate:
+
+            "Payment",
+
+        aggregateId:
+
+            payment?._id?.toString(),
+
+        correlationId:
+
+            context.correlationId,
+
+        tenantId:
+
+            context.tenantId,
+
+        occurredAt:
+
+            new Date(),
+
+        payload: {
+
+            paymentId:
+
+                payment?._id,
+
+            requestId:
+
+                context.requestId,
+
+            provider:
+
+                payment?.provider,
+
+            retry,
+
+            error: {
+
+                code:
+
+                    error.code,
+
+                message:
+
+                    error.message
+
+            }
+
+        }
+
+    });
+
+}
+
+/**
+ * Emit enterprise metrics.
+ */
+emitFailureMetrics(
+    context,
+    payment,
+    error
+) {
+
+    this.error(
+
+        "Payment orchestration failure.",
+
+        {
+
+            paymentId:
+
+                payment?._id,
+
+            tenantId:
+
+                context.tenantId,
+
+            correlationId:
+
+                context.correlationId,
+
+            provider:
+
+                payment?.provider,
+
+            errorCode:
+
+                error.code,
+
+            message:
+
+                error.message
+
+        }
+
+    );
+
+}
+
+/**
+ * Emit tracing event.
+ */
+emitFailureTrace(
+    context,
+    error
+) {
+
+    if (!CONFIG.ENABLE_TRACING) {
+
+        return;
+
+    }
+
+    this.debug(
+
+        "Tracing payment failure.",
+
+        {
+
+            traceId:
+
+                context.traceId,
+
+            requestId:
+
+                context.requestId,
+
+            correlationId:
+
+                context.correlationId,
+
+            error:
+
+                error.message
+
+        }
+
+    );
+
+}
+
+/**
+ * Enterprise error response.
+ */
+buildErrorResponse(
+    context,
+    error,
+    retry
+) {
+
+    return {
+
+        success: false,
+
+        timestamp:
+            new Date().toISOString(),
+
+        correlationId:
+            context.correlationId,
+
+        requestId:
+            context.requestId,
+
+        code:
+
+            error.code ||
+
+            "PAYMENT_FAILURE",
+
+        message:
+
+            error.message ||
+
+            "Payment processing failed.",
+
+        retry
+
+    };
+
+}
+
+/**
+ * Enterprise recovery orchestration.
+ */
+async handlePaymentFailure({
+
+    context,
+
+    session,
+
+    payment,
+
+    error
+
+}) {
+
+    const retry =
+
+        this.buildRetryMetadata(
+
+            error,
+
+            context
+
+        );
+
+    try {
+
+        if (payment) {
+
+            payment.status =
+
+                PAYMENT_STATUS.FAILED;
+
+            payment.failureReason =
+
+                error.message;
+
+            payment.retry = retry;
+
+            if (session) {
+
+                await payment.save({
+
+                    session
+
+                });
+
+            } else {
+
+                await payment.save();
+
+            }
+
+        }
+
+        await this.publishDeadLetter(
+
+            context,
+
+            payment,
+
+            error,
+
+            retry
+
+        );
+
+        this.emitFailureMetrics(
+
+            context,
+
+            payment,
+
+            error
+
+        );
+
+        this.emitFailureTrace(
+
+            context,
+
+            error
+
+        );
+
+    } finally {
+
+        await this.rollbackTransaction(
+
+            session
+
+        );
+
+    }
+
+    return this.buildErrorResponse(
+
+        context,
+
+        error,
+
+        retry
+
+    );
+
+}
+

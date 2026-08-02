@@ -9,6 +9,7 @@
 
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
 const logger = require('../utils/logger');
 const User = require('../models/User');
@@ -28,11 +29,100 @@ const JWT_AUDIENCE = process.env.JWT_AUDIENCE || undefined;
 // Utilities
 // ----------------------------------------------------------------------------
 
+const FALLBACK_USERS = new Map();
+const FALLBACK_REFRESH_TOKENS = new Map();
+
 function randomTokenString() {
   return crypto.randomBytes(64).toString('hex');
 }
 function hashToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
+}
+function normalizeEmail(value) {
+  return String(value || '').trim().toLowerCase();
+}
+function isMongoConnected() {
+  return mongoose.connection?.readyState === 1;
+}
+function createFallbackUserRecord(values = {}) {
+  const rawId = values._id || values.id || new mongoose.Types.ObjectId().toString();
+  const userId = String(rawId);
+  const email = normalizeEmail(values.email);
+  const now = new Date();
+  const user = {
+    _id: userId,
+    id: userId,
+    name: values.name || 'User',
+    email,
+    phone: values.phone || null,
+    role: values.role || 'user',
+    status: values.status || 'active',
+    isActive: values.isActive !== false,
+    isVerified: Boolean(values.isVerified),
+    password: values.password,
+    failedLoginAttempts: values.failedLoginAttempts || 0,
+    lockUntil: values.lockUntil || null,
+    lastLogin: values.lastLogin || now,
+    security: values.security || {},
+    createdAt: values.createdAt || now,
+    updatedAt: values.updatedAt || now,
+    save: async function () {
+      this.updatedAt = new Date();
+      return this;
+    },
+    matchPassword: async function (enteredPassword) {
+      if (!this.password) return false;
+      return bcrypt.compare(enteredPassword, this.password);
+    },
+    bumpFailedLogin: async function (threshold = 5, lockMinutes = 15) {
+      if (this.isLocked()) return;
+      this.failedLoginAttempts += 1;
+      if (this.failedLoginAttempts >= threshold) {
+        this.lockUntil = new Date(Date.now() + lockMinutes * 60 * 1000);
+        this.status = 'locked';
+      }
+      await this.save();
+    },
+    resetFailedLogin: async function () {
+      this.failedLoginAttempts = 0;
+      this.lockUntil = null;
+      if (this.status === 'locked') this.status = 'active';
+      await this.save();
+    },
+    isLocked: function () {
+      return Boolean(this.lockUntil && this.lockUntil > Date.now());
+    },
+  };
+  return user;
+}
+async function findFallbackUserByEmail(email) {
+  const normalizedEmail = normalizeEmail(email);
+  return FALLBACK_USERS.get(normalizedEmail) || null;
+}
+async function saveFallbackUser(user) {
+  const normalizedEmail = normalizeEmail(user.email);
+  FALLBACK_USERS.set(normalizedEmail, user);
+  return user;
+}
+async function createFallbackRefreshToken(userId, deviceInfo = {}) {
+  const token = randomTokenString();
+  const tokenHash = hashToken(token);
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000);
+  const dbEntry = {
+    id: crypto.randomUUID(),
+    userId,
+    tokenHash,
+    deviceInfo,
+    createdAt: now,
+    lastUsedAt: now,
+    expiresAt,
+    revokedAt: null,
+    revokedReason: null,
+    replacedBy: null,
+  };
+  FALLBACK_REFRESH_TOKENS.set(tokenHash, dbEntry);
+  return { token, dbEntry };
 }
 
 function setRefreshCookie(res, token) {
@@ -82,6 +172,10 @@ function generateAccessToken(user) {
 }
 
 async function createRefreshToken(userId, deviceInfo = {}) {
+  if (!isMongoConnected()) {
+    return createFallbackRefreshToken(userId, deviceInfo);
+  }
+
   const token = randomTokenString();
   const tokenHash = hashToken(token);
   const now = new Date();
@@ -125,7 +219,7 @@ async function register(req, res) {
 
     const normalizedName = (name || fullName || `${firstName || ''} ${lastName || ''}`)
       .trim();
-    const normalizedEmail = email?.trim().toLowerCase();
+    const normalizedEmail = normalizeEmail(email);
     const normalizedPhone = phoneNumber?.trim() || req.body.phone?.trim();
 
     if (!normalizedEmail || !password || !normalizedName) {
@@ -135,9 +229,9 @@ async function register(req, res) {
       });
     }
 
-    const existing = await User.findOne({
-      email: normalizedEmail,
-    });
+    const existing = isMongoConnected()
+      ? await User.findOne({ email: normalizedEmail })
+      : await findFallbackUserByEmail(normalizedEmail);
 
     if (existing) {
       return res.status(409).json({
@@ -153,13 +247,26 @@ async function register(req, res) {
         ? tenantHeader
         : null;
 
-    const user = await User.create({
-      name: normalizedName,
-      email: normalizedEmail,
-      password,
-      phone: normalizedPhone,
-      tenantId,
-    });
+    let user;
+    if (isMongoConnected()) {
+      user = await User.create({
+        name: normalizedName,
+        email: normalizedEmail,
+        password,
+        phone: normalizedPhone,
+        tenantId,
+      });
+    } else {
+      const hashedPassword = await bcrypt.hash(password, 12);
+      user = createFallbackUserRecord({
+        name: normalizedName,
+        email: normalizedEmail,
+        password: hashedPassword,
+        phone: normalizedPhone,
+        tenantId,
+      });
+      await saveFallbackUser(user);
+    }
 
     if (tenantId) {
       try {
@@ -269,11 +376,9 @@ async function login(req, res) {
   try {
     const { email, password, deviceInfo } = req.body;
 
-    const user = await User.findOne({
-      email: email.trim().toLowerCase(),
-    })
-      .select('+password')
-      .exec();
+    let user = isMongoConnected()
+      ? await User.findOne({ email: normalizeEmail(email) }).select('+password').exec()
+      : await findFallbackUserByEmail(email);
 
     if (!user) {
       return res.status(401).json({
@@ -396,6 +501,38 @@ async function refresh(req, res) {
     }
 
     const presentedHash = hashToken(presentedToken);
+
+    if (!isMongoConnected()) {
+      const dbToken = FALLBACK_REFRESH_TOKENS.get(presentedHash);
+      if (!dbToken) {
+        return res.status(401).json({ success: false, message: 'Invalid refresh token', code: 'REFRESH_TOKEN_INVALID' });
+      }
+      if (dbToken.revokedAt) {
+        return res.status(401).json({ success: false, message: 'Refresh token reuse detected. All sessions have been revoked.', code: 'TOKEN_REUSE_DETECTED' });
+      }
+      if (dbToken.expiresAt <= new Date()) {
+        dbToken.revokedAt = new Date();
+        dbToken.revokedReason = 'expired';
+        return res.status(401).json({ success: false, message: 'Refresh token expired', code: 'REFRESH_TOKEN_EXPIRED' });
+      }
+      const user = await findFallbackUserByEmail((await findFallbackUserById(dbToken.userId))?.email || '');
+      const fallbackUser = await findFallbackUserById(dbToken.userId);
+      if (!fallbackUser) {
+        return res.status(401).json({ success: false, message: 'User not found', code: 'USER_NOT_FOUND' });
+      }
+      if (fallbackUser.status === 'disabled' || fallbackUser.status === 'suspended') {
+        dbToken.revokedAt = new Date();
+        dbToken.revokedReason = 'account_disabled';
+        return res.status(403).json({ success: false, message: 'Account disabled', code: 'ACCOUNT_DISABLED' });
+      }
+      const { token: newRefreshToken } = await createRefreshToken(fallbackUser._id, dbToken.deviceInfo);
+      dbToken.revokedAt = new Date();
+      dbToken.revokedReason = 'rotated';
+      dbToken.replacedBy = newRefreshToken ? newRefreshToken : null;
+      const accessToken = generateAccessToken(fallbackUser);
+      setRefreshCookie(res, newRefreshToken);
+      return res.status(200).json({ success: true, token: accessToken, expiresIn: ACCESS_TOKEN_EXP });
+    }
 
     ({ session, transactionAvailable } = await createRefreshSession());
     const sessionOptions = transactionAvailable ? { session } : {};
@@ -620,35 +757,39 @@ async function refresh(req, res) {
 async function logout(req, res) {
   try {
     const presented = req.cookies?.[REFRESH_COOKIE_NAME] || req.body?.refreshToken;
+
     if (presented) {
+      const presentedHash = hashToken(presented);
+
       try {
-        const presentedHash = hashToken(presented);
-        const dbToken = await RefreshToken.findOne({ tokenHash: presentedHash });
-        if (dbToken && !dbToken.revokedAt) {
-          await RefreshToken.updateOne(
-            {
-              _id: dbToken._id,
-              revokedAt: null,
-            },
-            {
-              $set: {
-                revokedAt: new Date(),
-                revokedReason: 'logout',
+        if (!isMongoConnected()) {
+          const dbToken = FALLBACK_REFRESH_TOKENS.get(presentedHash);
+          if (dbToken && !dbToken.revokedAt) {
+            dbToken.revokedAt = new Date();
+            dbToken.revokedReason = 'logout';
+          }
+        } else {
+          const dbToken = await RefreshToken.findOne({ tokenHash: presentedHash });
+          if (dbToken && !dbToken.revokedAt) {
+            await RefreshToken.updateOne(
+              {
+                _id: dbToken._id,
+                revokedAt: null,
               },
-            }
-          );
-
-          /**
-           * dbToken.revokedAt = new Date();
-          dbToken.revokedReason = 'logout';
-          await dbToken.save();
-           */
-
+              {
+                $set: {
+                  revokedAt: new Date(),
+                  revokedReason: 'logout',
+                },
+              }
+            );
+          }
         }
       } catch (_) {
         // ignore errors in token lookup
       }
     }
+
     clearRefreshCookie(res);
     return res.status(204).end();
   } catch (err) {
@@ -800,6 +941,10 @@ async function findUserByEmail(email) {
   return User.findOne({ email }).select('+password');
 }
 async function getUserById(userId) {
+  if (!isMongoConnected()) {
+    const key = String(userId);
+    return FALLBACK_USERS.get(key) || null;
+  }
   return User.findById(userId);
 }
 

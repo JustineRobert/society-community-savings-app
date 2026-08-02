@@ -18,6 +18,7 @@ const {
 } = require('../middleware/auth');
 
 const authController = require('../controllers/authController');
+const emailController = require('../controllers/emailController');
 
 const router = express.Router();
 
@@ -161,6 +162,12 @@ router.post(
   validationRules.login,
   handleValidation,
   asyncHandler(authController.login)
+);
+
+router.post(
+  '/forgot-password',
+  loginLimiter,
+  asyncHandler(emailController.requestPasswordReset)
 );
 
 router.post(

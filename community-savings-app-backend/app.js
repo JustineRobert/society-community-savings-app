@@ -222,6 +222,10 @@ module.exports = {
  */
 
 const express = require("express");
+const cors = require("cors");
+const cookieParser = require("cookie-parser");
+const helmet = require("helmet");
+const morgan = require("morgan");
 
 const app = express();
 
@@ -231,11 +235,42 @@ const app = express();
  * ============================================================================
  */
 
-app.use(express.json());
+app.disable("x-powered-by");
+app.set("trust proxy", 1);
 
+app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
+app.use(cors({
+  origin: (origin, callback) => {
+    const allowedOrigins = [
+      "http://localhost:3000",
+      "http://127.0.0.1:3000",
+      "http://localhost:3001",
+      "http://127.0.0.1:3001",
+      "http://localhost:5173",
+      "http://127.0.0.1:5173",
+      process.env.FRONTEND_URL,
+    ].filter(Boolean);
+
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new Error("Not allowed by CORS"));
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Request-Id", "X-Requested-With", "Accept"],
+  preflightContinue: false,
+  optionsSuccessStatus: 204,
+}));
+app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
+app.use(express.json({ limit: process.env.BODY_LIMIT || "10mb" }));
+app.use(cookieParser());
 app.use(
   express.urlencoded({
     extended: true,
+    limit: process.env.BODY_LIMIT || "10mb",
   })
 );
 
@@ -245,12 +280,13 @@ app.use(
  * ============================================================================
  */
 
-/*
-app.use("/api/auth", authRoutes);
-app.use("/api/users", userRoutes);
-app.use("/api/savings", savingsRoutes);
-app.use("/api/loans", loanRoutes);
-*/
+const authRoutes = require('./routes/auth');
+const legalRoutes = require('./routes/legal.routes');
+const emailRoutes = require('./routes/email');
+
+app.use('/api/auth', authRoutes);
+app.use('/api/legal', legalRoutes);
+app.use('/api/email', emailRoutes);
 
 /**
  * ============================================================================
@@ -787,13 +823,9 @@ const { EventEmitter } = require("events");
 
 //const express = require("express");
 const compression = require("compression");
-const cors = require("cors");
-const helmet = require("helmet");
-const cookieParser = require("cookie-parser");
 const responseTime = require("response-time");
 const timeout = require("connect-timeout");
 const rateLimit = require("express-rate-limit");
-const morgan = require("morgan");
 
 /* =============================================================================
  * 1.2.3 SECURITY LIBRARIES
@@ -3374,58 +3406,25 @@ const bootstrapContext = Object.freeze({
 
 });
 
+app.createApp = createApp;
+app.bootstrapContext = bootstrapContext;
+app.runtimeContext = runtimeContext;
+app.applicationState = applicationState;
+app.runtimeEvents = runtimeEvents;
+app.APPLICATION = APPLICATION;
+app.BUILD_INFORMATION = BUILD_INFORMATION;
+app.RUNTIME = RUNTIME;
+app.DEPLOYMENT = DEPLOYMENT;
+app.BOOTSTRAP = BOOTSTRAP;
+app.RUNTIME_FINGERPRINT = RUNTIME_FINGERPRINT;
+app.configuration = configuration;
+app.serviceRegistry = serviceRegistry;
+app.dependencyRegistry = dependencyRegistry;
+app.registerService = registerService;
+app.unregisterService = unregisterService;
+
 /* -----------------------------------------------------------------------------
  * Enterprise Public API
  * -------------------------------------------------------------------------- */
 
-module.exports = Object.freeze({
-
-    /* Express Factory */
-
-    createApp,
-
-    /* Enterprise Context */
-
-    bootstrapContext,
-
-    runtimeContext,
-
-    applicationState,
-
-    runtimeEvents,
-
-    /* Metadata */
-
-    APPLICATION,
-
-    BUILD_INFORMATION,
-
-    RUNTIME,
-
-    DEPLOYMENT,
-
-    BOOTSTRAP,
-
-    RUNTIME_FINGERPRINT,
-
-    configuration,
-
-    /* Registries */
-
-    serviceRegistry,
-
-    dependencyRegistry,
-
-    /* Service APIs */
-
-    registerService,
-
-    unregisterService,
-
-    getService,
-
-    hasService,
-
-    getRegisteredServices
-
-});
+module.exports = app;

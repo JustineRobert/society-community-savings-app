@@ -20,7 +20,10 @@ import socket, { connectSocket } from '../services/socket';
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+const API_BASE =
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) ||
+  process.env.REACT_APP_API_URL ||
+  'http://localhost:5000';
 const TOKEN_KEY = 'token';
 const SESSION_KEY = 'has_session';
 const REFRESH_BUFFER_SECONDS = 120; // refresh this many seconds before expiry
@@ -237,8 +240,13 @@ export function AuthProvider({ children }) {
   );
 
   const register = useCallback(
-    async (email, password, name, options = {}) => {
-      const response = await api.post('/api/auth/register', { email, password, name }, options);
+    async (payloadOrEmail, password, name, options = {}) => {
+      const payload =
+        typeof payloadOrEmail === 'object' && payloadOrEmail !== null && !Array.isArray(payloadOrEmail)
+          ? payloadOrEmail
+          : { email: payloadOrEmail, password, name };
+
+      const response = await api.post('/api/auth/register', payload, options);
       const accessToken = response.data?.token || response.data?.accessToken;
       const profile = response.data?.user || null;
 

@@ -29,8 +29,6 @@ import { toast } from "react-toastify";
 import api from "../services/api";
 import { useAuth } from "../context/AuthContext";
 
-import "./Settings.css";
-
 const DEFAULT_SETTINGS = {
   profile: {
     firstName: "",

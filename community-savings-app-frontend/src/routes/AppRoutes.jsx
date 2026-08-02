@@ -58,6 +58,22 @@ const Register = lazy(() =>
   import("../pages/Register")
 );
 
+const ForgotPassword = lazy(() =>
+  import("../pages/ForgotPassword")
+);
+
+const ResetPassword = lazy(() =>
+  import("../pages/ResetPassword")
+);
+
+const TermsOfService = lazy(() =>
+  import("../pages/TermsOfService")
+);
+
+const PrivacyPolicy = lazy(() =>
+  import("../pages/PrivacyPolicy")
+);
+
 const Settings = lazy(() =>
   import("../pages/Settings")
 );
@@ -218,6 +234,42 @@ function AppRoutes() {
           element={
             <PublicRoute>
               <Register />
+            </PublicRoute>
+          }
+        />
+
+        <Route
+          path="/forgot-password"
+          element={
+            <PublicRoute>
+              <ForgotPassword />
+            </PublicRoute>
+          }
+        />
+
+        <Route
+          path="/reset-password"
+          element={
+            <PublicRoute>
+              <ResetPassword />
+            </PublicRoute>
+          }
+        />
+
+        <Route
+          path="/terms"
+          element={
+            <PublicRoute>
+              <TermsOfService />
+            </PublicRoute>
+          }
+        />
+
+        <Route
+          path="/privacy"
+          element={
+            <PublicRoute>
+              <PrivacyPolicy />
             </PublicRoute>
           }
         />
