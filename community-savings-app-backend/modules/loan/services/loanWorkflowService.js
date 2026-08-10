@@ -2,37 +2,57 @@
 
 /**
  * ============================================================================
+ * TITech Community Capital LTD
  * ENTERPRISE LOAN WORKFLOW SERVICE
  * ============================================================================
- * TITech Community Capital LTD
+ *
  * SACCO Core Banking Platform
  *
- * Features
+ * Responsibilities
  * ----------------------------------------------------------------------------
- * ✅ Multi-Tenant Lending
- * ✅ Credit Scoring
- * ✅ Eligibility Assessment
- * ✅ Loan Lifecycle Management
- * ✅ Loan Approval Workflow
- * ✅ Manual Review Workflow
- * ✅ Loan Disbursement
- * ✅ Repayment Processing
- * ✅ Fraud Monitoring
- * ✅ Compliance Monitoring
- * ✅ Audit Trail
- * ✅ Portfolio At Risk (PAR)
- * ✅ NPL Monitoring
- * ✅ Board Reporting
- * ✅ BoU Reporting
- * ✅ Write-Off Management
- * ✅ Loan Restructuring
- * ✅ Recovery Management
- * ✅ Bulk Operations
- * ✅ Export Services
+ * - Multi-tenant loan lifecycle orchestration
+ * - Loan application workflow
+ * - Credit scoring orchestration
+ * - Risk assessment orchestration
+ * - Compliance gates
+ * - Approval / rejection / manual review
+ * - Loan disbursement orchestration
+ * - Repayment orchestration
+ * - Delinquency monitoring
+ * - Portfolio risk reporting
+ * - Fraud / compliance alert aggregation
+ * - Audit trail orchestration
+ * - Write-off management
+ * - Recovery management
+ * - Loan restructuring
+ * - Bulk operations
+ * - Export orchestration
+ *
+ * Architectural Rules
+ * ----------------------------------------------------------------------------
+ * 1. NO direct MongoDB access from this service.
+ * 2. All persistence goes through repositories.
+ * 3. tenantId is mandatory for tenant-scoped operations.
+ * 4. Financial mutations must be auditable.
+ * 5. Invalid lifecycle transitions are rejected.
+ * 6. External risk/compliance services are treated as gates.
+ * 7. The service orchestrates; repositories persist.
+ * 8. Financial accounting should ultimately be delegated to the Ledger Engine.
+ *
+ * IMPORTANT
+ * ----------------------------------------------------------------------------
+ * LoanRepository.update signature:
+ *
+ *   update(loanId, tenantId, updates)
+ *
+ * This service consistently uses that contract.
  * ============================================================================
  */
 
-const logger = require('../../../utils/logger');
+const crypto = require('crypto');
+
+const logger =
+    require('../../../utils/logger');
 
 const LoanRepository =
     require('../repositories/loanRepository');
@@ -56,12 +76,443 @@ const {
     validateLoanApplication
 } = require('../../../utils/validateInput');
 
+
+/* ============================================================================
+ * CONSTANTS
+ * ========================================================================== */
+
+const STATUS = Object.freeze({
+
+    PENDING:
+        'PENDING',
+
+    MANUAL_REVIEW:
+        'MANUAL_REVIEW',
+
+    PENDING_CREDIT_COMMITTEE:
+        'PENDING_CREDIT_COMMITTEE',
+
+    APPROVED:
+        'APPROVED',
+
+    REJECTED:
+        'REJECTED',
+
+    DISBURSED:
+        'DISBURSED',
+
+    ACTIVE:
+        'ACTIVE',
+
+    OVERDUE:
+        'OVERDUE',
+
+    DEFAULTED:
+        'DEFAULTED',
+
+    RESTRUCTURED:
+        'RESTRUCTURED',
+
+    WRITTEN_OFF:
+        'WRITTEN_OFF',
+
+    RECOVERED:
+        'RECOVERED',
+
+    CLOSED:
+        'CLOSED'
+});
+
+
+const ACTION = Object.freeze({
+
+    APPLICATION_CREATED:
+        'LOAN_APPLICATION_CREATED',
+
+    APPROVED:
+        'LOAN_APPROVED',
+
+    REJECTED:
+        'LOAN_REJECTED',
+
+    MANUAL_REVIEW:
+        'LOAN_MANUAL_REVIEW',
+
+    DISBURSED:
+        'LOAN_DISBURSED',
+
+    REPAYMENT:
+        'LOAN_REPAYMENT_RECORDED',
+
+    WRITTEN_OFF:
+        'LOAN_WRITTEN_OFF',
+
+    RECOVERY:
+        'LOAN_RECOVERY',
+
+    RESTRUCTURED:
+        'LOAN_RESTRUCTURED',
+
+    BULK_APPROVED:
+        'LOAN_BULK_APPROVED',
+
+    BULK_REJECTED:
+        'LOAN_BULK_REJECTED'
+});
+
+
+const APPROVABLE_STATUSES = Object.freeze([
+    STATUS.PENDING,
+    STATUS.MANUAL_REVIEW,
+    STATUS.PENDING_CREDIT_COMMITTEE
+]);
+
+
+const REPAYABLE_STATUSES = Object.freeze([
+    STATUS.DISBURSED,
+    STATUS.ACTIVE,
+    STATUS.OVERDUE,
+    STATUS.RESTRUCTURED,
+    STATUS.DEFAULTED
+]);
+
+
+const RESTRUCTURABLE_STATUSES = Object.freeze([
+    STATUS.ACTIVE,
+    STATUS.OVERDUE,
+    STATUS.DEFAULTED
+]);
+
+
+const WRITE_OFF_STATUSES = Object.freeze([
+    STATUS.DEFAULTED,
+    STATUS.OVERDUE
+]);
+
+
+const RECOVERY_STATUSES = Object.freeze([
+    STATUS.WRITTEN_OFF,
+    STATUS.DEFAULTED
+]);
+
+
+/* ============================================================================
+ * SERVICE
+ * ========================================================================== */
+
 class LoanWorkflowService {
 
-    /* =======================================================================
-           LOAN APPLICATIONS
-     ======================================================================= */
 
+    /* ========================================================================
+     * INTERNAL VALIDATION HELPERS
+     * ====================================================================== */
+
+    static assertTenant(
+        tenantId
+    ) {
+
+        if (
+            tenantId === undefined ||
+            tenantId === null ||
+            tenantId === ''
+        ) {
+
+            throw new Error(
+                'tenantId is required'
+            );
+        }
+
+        return tenantId;
+    }
+
+
+    static assertLoanId(
+        loanId
+    ) {
+
+        if (
+            loanId === undefined ||
+            loanId === null ||
+            loanId === ''
+        ) {
+
+            throw new Error(
+                'loanId is required'
+            );
+        }
+
+        return loanId;
+    }
+
+
+    static getActorId(
+        actor
+    ) {
+
+        return (
+            actor?._id ||
+            actor?.id ||
+            null
+        );
+    }
+
+
+    static getActorName(
+        actor
+    ) {
+
+        return (
+            actor?.name ||
+            actor?.fullName ||
+            actor?.username ||
+            null
+        );
+    }
+
+
+    static normalizeAmount(
+        value,
+        fieldName = 'amount'
+    ) {
+
+        const amount =
+            Number(value);
+
+        if (
+            !Number.isFinite(amount) ||
+            amount <= 0
+        ) {
+
+            throw new Error(
+                `${fieldName} must be a positive number`
+            );
+        }
+
+        return Number(
+            amount.toFixed(2)
+        );
+    }
+
+
+    static normalizeDate(
+        value,
+        fieldName = 'date'
+    ) {
+
+        if (!value) {
+
+            return new Date();
+        }
+
+        const date =
+            value instanceof Date
+                ? value
+                : new Date(value);
+
+        if (
+            Number.isNaN(
+                date.getTime()
+            )
+        ) {
+
+            throw new Error(
+                `Invalid ${fieldName}`
+            );
+        }
+
+        return date;
+    }
+
+
+    static generateReference(
+        prefix
+    ) {
+
+        return `${prefix}-${Date.now()}-${crypto
+            .randomBytes(4)
+            .toString('hex')
+            .toUpperCase()}`;
+    }
+
+
+    static roundMoney(
+        value
+    ) {
+
+        return Number(
+            Number(value || 0)
+                .toFixed(2)
+        );
+    }
+
+
+    static async getLoanOrThrow(
+        loanId,
+        tenantId
+    ) {
+
+        this.assertLoanId(loanId);
+        this.assertTenant(tenantId);
+
+        const loan =
+            await LoanRepository.findById(
+                loanId,
+                tenantId
+            );
+
+        if (!loan) {
+
+            throw new Error(
+                'Loan not found'
+            );
+        }
+
+        return loan;
+    }
+
+
+    static assertStatus(
+        loan,
+        allowedStatuses
+    ) {
+
+        if (
+            !allowedStatuses.includes(
+                loan.status
+            )
+        ) {
+
+            throw new Error(
+                `Loan cannot proceed from status ${loan.status}`
+            );
+        }
+    }
+
+
+    static async audit(
+        {
+            tenantId,
+            loanId,
+            action,
+            actor,
+            metadata = {},
+            source = 'LOAN_WORKFLOW'
+        }
+    ) {
+
+        try {
+
+            return await LoanAuditRepository.create({
+
+                tenantId,
+
+                loanId,
+
+                action,
+
+                actor:
+                    this.getActorId(actor),
+
+                actorName:
+                    this.getActorName(actor),
+
+                source,
+
+                metadata,
+
+                createdAt:
+                    new Date()
+            });
+
+        } catch (error) {
+
+            logger.error(
+                '[LoanWorkflow] Audit persistence failed',
+                {
+                    tenantId,
+                    loanId,
+                    action,
+                    error:
+                        error.message
+                }
+            );
+
+            /*
+             * Audit failures are intentionally surfaced.
+             *
+             * A financial workflow should not silently succeed
+             * when its audit trail cannot be persisted.
+             */
+
+            throw error;
+        }
+    }
+
+
+    static async runComplianceGate(
+        method,
+        ...args
+    ) {
+
+        if (
+            !ComplianceService ||
+            typeof ComplianceService[method] !==
+                'function'
+        ) {
+
+            return {
+                passed: true,
+                skipped: true
+            };
+        }
+
+        const result =
+            await ComplianceService[method](
+                ...args
+            );
+
+        if (
+            result &&
+            result.passed === false
+        ) {
+
+            throw new Error(
+                result.message ||
+                `Compliance validation failed: ${method}`
+            );
+        }
+
+        return (
+            result || {
+                passed: true
+            }
+        );
+    }
+
+
+    static async runRiskAssessment(
+        method,
+        ...args
+    ) {
+
+        if (
+            !RiskEngineService ||
+            typeof RiskEngineService[method] !==
+                'function'
+        ) {
+
+            return null;
+        }
+
+        return RiskEngineService[method](
+            ...args
+        );
+    }
+
+
+    /* ========================================================================
+     * APPLICATION
+     * ====================================================================== */
 
     static async createLoanApplication(
         user,
@@ -69,95 +520,159 @@ class LoanWorkflowService {
         tenantId
     ) {
 
+        this.assertTenant(tenantId);
+
         try {
 
             validateLoanApplication(
                 payload
             );
 
-            logger.info(
-                `[LoanWorkflow] Creating Loan Application`,
-                {
-                    tenantId,
-                    memberId: payload.memberId,
-                    amount: payload.amount
-                }
-            );
-
-            const fraudAssessment =
-                await RiskEngineService
-                    .assessLoanApplication(
-                        payload,
-                        tenantId
-                    );
-
-            const complianceCheck =
-                await ComplianceService
-                    .validateLoanApplication(
-                        payload,
-                        tenantId
-                    );
-
             if (
-                complianceCheck &&
-                complianceCheck.passed === false
+                !payload ||
+                !payload.memberId
             ) {
 
                 throw new Error(
-                    complianceCheck.message ||
-                    'Compliance validation failed'
+                    'memberId is required'
                 );
             }
 
-            const creditDecision =
-                await CreditScoringService
-                    .calculateScore(
+            if (
+                !payload.amount ||
+                Number(payload.amount) <= 0
+            ) {
+
+                throw new Error(
+                    'Loan amount must be greater than zero'
+                );
+            }
+
+            logger.info(
+                '[LoanWorkflow] Creating loan application',
+                {
+                    tenantId,
+                    memberId:
+                        payload.memberId,
+                    amount:
+                        payload.amount
+                }
+            );
+
+
+            const fraudAssessment =
+                await this.runRiskAssessment(
+                    'assessLoanApplication',
+                    payload,
+                    tenantId
+                );
+
+
+            if (
+                fraudAssessment?.blockApplication === true
+            ) {
+
+                throw new Error(
+                    fraudAssessment.reason ||
+                    'Loan application blocked by risk engine'
+                );
+            }
+
+
+            const complianceCheck =
+                await this.runComplianceGate(
+                    'validateLoanApplication',
+                    payload,
+                    tenantId
+                );
+
+
+            let creditDecision =
+                null;
+
+            if (
+                CreditScoringService &&
+                typeof CreditScoringService.calculateScore ===
+                    'function'
+            ) {
+
+                creditDecision =
+                    await CreditScoringService.calculateScore(
                         payload.memberId,
                         payload
                     );
-
-            let decision =
-                'PENDING';
-
-            if (
-                creditDecision.autoApprove === true
-            ) {
-
-                decision =
-                    'APPROVED';
-
-            } else if (
-                creditDecision.manualReview === true
-            ) {
-
-                decision =
-                    'MANUAL_REVIEW';
             }
 
+
+            const score =
+                Number(
+                    creditDecision?.score ??
+                    creditDecision?.creditScore ??
+                    0
+                );
+
+
+            let decision =
+                STATUS.PENDING;
+
+
+            if (
+                creditDecision?.autoApprove === true
+            ) {
+
+                decision =
+                    STATUS.APPROVED;
+
+            } else if (
+                creditDecision?.manualReview === true
+            ) {
+
+                decision =
+                    STATUS.MANUAL_REVIEW;
+            }
+
+
+            const now =
+                new Date();
+
+
+            const loanData = {
+
+                ...payload,
+
+                tenantId,
+
+                status:
+                    decision,
+
+                creditScore:
+                    score || undefined,
+
+                riskRating:
+                    fraudAssessment?.riskRating ||
+                    'LOW',
+
+                riskAssessment:
+                    fraudAssessment || undefined,
+
+                complianceAssessment:
+                    complianceCheck || undefined,
+
+                applicationDate:
+                    now,
+
+                createdBy:
+                    this.getActorId(user)
+            };
+
+
             const loan =
-                await LoanRepository.create({
+                await LoanRepository.create(
+                    loanData
+                );
 
-                    ...payload,
 
-                    tenantId,
-
-                    status: decision,
-
-                    creditScore:
-                        creditDecision.score,
-
-                    riskRating:
-                        fraudAssessment?.riskRating ||
-                        'LOW',
-
-                    applicationDate:
-                        new Date(),
-
-                    createdBy:
-                        user?._id || user?.id
-                });
-
-            await LoanAuditRepository.create({
+            await this.audit({
 
                 tenantId,
 
@@ -165,10 +680,10 @@ class LoanWorkflowService {
                     loan._id,
 
                 action:
-                    'LOAN_APPLICATION_CREATED',
+                    ACTION.APPLICATION_CREATED,
 
                 actor:
-                    user?._id || user?.id,
+                    user,
 
                 metadata: {
 
@@ -178,12 +693,19 @@ class LoanWorkflowService {
                     decision,
 
                     creditScore:
-                        creditDecision.score,
+                        score,
 
                     riskRating:
-                        fraudAssessment?.riskRating
+                        fraudAssessment?.riskRating,
+
+                    riskAssessment:
+                        fraudAssessment,
+
+                    compliancePassed:
+                        complianceCheck?.passed !== false
                 }
             });
+
 
             return {
 
@@ -199,21 +721,28 @@ class LoanWorkflowService {
                     decision,
 
                     creditScore:
-                        creditDecision.score,
+                        score,
 
                     riskRating:
-                        fraudAssessment?.riskRating
+                        fraudAssessment?.riskRating ||
+                        'LOW',
+
+                    compliance:
+                        complianceCheck,
+
+                    riskAssessment:
+                        fraudAssessment
                 }
             };
 
         } catch (error) {
 
             logger.error(
-                `[LoanWorkflow] Failed to create loan application`,
+                '[LoanWorkflow] Failed to create loan application',
                 {
+                    tenantId,
                     error:
-                        error.message,
-                    tenantId
+                        error.message
                 }
             );
 
@@ -221,122 +750,140 @@ class LoanWorkflowService {
         }
     }
 
-    /* =======================================================================
-       APPROVAL WORKFLOW
-       ======================================================================= */
+
+    /* ========================================================================
+     * APPROVAL
+     * ====================================================================== */
 
     static async approveLoan(
         loanId,
-        payload,
+        payload = {},
         actor,
         tenantId
     ) {
 
+        this.assertTenant(tenantId);
+
         try {
 
             const loan =
-                await LoanRepository.findById(
+                await this.getLoanOrThrow(
                     loanId,
                     tenantId
                 );
 
-            if (!loan) {
-                throw new Error(
-                    'Loan not found'
-                );
-            }
 
-            if (
-                ![
-                    'PENDING',
-                    'MANUAL_REVIEW',
-                    'PENDING_CREDIT_COMMITTEE'
-                ].includes(
-                    loan.status
-                )
-            ) {
-                throw new Error(
-                    `Loan cannot be approved from status ${loan.status}`
-                );
-            }
+            this.assertStatus(
+                loan,
+                APPROVABLE_STATUSES
+            );
 
-            const complianceResult =
-                await ComplianceService
-                    .validateLoanApproval(
-                        loan,
-                        tenantId
+
+            await this.runComplianceGate(
+                'validateLoanApproval',
+                loan,
+                tenantId
+            );
+
+
+            const approvedAmount =
+                payload.approvedAmount !== undefined
+                    ? this.normalizeAmount(
+                        payload.approvedAmount,
+                        'approvedAmount'
+                    )
+                    : this.roundMoney(
+                        loan.approvedAmount ||
+                        loan.amount
                     );
 
+
             if (
-                complianceResult &&
-                complianceResult.passed === false
+                approvedAmount >
+                Number(loan.amount || approvedAmount)
             ) {
+
                 throw new Error(
-                    complianceResult.message ||
-                    'Compliance approval failed'
+                    'Approved amount cannot exceed requested loan amount'
                 );
             }
+
+
+            const approvedAt =
+                new Date();
+
 
             const approvalData = {
 
                 status:
-                    'APPROVED',
+                    STATUS.APPROVED,
 
-                approvedAt:
-                    new Date(),
+                approvedAt,
 
                 approvedBy:
-                    actor?._id ||
-                    actor?.id,
+                    this.getActorId(actor),
 
                 approvedByName:
-                    actor?.name,
+                    this.getActorName(actor),
 
                 approvalNotes:
-                    payload?.notes,
+                    payload.notes,
 
                 approvalReference:
-                    payload?.reference,
+                    payload.reference ||
+                    this.generateReference('APR'),
 
                 committeeResolution:
-                    payload?.committeeResolution,
+                    payload.committeeResolution,
 
                 finalApprovedAmount:
-                    payload?.approvedAmount ||
-                    loan.amount
+                    approvedAmount,
+
+                approvedAmount
             };
+
 
             const updatedLoan =
                 await LoanRepository.update(
                     loanId,
-                    approvalData,
-                    tenantId
+                    tenantId,
+                    approvalData
                 );
 
-            await LoanAuditRepository.create({
+
+            if (!updatedLoan) {
+
+                throw new Error(
+                    'Loan approval update failed'
+                );
+            }
+
+
+            await this.audit({
 
                 tenantId,
 
                 loanId,
 
                 action:
-                    'LOAN_APPROVED',
+                    ACTION.APPROVED,
 
-                actor:
-                    actor?._id ||
-                    actor?.id,
+                actor,
 
                 metadata:
                     approvalData
             });
 
+
             logger.info(
                 '[LoanWorkflow] Loan approved',
                 {
+                    tenantId,
                     loanId,
-                    tenantId
+                    approvedAmount
                 }
             );
+
 
             return {
 
@@ -346,10 +893,11 @@ class LoanWorkflowService {
                     updatedLoan,
 
                 status:
-                    'APPROVED',
+                    STATUS.APPROVED,
 
-                approvedAt:
-                    approvalData.approvedAt
+                approvedAmount,
+
+                approvedAt
             };
 
         } catch (error) {
@@ -357,8 +905,8 @@ class LoanWorkflowService {
             logger.error(
                 '[LoanWorkflow] Approval failed',
                 {
-                    loanId,
                     tenantId,
+                    loanId,
                     error:
                         error.message
                 }
@@ -368,80 +916,90 @@ class LoanWorkflowService {
         }
     }
 
+
+    /* ========================================================================
+     * REJECTION
+     * ====================================================================== */
+
     static async rejectLoan(
         loanId,
-        payload,
+        payload = {},
         actor,
         tenantId
     ) {
 
+        this.assertTenant(tenantId);
+
         try {
 
             const loan =
-                await LoanRepository.findById(
+                await this.getLoanOrThrow(
                     loanId,
                     tenantId
                 );
 
-            if (!loan) {
+
+            this.assertStatus(
+                loan,
+                APPROVABLE_STATUSES
+            );
+
+
+            if (
+                !payload.reason
+            ) {
+
                 throw new Error(
-                    'Loan not found'
+                    'Rejection reason is required'
                 );
             }
+
 
             const rejectionData = {
 
                 status:
-                    'REJECTED',
+                    STATUS.REJECTED,
 
                 rejectedAt:
                     new Date(),
 
                 rejectedBy:
-                    actor?._id ||
-                    actor?.id,
+                    this.getActorId(actor),
 
                 rejectedByName:
-                    actor?.name,
+                    this.getActorName(actor),
 
                 rejectionReason:
-                    payload?.reason,
+                    payload.reason,
 
                 rejectionCode:
-                    payload?.code
+                    payload.code
             };
+
 
             const updatedLoan =
                 await LoanRepository.update(
                     loanId,
-                    rejectionData,
-                    tenantId
+                    tenantId,
+                    rejectionData
                 );
 
-            await LoanAuditRepository.create({
+
+            await this.audit({
 
                 tenantId,
 
                 loanId,
 
                 action:
-                    'LOAN_REJECTED',
+                    ACTION.REJECTED,
 
-                actor:
-                    actor?._id ||
-                    actor?.id,
+                actor,
 
                 metadata:
                     rejectionData
             });
 
-            logger.info(
-                '[LoanWorkflow] Loan rejected',
-                {
-                    loanId,
-                    tenantId
-                }
-            );
 
             return {
 
@@ -451,7 +1009,7 @@ class LoanWorkflowService {
                     updatedLoan,
 
                 status:
-                    'REJECTED'
+                    STATUS.REJECTED
             };
 
         } catch (error) {
@@ -459,6 +1017,7 @@ class LoanWorkflowService {
             logger.error(
                 '[LoanWorkflow] Rejection failed',
                 {
+                    tenantId,
                     loanId,
                     error:
                         error.message
@@ -469,105 +1028,135 @@ class LoanWorkflowService {
         }
     }
 
+
+    /* ========================================================================
+     * MANUAL REVIEW
+     * ====================================================================== */
+
     static async manualReviewLoan(
         loanId,
-        reviewData,
+        reviewData = {},
         actor,
         tenantId
     ) {
 
+        this.assertTenant(tenantId);
+
         try {
 
             const loan =
-                await LoanRepository.findById(
+                await this.getLoanOrThrow(
                     loanId,
                     tenantId
                 );
 
-            if (!loan) {
-                throw new Error(
-                    'Loan not found'
-                );
-            }
+
+            this.assertStatus(
+                loan,
+                [
+                    STATUS.PENDING,
+                    STATUS.MANUAL_REVIEW,
+                    STATUS.PENDING_CREDIT_COMMITTEE
+                ]
+            );
+
 
             const decision =
-                reviewData?.decision ||
-                'PENDING_REVIEW';
+                String(
+                    reviewData.decision ||
+                    'PENDING_REVIEW'
+                ).toUpperCase();
+
+
+            let status =
+                STATUS.MANUAL_REVIEW;
+
+
+            if (
+                decision === 'APPROVE'
+            ) {
+
+                status =
+                    STATUS.APPROVED;
+
+            } else if (
+                decision === 'REJECT'
+            ) {
+
+                status =
+                    STATUS.REJECTED;
+            }
+
+
+            const now =
+                new Date();
+
 
             const updateData = {
 
-                status:
-                    decision === 'APPROVE'
-                        ? 'APPROVED'
-                        : decision === 'REJECT'
-                            ? 'REJECTED'
-                            : 'MANUAL_REVIEW',
+                status,
 
                 reviewedAt:
-                    new Date(),
+                    now,
 
                 reviewedBy:
-                    actor?._id ||
-                    actor?.id,
+                    this.getActorId(actor),
 
                 reviewedByName:
-                    actor?.name,
+                    this.getActorName(actor),
 
                 reviewNotes:
-                    reviewData?.notes,
+                    reviewData.notes,
 
                 reviewReason:
-                    reviewData?.reason,
+                    reviewData.reason,
 
                 riskAssessment:
-                    reviewData?.riskAssessment,
+                    reviewData.riskAssessment,
 
                 recommendation:
-                    reviewData?.recommendation,
+                    reviewData.recommendation,
 
                 escalationRequired:
-                    reviewData?.escalationRequired ||
-                    false,
+                    Boolean(
+                        reviewData.escalationRequired
+                    ),
 
                 escalatedTo:
-                    reviewData?.escalatedTo,
+                    reviewData.escalatedTo,
 
                 committeeDecision:
-                    reviewData?.committeeDecision
+                    reviewData.committeeDecision
             };
+
 
             const updatedLoan =
                 await LoanRepository.update(
                     loanId,
-                    updateData,
-                    tenantId
+                    tenantId,
+                    updateData
                 );
 
-            await LoanAuditRepository.create({
+
+            await this.audit({
 
                 tenantId,
 
                 loanId,
 
                 action:
-                    'LOAN_MANUAL_REVIEW',
+                    ACTION.MANUAL_REVIEW,
 
-                actor:
-                    actor?._id ||
-                    actor?.id,
+                actor,
 
-                metadata:
-                    updateData
+                metadata: {
+
+                    decision,
+
+                    ...updateData
+                }
             });
 
-            logger.info(
-                '[LoanWorkflow] Manual review completed',
-                {
-                    loanId,
-                    tenantId,
-                    decision
-                }
-            );
 
             return {
 
@@ -576,8 +1165,7 @@ class LoanWorkflowService {
                 loan:
                     updatedLoan,
 
-                status:
-                    updateData.status,
+                status,
 
                 reviewDecision:
                     decision
@@ -588,8 +1176,8 @@ class LoanWorkflowService {
             logger.error(
                 '[LoanWorkflow] Manual review failed',
                 {
-                    loanId,
                     tenantId,
+                    loanId,
                     error:
                         error.message
                 }
@@ -599,43 +1187,34 @@ class LoanWorkflowService {
         }
     }
 
-    // static async getCreditDecision(
 
-    /* =======================================================================
-        DISBURSEMENT
-     ======================================================================= */
+    /* ========================================================================
+     * DISBURSEMENT
+     * ====================================================================== */
 
     static async disburseLoan(
         loanId,
-        payload,
+        payload = {},
         actor,
         tenantId
     ) {
 
+        this.assertTenant(tenantId);
+
         try {
 
             const loan =
-                await LoanRepository.findById(
+                await this.getLoanOrThrow(
                     loanId,
                     tenantId
                 );
 
-            if (!loan) {
 
-                throw new Error(
-                    'Loan not found'
-                );
-            }
+            this.assertStatus(
+                loan,
+                [STATUS.APPROVED]
+            );
 
-            if (
-                loan.status !==
-                'APPROVED'
-            ) {
-
-                throw new Error(
-                    'Only approved loans can be disbursed'
-                );
-            }
 
             if (
                 loan.disbursedAt
@@ -646,34 +1225,24 @@ class LoanWorkflowService {
                 );
             }
 
-            const complianceResult =
-                await ComplianceService
-                    .validateLoanDisbursement(
-                        loan,
-                        tenantId
-                    );
 
-            if (
-                complianceResult &&
-                complianceResult.passed === false
-            ) {
+            await this.runComplianceGate(
+                'validateLoanDisbursement',
+                loan,
+                tenantId
+            );
 
-                throw new Error(
-                    complianceResult.message ||
-                    'Compliance requirements not met'
-                );
-            }
 
             const fraudAssessment =
-                await RiskEngineService
-                    .assessLoanApplication(
-                        loan,
-                        tenantId
-                    );
+                await this.runRiskAssessment(
+                    'assessLoanApplication',
+                    loan,
+                    tenantId
+                );
+
 
             if (
-                fraudAssessment &&
-                fraudAssessment.blockDisbursement
+                fraudAssessment?.blockDisbursement === true
             ) {
 
                 throw new Error(
@@ -682,90 +1251,131 @@ class LoanWorkflowService {
                 );
             }
 
+
+            const disbursementAmount =
+                payload.amount !== undefined
+
+                    ? this.normalizeAmount(
+                        payload.amount,
+                        'disbursement amount'
+                    )
+
+                    : this.normalizeAmount(
+                        loan.approvedAmount ||
+                        loan.finalApprovedAmount ||
+                        loan.amount,
+                        'disbursement amount'
+                    );
+
+
+            const maximumApproved =
+                Number(
+                    loan.approvedAmount ||
+                    loan.finalApprovedAmount ||
+                    loan.amount ||
+                    0
+                );
+
+
+            if (
+                disbursementAmount >
+                maximumApproved
+            ) {
+
+                throw new Error(
+                    'Disbursement amount exceeds approved amount'
+                );
+            }
+
+
             const disbursementReference =
-                payload?.reference ||
-                `DIS-${Date.now()}`;
+                payload.reference ||
+                this.generateReference('DIS');
+
+
+            const disbursedAt =
+                new Date();
+
 
             const disbursementData = {
 
                 status:
-                    'DISBURSED',
+                    STATUS.DISBURSED,
 
-                disbursedAt:
-                    new Date(),
+                disbursedAt,
 
                 disbursedBy:
-                    actor?._id ||
-                    actor?.id,
+                    this.getActorId(actor),
 
                 disbursedByName:
-                    actor?.name,
+                    this.getActorName(actor),
 
                 disbursementReference,
 
                 disbursementChannel:
-                    payload?.channel ||
+                    payload.channel ||
                     'INTERNAL',
 
                 disbursementAccount:
-                    payload?.accountNumber,
+                    payload.accountNumber,
 
-                disbursementAmount:
-                    payload?.amount ||
-                    loan.approvedAmount ||
-                    loan.amount,
+                disbursementAmount,
 
                 transactionReference:
-                    payload?.transactionReference,
+                    payload.transactionReference,
 
                 valueDate:
-                    payload?.valueDate ||
-                    new Date()
+                    this.normalizeDate(
+                        payload.valueDate,
+                        'valueDate'
+                    )
             };
+
 
             const updatedLoan =
                 await LoanRepository.update(
                     loanId,
-                    disbursementData,
-                    tenantId
+                    tenantId,
+                    disbursementData
                 );
 
+
+            if (!updatedLoan) {
+
+                throw new Error(
+                    'Loan disbursement update failed'
+                );
+            }
+
+
             /*
-             * Generate repayment schedule
+             * Schedule generation is performed only after
+             * the loan has successfully entered DISBURSED state.
              */
 
             if (
                 ScheduleRepository &&
-                ScheduleRepository
-                    .generateSchedule
+                typeof ScheduleRepository.generateSchedule ===
+                    'function'
             ) {
 
-                await ScheduleRepository
-                    .generateSchedule(
-                        loanId,
-                        tenantId
-                    );
+                await ScheduleRepository.generateSchedule(
+                    loanId,
+                    tenantId
+                );
             }
 
-            /*
-             * Future Integration Point:
-             * MTN MoMo
-             * Airtel Money
-             * Banking APIs
-             */
 
-            await LoanAuditRepository.create({
+            await this.audit({
 
                 tenantId,
 
                 loanId,
 
                 action:
-                    'LOAN_DISBURSED',
+                    ACTION.DISBURSED,
 
-                actor:
-                    actor?._id ||
-                    actor?.id,
+                actor,
 
                 metadata: {
 
@@ -773,18 +1383,19 @@ class LoanWorkflowService {
                         disbursementReference,
 
                     amount:
-                        disbursementData
-                            .disbursementAmount,
+                        disbursementAmount,
 
                     channel:
-                        disbursementData
-                            .disbursementChannel,
+                        disbursementData.disbursementChannel,
 
                     transactionReference:
-                        disbursementData
-                            .transactionReference
+                        disbursementData.transactionReference,
+
+                    riskAssessment:
+                        fraudAssessment
                 }
             });
+
 
             logger.info(
                 '[LoanWorkflow] Loan disbursed successfully',
@@ -792,9 +1403,12 @@ class LoanWorkflowService {
                     tenantId,
                     loanId,
                     reference:
-                        disbursementReference
+                        disbursementReference,
+                    amount:
+                        disbursementAmount
                 }
             );
+
 
             return {
 
@@ -804,18 +1418,15 @@ class LoanWorkflowService {
                     updatedLoan,
 
                 status:
-                    'DISBURSED',
+                    STATUS.DISBURSED,
 
                 reference:
                     disbursementReference,
 
                 amount:
-                    disbursementData
-                        .disbursementAmount,
+                    disbursementAmount,
 
-                disbursedAt:
-                    disbursementData
-                        .disbursedAt
+                disbursedAt
             };
 
         } catch (error) {
@@ -833,107 +1444,126 @@ class LoanWorkflowService {
             throw error;
         }
     }
-    /* =======================================================================
-       REPAYMENT
-    ======================================================================= */
+
+
+    /* ========================================================================
+     * REPAYMENT
+     * ====================================================================== */
 
     static async recordRepayment(
         loanId,
-        repaymentData,
+        repaymentData = {},
         actor,
         tenantId
     ) {
 
+        this.assertTenant(tenantId);
+
         try {
 
             const loan =
-                await LoanRepository.findById(
+                await this.getLoanOrThrow(
                     loanId,
                     tenantId
                 );
 
-            if (!loan) {
 
-                throw new Error(
-                    'Loan not found'
-                );
-            }
+            this.assertStatus(
+                loan,
+                REPAYABLE_STATUSES
+            );
 
-            if (
-                ![
-                    'DISBURSED',
-                    'ACTIVE',
-                    'OVERDUE'
-                ].includes(
-                    loan.status
-                )
-            ) {
-
-                throw new Error(
-                    `Loan status ${loan.status} cannot accept repayments`
-                );
-            }
 
             const amount =
-                Number(
-                    repaymentData.amount
+                this.normalizeAmount(
+                    repaymentData.amount,
+                    'repayment amount'
                 );
 
+
+            const outstandingBalance =
+                this.roundMoney(
+                    loan.outstandingBalance ??
+                    loan.totalRepayable ??
+                    0
+                );
+
+
             if (
-                !amount ||
-                amount <= 0
+                outstandingBalance <= 0
             ) {
 
                 throw new Error(
-                    'Invalid repayment amount'
+                    'Loan has no outstanding balance'
                 );
             }
 
-            const outstandingBalance =
-                loan.outstandingBalance ||
-                loan.totalRepayable;
-
-            let newBalance =
-                outstandingBalance -
-                amount;
 
             if (
-                newBalance < 0
+                amount >
+                outstandingBalance
             ) {
 
-                newBalance = 0;
+                throw new Error(
+                    'Repayment amount exceeds outstanding balance'
+                );
             }
+
+
+            const newBalance =
+                this.roundMoney(
+                    Math.max(
+                        outstandingBalance -
+                        amount,
+                        0
+                    )
+                );
+
 
             let loanStatus =
                 loan.status;
+
 
             if (
                 newBalance === 0
             ) {
 
                 loanStatus =
-                    'CLOSED';
+                    STATUS.CLOSED;
 
             } else if (
-                loanStatus ===
-                'OVERDUE'
+                loan.status ===
+                STATUS.OVERDUE
             ) {
 
                 loanStatus =
-                    'ACTIVE';
+                    STATUS.ACTIVE;
             }
+
 
             const paymentReference =
                 repaymentData.reference ||
-                `PAY-${Date.now()}`;
+                this.generateReference('PAY');
+
+
+            const paymentDate =
+                this.normalizeDate(
+                    repaymentData.paymentDate,
+                    'paymentDate'
+                );
+
+
+            /*
+             * Repository-level repayment history support.
+             * This is optional to preserve compatibility with
+             * existing repositories.
+             */
 
             const repaymentRecord = {
 
                 amount,
 
-                paymentDate:
-                    repaymentData.paymentDate ||
-                    new Date(),
+                paymentDate,
 
                 reference:
                     paymentReference,
@@ -946,77 +1576,86 @@ class LoanWorkflowService {
                     repaymentData.transactionReference,
 
                 receivedBy:
-                    actor?._id ||
-                    actor?.id,
+                    this.getActorId(actor),
 
                 notes:
                     repaymentData.notes
             };
 
+
             if (
-                LoanRepository
-                    .recordRepayment
+                typeof LoanRepository.recordRepayment ===
+                    'function'
             ) {
 
-                await LoanRepository
-                    .recordRepayment(
-                        loanId,
-                        repaymentRecord,
-                        tenantId
-                    );
+                await LoanRepository.recordRepayment(
+                    loanId,
+                    repaymentRecord,
+                    tenantId
+                );
             }
+
 
             const updatedLoan =
                 await LoanRepository.update(
                     loanId,
+                    tenantId,
                     {
 
                         outstandingBalance:
                             newBalance,
 
                         lastRepaymentDate:
-                            new Date(),
+                            paymentDate,
 
                         lastRepaymentAmount:
                             amount,
 
                         repaymentCount:
-                            (
-                                loan.repaymentCount ||
-                                0
+                            Number(
+                                loan.repaymentCount || 0
                             ) + 1,
 
                         status:
                             loanStatus
-                    },
-                    tenantId
+                    }
                 );
 
+
             if (
-                ScheduleRepository
-                    .applyRepayment
+                !updatedLoan
             ) {
 
-                await ScheduleRepository
-                    .applyRepayment(
-                        loanId,
-                        amount,
-                        tenantId
-                    );
+                throw new Error(
+                    'Repayment update failed'
+                );
             }
 
-            await LoanAuditRepository.create({
+
+            if (
+                ScheduleRepository &&
+                typeof ScheduleRepository.applyRepayment ===
+                    'function'
+            ) {
+
+                await ScheduleRepository.applyRepayment(
+                    loanId,
+                    amount,
+                    tenantId
+                );
+            }
+
+
+            await this.audit({
 
                 tenantId,
 
                 loanId,
 
                 action:
-                    'LOAN_REPAYMENT_RECORDED',
+                    ACTION.REPAYMENT,
 
-                actor:
-                    actor?._id ||
-                    actor?.id,
+                actor,
 
                 metadata: {
 
@@ -1030,11 +1669,16 @@ class LoanWorkflowService {
 
                     paymentReference,
 
+                    paymentDate,
+
                     channel:
-                        repaymentRecord
-                            .paymentChannel
+                        repaymentRecord.paymentChannel,
+
+                    transactionReference:
+                        repaymentRecord.transactionReference
                 }
             });
+
 
             logger.info(
                 '[LoanWorkflow] Repayment recorded',
@@ -1046,6 +1690,7 @@ class LoanWorkflowService {
                         newBalance
                 }
             );
+
 
             return {
 
@@ -1082,6 +1727,7 @@ class LoanWorkflowService {
         }
     }
 
+
     static async repayLoan(
         loanId,
         repaymentData,
@@ -1089,34 +1735,18 @@ class LoanWorkflowService {
         tenantId
     ) {
 
-        try {
-
-            return await this
-                .recordRepayment(
-                    loanId,
-                    repaymentData,
-                    actor,
-                    tenantId
-                );
-
-        } catch (error) {
-
-            logger.error(
-                '[LoanWorkflow] Repay loan failed',
-                {
-                    tenantId,
-                    loanId,
-                    error:
-                        error.message
-                }
-            );
-
-            throw error;
-        }
+        return this.recordRepayment(
+            loanId,
+            repaymentData,
+            actor,
+            tenantId
+        );
     }
-    /* =======================================================================
-       SCHEDULES
-    ======================================================================= */
+
+
+    /* ========================================================================
+     * SCHEDULES
+     * ====================================================================== */
 
     static async getLoanSchedule(
         loanId,
@@ -1124,24 +1754,34 @@ class LoanWorkflowService {
     ) {
 
         const loan =
-            await LoanRepository.findById(
+            await this.getLoanOrThrow(
                 loanId,
                 tenantId
             );
 
-        if (!loan) {
+
+        if (
+            !ScheduleRepository ||
+            typeof ScheduleRepository.findByLoan !==
+                'function'
+        ) {
 
             throw new Error(
-                'Loan not found'
+                'Loan schedule service is unavailable'
             );
         }
 
-        return await ScheduleRepository
-            .findByLoan(
-                loanId,
-                tenantId
-            );
+
+        return ScheduleRepository.findByLoan(
+            loan._id,
+            tenantId
+        );
     }
+
+
+    /* ========================================================================
+     * LOAN SUMMARY
+     * ====================================================================== */
 
     static async getLoanSummary(
         loanId,
@@ -1152,55 +1792,61 @@ class LoanWorkflowService {
         try {
 
             const loan =
-                await LoanRepository.findById(
+                await this.getLoanOrThrow(
                     loanId,
                     tenantId
                 );
 
-            if (!loan) {
-
-                throw new Error(
-                    'Loan not found'
-                );
-            }
 
             const [
                 schedule,
                 auditTrail
             ] = await Promise.all([
 
-                ScheduleRepository
-                    .findByLoan(
-                        loanId,
-                        tenantId
-                    ),
+                ScheduleRepository.findByLoan(
+                    loanId,
+                    tenantId
+                ),
 
-                LoanAuditRepository
-                    .findByLoan(
-                        loanId,
-                        tenantId
-                    )
+                LoanAuditRepository.findByLoan(
+                    loanId,
+                    tenantId
+                )
             ]);
 
+
+            const scheduleItems =
+                Array.isArray(schedule)
+                    ? schedule
+                    : [];
+
+
+            const auditItems =
+                Array.isArray(auditTrail)
+                    ? auditTrail
+                    : [];
+
+
             const totalInstallments =
-                schedule.length;
+                scheduleItems.length;
+
 
             const paidInstallments =
-                schedule.filter(
+                scheduleItems.filter(
                     item =>
-                        item.status ===
-                        'PAID'
+                        item.status === 'PAID'
                 ).length;
+
 
             const overdueInstallments =
-                schedule.filter(
+                scheduleItems.filter(
                     item =>
-                        item.status ===
-                        'OVERDUE'
+                        item.status === 'OVERDUE'
                 ).length;
 
+
             const upcomingInstallment =
-                schedule.find(
+                scheduleItems.find(
                     item =>
                         [
                             'PENDING',
@@ -1208,43 +1854,56 @@ class LoanWorkflowService {
                         ].includes(
                             item.status
                         )
-                );
+                ) || null;
+
 
             const totalPaid =
-                schedule.reduce(
-                    (
-                        total,
-                        installment
-                    ) =>
-                        total +
+                this.roundMoney(
+                    scheduleItems.reduce(
                         (
+                            total,
                             installment
-                                .amountPaid ||
-                            0
-                        ),
-                    0
+                        ) =>
+                            total +
+                            Number(
+                                installment.amountPaid || 0
+                            ),
+                        0
+                    )
                 );
+
+
+            const totalRepayable =
+                Number(
+                    loan.totalRepayable || 0
+                );
+
 
             const totalOutstanding =
-                loan.outstandingBalance ??
-                (
-                    loan.totalRepayable -
-                    totalPaid
+                this.roundMoney(
+                    loan.outstandingBalance ??
+                    Math.max(
+                        totalRepayable -
+                        totalPaid,
+                        0
+                    )
                 );
 
+
             const repaymentProgress =
-                loan.totalRepayable > 0
+                totalRepayable > 0
 
                     ? Number(
                         (
                             (
                                 totalPaid /
-                                loan.totalRepayable
+                                totalRepayable
                             ) * 100
                         ).toFixed(2)
                     )
 
                     : 0;
+
 
             const portfolioCategory =
 
@@ -1258,29 +1917,41 @@ class LoanWorkflowService {
 
                         : 'PERFORMING';
 
+
             let creditDecision =
                 null;
 
+
             try {
 
-                creditDecision =
-                    await CreditScoringService
-                        .calculateScore(
+                if (
+                    CreditScoringService &&
+                    typeof CreditScoringService.calculateScore ===
+                        'function'
+                ) {
+
+                    creditDecision =
+                        await CreditScoringService.calculateScore(
                             loan.member,
                             loan
                         );
+                }
 
             } catch (error) {
 
                 logger.warn(
                     '[LoanWorkflow] Credit score unavailable',
                     {
-                        loanId
+                        tenantId,
+                        loanId,
+                        error:
+                            error.message
                     }
                 );
             }
 
-            const summary = {
+
+            return {
 
                 loanId:
                     loan._id,
@@ -1317,8 +1988,7 @@ class LoanWorkflowService {
                 maturityDate:
                     loan.maturityDate,
 
-                totalRepayable:
-                    loan.totalRepayable,
+                totalRepayable,
 
                 totalPaid,
 
@@ -1336,13 +2006,15 @@ class LoanWorkflowService {
                     overdueInstallments,
 
                     remainingInstallments:
-                        totalInstallments -
-                        paidInstallments
+                        Math.max(
+                            totalInstallments -
+                            paidInstallments,
+                            0
+                        )
                 },
 
                 nextInstallment:
-                    upcomingInstallment
-                    || null,
+                    upcomingInstallment,
 
                 creditInformation:
                     creditDecision,
@@ -1350,15 +2022,13 @@ class LoanWorkflowService {
                 auditMetrics: {
 
                     totalAuditRecords:
-                        auditTrail.length,
+                        auditItems.length,
 
                     latestActivity:
-                        auditTrail.length > 0
-
-                            ? auditTrail[
-                            auditTrail.length - 1
+                        auditItems.length
+                            ? auditItems[
+                                auditItems.length - 1
                             ]
-
                             : null
                 },
 
@@ -1366,31 +2036,19 @@ class LoanWorkflowService {
                     portfolioCategory,
 
                 generatedAt:
-                    new Date()
-                        .toISOString(),
+                    new Date().toISOString(),
 
                 generatedFor:
-                    user?._id ||
-                    user?.id
+                    this.getActorId(user)
             };
-
-            logger.info(
-                '[LoanWorkflow] Loan summary generated',
-                {
-                    loanId,
-                    tenantId
-                }
-            );
-
-            return summary;
 
         } catch (error) {
 
             logger.error(
                 '[LoanWorkflow] Summary generation failed',
                 {
-                    loanId,
                     tenantId,
+                    loanId,
                     error:
                         error.message
                 }
@@ -1400,31 +2058,38 @@ class LoanWorkflowService {
         }
     }
 
-    /* =======================================================================
-        DELINQUENCY
-     ======================================================================= */
+
+    /* ========================================================================
+     * DELINQUENCY
+     * ====================================================================== */
 
     static async getOverdueLoans(
         tenantId
     ) {
 
+        this.assertTenant(tenantId);
+
         try {
 
             const loans =
-                await LoanRepository
-                    .getOverdueLoans(
-                        tenantId
-                    );
+                await LoanRepository.getOverdueLoans(
+                    tenantId
+                );
+
 
             const enhancedLoans =
-                loans.map(
+                (loans || []).map(
                     loan => {
 
                         const daysPastDue =
-                            loan.daysPastDue || 0;
+                            Number(
+                                loan.daysPastDue || 0
+                            );
+
 
                         let parCategory =
                             'PAR_0';
+
 
                         if (
                             daysPastDue >= 90
@@ -1448,6 +2113,7 @@ class LoanWorkflowService {
                                 'PAR_30';
                         }
 
+
                         return {
 
                             ...loan,
@@ -1466,7 +2132,6 @@ class LoanWorkflowService {
 
                                         : daysPastDue >= 30
                                             ? 'MEDIUM'
-
                                             : 'LOW',
 
                             riskClassification:
@@ -1476,20 +2141,11 @@ class LoanWorkflowService {
 
                                     : daysPastDue >= 60
                                         ? 'HIGH'
-
                                         : 'MODERATE'
                         };
                     }
                 );
 
-            logger.info(
-                '[LoanWorkflow] Overdue loans retrieved',
-                {
-                    tenantId,
-                    count:
-                        enhancedLoans.length
-                }
-            );
 
             return {
 
@@ -1500,8 +2156,7 @@ class LoanWorkflowService {
                     enhancedLoans,
 
                 generatedAt:
-                    new Date()
-                        .toISOString()
+                    new Date().toISOString()
             };
 
         } catch (error) {
@@ -1519,20 +2174,23 @@ class LoanWorkflowService {
         }
     }
 
+
     static async getDefaultedLoans(
         tenantId
     ) {
 
+        this.assertTenant(tenantId);
+
         try {
 
             const loans =
-                await LoanRepository
-                    .getDefaultedLoans(
-                        tenantId
-                    );
+                await LoanRepository.getDefaultedLoans(
+                    tenantId
+                );
+
 
             const enhancedLoans =
-                loans.map(
+                (loans || []).map(
                     loan => ({
 
                         ...loan,
@@ -1546,10 +2204,8 @@ class LoanWorkflowService {
                             'PRE_LEGAL',
 
                         writeOffEligible:
-
-                            (
-                                loan.daysPastDue ||
-                                0
+                            Number(
+                                loan.daysPastDue || 0
                             ) >= 180,
 
                         riskClassification:
@@ -1557,28 +2213,22 @@ class LoanWorkflowService {
                     })
                 );
 
+
             const totalOutstanding =
-                enhancedLoans.reduce(
-                    (
-                        total,
-                        loan
-                    ) =>
-                        total +
+                this.roundMoney(
+                    enhancedLoans.reduce(
                         (
-                            loan.outstandingBalance ||
-                            0
-                        ),
-                    0
+                            total,
+                            loan
+                        ) =>
+                            total +
+                            Number(
+                                loan.outstandingBalance || 0
+                            ),
+                        0
+                    )
                 );
 
-            logger.info(
-                '[LoanWorkflow] Defaulted loans retrieved',
-                {
-                    tenantId,
-                    count:
-                        enhancedLoans.length
-                }
-            );
 
             return {
 
@@ -1591,8 +2241,7 @@ class LoanWorkflowService {
                     enhancedLoans,
 
                 generatedAt:
-                    new Date()
-                        .toISOString()
+                    new Date().toISOString()
             };
 
         } catch (error) {
@@ -1609,110 +2258,99 @@ class LoanWorkflowService {
             throw error;
         }
     }
-    /* =======================================================================
-       PORTFOLIO METRICS
-    ======================================================================= */
+
+
+    /* ========================================================================
+     * PORTFOLIO METRICS
+     * ====================================================================== */
 
     static async getPortfolioMetrics(
         tenantId
     ) {
 
+        this.assertTenant(tenantId);
+
         try {
 
             const [
-
                 par30,
-
                 par60,
-
                 par90,
-
-                portfolioAtRisk,
-
                 averageLoanSize,
-
-                totalPortfolioValue,
-
-                activePortfolioValue,
-
-                activeLoans,
-
+                loanBook,
                 overdueLoans,
-
-                defaultedLoans,
-
-                closedLoans
-
+                defaultedLoans
             ] = await Promise.all([
 
-                LoanRepository
-                    .calculatePAR30(
-                        tenantId
-                    ),
+                LoanRepository.calculatePAR30(
+                    tenantId
+                ),
 
-                LoanRepository
-                    .calculatePAR60(
-                        tenantId
-                    ),
+                LoanRepository.calculatePAR60(
+                    tenantId
+                ),
 
-                LoanRepository
-                    .calculatePAR90(
-                        tenantId
-                    ),
+                LoanRepository.calculatePAR90(
+                    tenantId
+                ),
 
-                LoanRepository
-                    .calculatePortfolioAtRisk(
-                        tenantId
-                    ),
+                LoanRepository.getAverageLoanSize(
+                    tenantId
+                ),
 
-                LoanRepository
-                    .getAverageLoanSize(
-                        tenantId
-                    ),
+                LoanRepository.getLoanBookSummary(
+                    tenantId
+                ),
 
-                LoanRepository
-                    .getTotalPortfolioValue?.(
-                        tenantId
-                    ) || 0,
+                LoanRepository.getOverdueLoans(
+                    tenantId
+                ),
 
-                LoanRepository
-                    .getActivePortfolioValue?.(
-                        tenantId
-                    ) || 0,
-
-                LoanRepository
-                    .countByStatus?.(
-                        'ACTIVE',
-                        tenantId
-                    ) || 0,
-
-                LoanRepository
-                    .countByStatus?.(
-                        'OVERDUE',
-                        tenantId
-                    ) || 0,
-
-                LoanRepository
-                    .countByStatus?.(
-                        'DEFAULTED',
-                        tenantId
-                    ) || 0,
-
-                LoanRepository
-                    .countByStatus?.(
-                        'CLOSED',
-                        tenantId
-                    ) || 0
+                LoanRepository.getDefaultedLoans(
+                    tenantId
+                )
             ]);
 
+
+            const overdueExposure =
+                this.roundMoney(
+                    (overdueLoans || []).reduce(
+                        (
+                            total,
+                            loan
+                        ) =>
+                            total +
+                            Number(
+                                loan.outstandingBalance || 0
+                            ),
+                        0
+                    )
+                );
+
+
+            const defaultExposure =
+                this.roundMoney(
+                    (defaultedLoans || []).reduce(
+                        (
+                            total,
+                            loan
+                        ) =>
+                            total +
+                            Number(
+                                loan.outstandingBalance || 0
+                            ),
+                        0
+                    )
+                );
+
+
             const totalLoans =
+                Number(
+                    loanBook.totalLoans || 0
+                );
 
-                activeLoans +
-                overdueLoans +
-                defaultedLoans +
-                closedLoans;
 
-            const portfolioHealthScore =
+            const portfolioHealth =
 
                 par30 <= 5
                     ? 'EXCELLENT'
@@ -1720,114 +2358,178 @@ class LoanWorkflowService {
                     : par30 <= 10
                         ? 'GOOD'
 
-    /* =======================================================================
-   RISK METRICS
-======================================================================= */
+                        : par30 <= 15
+                            ? 'WATCH'
 
-static async getRiskMetrics(
-                            tenantId
-                        ) {
+                            : par30 <= 25
+                                ? 'HIGH_RISK'
+                                : 'CRITICAL';
+
+
+            return {
+
+                tenantId,
+
+                totalLoans,
+
+                totalPortfolioValue:
+                    this.roundMoney(
+                        loanBook.totalAmount
+                    ),
+
+                outstandingBalance:
+                    this.roundMoney(
+                        loanBook.outstandingBalance
+                    ),
+
+                repaidAmount:
+                    this.roundMoney(
+                        loanBook.repaidAmount
+                    ),
+
+                averageLoanSize:
+                    this.roundMoney(
+                        averageLoanSize
+                    ),
+
+                par30,
+                par60,
+                par90,
+
+                overdueExposure,
+
+                defaultExposure,
+
+                overdueLoanCount:
+                    (overdueLoans || []).length,
+
+                defaultedLoanCount:
+                    (defaultedLoans || []).length,
+
+                portfolioHealth,
+
+                generatedAt:
+                    new Date().toISOString()
+            };
+
+        } catch (error) {
+
+            logger.error(
+                '[LoanWorkflow] Portfolio metrics failed',
+                {
+                    tenantId,
+                    error:
+                        error.message
+                }
+            );
+
+            throw error;
+        }
+    }
+
+
+    /* ========================================================================
+     * RISK METRICS
+     * ====================================================================== */
+
+    static async getRiskMetrics(
+        tenantId
+    ) {
+
+        this.assertTenant(tenantId);
 
         try {
 
             const [
-
                 nplRatio,
-
                 collectionRatio,
-
-                loanRecoveryRate,
-
+                recoveryRate,
                 writeOffRate,
-
                 averageDaysPastDue,
-
-                fraudRiskScore,
-
+                portfolioAtRisk,
                 overdueLoans,
-
                 defaultedLoans,
-
-                portfolioAtRisk
-
+                fraudRiskScore
             ] = await Promise.all([
 
-                LoanRepository
-                    .calculateNPLRatio(
-                        tenantId
-                    ),
+                LoanRepository.calculateNPLRatio(
+                    tenantId
+                ),
 
-                LoanRepository
-                    .calculateCollectionRatio(
-                        tenantId
-                    ),
+                LoanRepository.calculateCollectionRatio(
+                    tenantId
+                ),
 
-                LoanRepository
-                    .calculateRecoveryRate(
-                        tenantId
-                    ),
+                LoanRepository.calculateRecoveryRate(
+                    tenantId
+                ),
 
-                LoanRepository
-                    .calculateWriteOffRate(
-                        tenantId
-                    ),
+                LoanRepository.calculateWriteOffRate(
+                    tenantId
+                ),
 
-                LoanRepository
-                    .calculateAverageDaysPastDue(
-                        tenantId
-                    ),
+                LoanRepository.calculateAverageDaysPastDue(
+                    tenantId
+                ),
 
-                RiskEngineService
-                    .calculateFraudRiskScore(
-                        tenantId
-                    ),
+                LoanRepository.calculatePortfolioAtRisk(
+                    tenantId
+                ),
 
-                LoanRepository
-                    .getOverdueLoans(
-                        tenantId
-                    ),
+                LoanRepository.getOverdueLoans(
+                    tenantId
+                ),
 
-                LoanRepository
-                    .getDefaultedLoans(
-                        tenantId
-                    ),
+                LoanRepository.getDefaultedLoans(
+                    tenantId
+                ),
 
-                LoanRepository
-                    .calculatePortfolioAtRisk(
+                typeof RiskEngineService?.calculateFraudRiskScore ===
+                    'function'
+
+                    ? RiskEngineService.calculateFraudRiskScore(
                         tenantId
                     )
+
+                    : 0
             ]);
 
+
             const delinquencyExposure =
-                overdueLoans.reduce(
-                    (
-                        total,
-                        loan
-                    ) =>
-                        total +
+                this.roundMoney(
+                    (overdueLoans || []).reduce(
                         (
-                            loan.outstandingBalance ||
-                            0
-                        ),
-                    0
+                            total,
+                            loan
+                        ) =>
+                            total +
+                            Number(
+                                loan.outstandingBalance || 0
+                            ),
+                        0
+                    )
                 );
 
+
             const defaultExposure =
-                defaultedLoans.reduce(
-                    (
-                        total,
-                        loan
-                    ) =>
-                        total +
+                this.roundMoney(
+                    (defaultedLoans || []).reduce(
                         (
-                            loan.outstandingBalance ||
-                            0
-                        ),
-                    0
+                            total,
+                            loan
+                        ) =>
+                            total +
+                            Number(
+                                loan.outstandingBalance || 0
+                            ),
+                        0
+                    )
                 );
+
 
             let portfolioRiskRating =
                 'LOW';
+
 
             if (
                 nplRatio >= 15 ||
@@ -1852,6 +2554,7 @@ static async getRiskMetrics(
                     'MODERATE';
             }
 
+
             const earlyWarningIndicators = {
 
                 highNPL:
@@ -1861,7 +2564,9 @@ static async getRiskMetrics(
                     fraudRiskScore > 70,
 
                 highPortfolioRisk:
-                    portfolioAtRisk > 10,
+                    Number(
+                        portfolioAtRisk?.par30 || 0
+                    ) > 10,
 
                 weakCollections:
                     collectionRatio < 85,
@@ -1870,18 +2575,25 @@ static async getRiskMetrics(
                     writeOffRate > 3
             };
 
-            const expectedCreditLoss = Number(
-                (
+
+            /*
+             * This is an operational estimate only.
+             * Regulatory ECL should eventually be supplied by
+             * the institution's approved impairment engine.
+             */
+
+            const expectedCreditLoss =
+                this.roundMoney(
                     (
                         delinquencyExposure * 0.05
                     ) +
                     (
                         defaultExposure * 0.25
                     )
-                ).toFixed(2)
-            );
+                );
 
-            const riskSummary = {
+
+            return {
 
                 tenantId,
 
@@ -1904,7 +2616,8 @@ static async getRiskMetrics(
 
                     collectionRatio,
 
-                    loanRecoveryRate,
+                    loanRecoveryRate:
+                        recoveryRate,
 
                     writeOffRate
                 },
@@ -1912,10 +2625,10 @@ static async getRiskMetrics(
                 exposureMetrics: {
 
                     overdueLoans:
-                        overdueLoans.length,
+                        (overdueLoans || []).length,
 
                     defaultedLoans:
-                        defaultedLoans.length,
+                        (defaultedLoans || []).length,
 
                     delinquencyExposure,
 
@@ -1925,19 +2638,8 @@ static async getRiskMetrics(
                 earlyWarningIndicators,
 
                 generatedAt:
-                    new Date()
-                        .toISOString()
+                    new Date().toISOString()
             };
-
-            logger.info(
-                '[LoanWorkflow] Risk metrics generated',
-                {
-                    tenantId,
-                    portfolioRiskRating
-                }
-            );
-
-            return riskSummary;
 
         } catch (error) {
 
@@ -1954,30 +2656,195 @@ static async getRiskMetrics(
         }
     }
 
-    /* =======================================================================
-    BOARD REPORTING
- ======================================================================= */
+
+    /* ========================================================================
+     * FRAUD ALERTS
+     * ====================================================================== */
+
+    static async getFraudAlerts(
+        tenantId
+    ) {
+
+        this.assertTenant(tenantId);
+
+        if (
+            !RiskEngineService ||
+            typeof RiskEngineService.getFraudAlerts !==
+                'function'
+        ) {
+
+            return {
+
+                totalAlerts: 0,
+
+                criticalAlerts: 0,
+
+                highRiskAlerts: 0,
+
+                mediumRiskAlerts: 0,
+
+                lowRiskAlerts: 0,
+
+                alerts: []
+            };
+        }
+
+
+        const alerts =
+            await RiskEngineService.getFraudAlerts(
+                tenantId
+            );
+
+
+        const enhancedAlerts =
+            (alerts || []).map(
+                alert => {
+
+                    const score =
+                        Number(
+                            alert.riskScore || 0
+                        );
+
+
+                    const severity =
+                        score >= 90
+                            ? 'CRITICAL'
+                            : score >= 75
+                                ? 'HIGH'
+                                : score >= 50
+                                    ? 'MEDIUM'
+                                    : 'LOW';
+
+
+                    return {
+
+                        ...alert,
+
+                        severity,
+
+                        priority:
+                            severity === 'CRITICAL'
+                                ? 1
+                                : severity === 'HIGH'
+                                    ? 2
+                                    : severity === 'MEDIUM'
+                                        ? 3
+                                        : 4,
+
+                        escalationRequired:
+                            severity === 'CRITICAL' ||
+                            severity === 'HIGH'
+                    };
+                }
+            );
+
+
+        return {
+
+            totalAlerts:
+                enhancedAlerts.length,
+
+            criticalAlerts:
+                enhancedAlerts.filter(
+                    item =>
+                        item.severity ===
+                        'CRITICAL'
+                ).length,
+
+            highRiskAlerts:
+                enhancedAlerts.filter(
+                    item =>
+                        item.severity ===
+                        'HIGH'
+                ).length,
+
+            mediumRiskAlerts:
+                enhancedAlerts.filter(
+                    item =>
+                        item.severity ===
+                        'MEDIUM'
+                ).length,
+
+            lowRiskAlerts:
+                enhancedAlerts.filter(
+                    item =>
+                        item.severity ===
+                        'LOW'
+                ).length,
+
+            alerts:
+                enhancedAlerts
+        };
+    }
+
+
+    /* ========================================================================
+     * COMPLIANCE ALERTS
+     * ====================================================================== */
+
+    static async getComplianceAlerts(
+        tenantId
+    ) {
+
+        this.assertTenant(tenantId);
+
+        if (
+            !ComplianceService
+        ) {
+
+            return [];
+        }
+
+
+        if (
+            typeof ComplianceService.getLoanAlerts ===
+                'function'
+        ) {
+
+            return (
+                await ComplianceService.getLoanAlerts(
+                    tenantId
+                )
+            ) || [];
+        }
+
+
+        if (
+            typeof ComplianceService.getComplianceAlerts ===
+                'function'
+        ) {
+
+            return (
+                await ComplianceService.getComplianceAlerts(
+                    tenantId
+                )
+            ) || [];
+        }
+
+
+        return [];
+    }
+
+
+    /* ========================================================================
+     * BOARD REPORTING
+     * ====================================================================== */
 
     static async getBoardReport(
         tenantId
     ) {
 
+        this.assertTenant(tenantId);
+
         try {
 
             const [
-
                 portfolio,
-
                 risk,
-
                 overdueResult,
-
                 defaultedResult,
-
                 fraudAlerts,
-
                 complianceAlerts
-
             ] = await Promise.all([
 
                 this.getPortfolioMetrics(
@@ -2005,1208 +2872,1319 @@ static async getRiskMetrics(
                 )
             ]);
 
+
             const overdueLoans =
                 overdueResult?.loans || [];
+
 
             const defaultedLoans =
                 defaultedResult?.loans || [];
 
+
             const totalOverdueExposure =
-                overdueLoans.reduce(
-                    (
-                        total,
-                        loan
-                    ) =>
-                        total +
+                this.roundMoney(
+                    overdueLoans.reduce(
                         (
-                            loan.outstandingBalance ||
-                            0
-                        ),
-                    0
+                            total,
+                            loan
+                        ) =>
+                            total +
+                            Number(
+                                loan.outstandingBalance || 0
+                            ),
+                        0
+                    )
                 );
+
 
             const totalDefaultExposure =
-                defaultedLoans.reduce(
-                    (
-                        total,
-                        loan
-                    ) =>
-                        total +
+                this.roundMoney(
+                    defaultedLoans.reduce(
                         (
-                            loan.outstandingBalance ||
-                            0
-                        ),
-                    0
+                            total,
+                            loan
+                        ) =>
+                            total +
+                            Number(
+                                loan.outstandingBalance || 0
+                            ),
+                        0
+                    )
                 );
 
-            const boardReport = {
 
-                /* =======================================================================
-               FRAUD & COMPLIANCE
-            ======================================================================= */
+            return {
 
-                static async getFraudAlerts(
+                success: true,
+
+                tenantId,
+
+                generatedAt:
+                    new Date().toISOString(),
+
+                executiveSummary: {
+
+                    portfolioHealth:
+                        portfolio.portfolioHealth,
+
+                    portfolioRisk:
+                        risk.portfolioRiskRating,
+
+                    par30:
+                        portfolio.par30,
+
+                    par60:
+                        portfolio.par60,
+
+                    par90:
+                        portfolio.par90,
+
+                    nplRatio:
+                        risk.creditRisk.nplRatio,
+
+                    expectedCreditLoss:
+                        risk.creditRisk.expectedCreditLoss,
+
+                    fraudAlerts:
+                        fraudAlerts.totalAlerts,
+
+                    complianceAlerts:
+                        Array.isArray(
+                            complianceAlerts
+                        )
+                            ? complianceAlerts.length
+                            : 0
+                },
+
+                portfolio,
+
+                risk,
+
+                delinquency: {
+
+                    overdueLoanCount:
+                        overdueLoans.length,
+
+                    totalOverdueExposure,
+
+                    defaultedLoanCount:
+                        defaultedLoans.length,
+
+                    totalDefaultExposure
+                },
+
+                fraud: {
+
+                    summary:
+                        fraudAlerts,
+
+                    alerts:
+                        fraudAlerts.alerts || []
+                },
+
+                compliance: {
+
+                    totalAlerts:
+                        Array.isArray(
+                            complianceAlerts
+                        )
+                            ? complianceAlerts.length
+                            : 0,
+
+                    alerts:
+                        complianceAlerts
+                }
+            };
+
+        } catch (error) {
+
+            logger.error(
+                '[LoanWorkflow] Board report generation failed',
+                {
+                    tenantId,
+                    error:
+                        error.message
+                }
+            );
+
+            throw error;
+        }
+    }
+
+
+    /* ========================================================================
+     * AUDIT TRAIL
+     * ====================================================================== */
+
+    static async getAuditTrail(
+        loanId,
+        tenantId
+    ) {
+
+        const loan =
+            await this.getLoanOrThrow(
+                loanId,
+                tenantId
+            );
+
+
+        const records =
+            await LoanAuditRepository.findByLoan(
+                loan._id,
+                tenantId
+            );
+
+
+        const timeline =
+            (records || []).map(
+                record => ({
+
+                    auditId:
+                        record._id,
+
+                    action:
+                        record.action,
+
+                    actor:
+                        record.actor,
+
+                    actorName:
+                        record.actorName,
+
+                    metadata:
+                        record.metadata,
+
+                    ipAddress:
+                        record.ipAddress,
+
+                    source:
+                        record.source ||
+                        'SYSTEM',
+
+                    timestamp:
+                        record.createdAt
+                })
+            );
+
+
+        return {
+
+            loanId,
+
+            tenantId,
+
+            timeline,
+
+            statistics: {
+
+                totalEvents:
+                    timeline.length,
+
+                approvals:
+                    timeline.filter(
+                        item =>
+                            item.action ===
+                            ACTION.APPROVED
+                    ).length,
+
+                rejections:
+                    timeline.filter(
+                        item =>
+                            item.action ===
+                            ACTION.REJECTED
+                    ).length,
+
+                disbursements:
+                    timeline.filter(
+                        item =>
+                            item.action ===
+                            ACTION.DISBURSED
+                    ).length,
+
+                repayments:
+                    timeline.filter(
+                        item =>
+                            item.action ===
+                            ACTION.REPAYMENT
+                    ).length,
+
+                manualReviews:
+                    timeline.filter(
+                        item =>
+                            item.action ===
+                            ACTION.MANUAL_REVIEW
+                    ).length,
+
+                writeOffs:
+                    timeline.filter(
+                        item =>
+                            item.action ===
+                            ACTION.WRITTEN_OFF
+                    ).length,
+
+                recoveries:
+                    timeline.filter(
+                        item =>
+                            item.action ===
+                            ACTION.RECOVERY
+                    ).length,
+
+                restructurings:
+                    timeline.filter(
+                        item =>
+                            item.action ===
+                            ACTION.RESTRUCTURED
+                    ).length
+            },
+
+            latestActivity:
+                timeline.length
+                    ? timeline[
+                        timeline.length - 1
+                    ]
+                    : null,
+
+            generatedAt:
+                new Date().toISOString()
+        };
+    }
+
+
+    /* ========================================================================
+     * WRITE-OFF
+     * ====================================================================== */
+
+    static async writeOffLoan(
+        loanId,
+        payload = {},
+        actor,
+        tenantId
+    ) {
+
+        this.assertTenant(tenantId);
+
+        try {
+
+            const loan =
+                await this.getLoanOrThrow(
+                    loanId,
                     tenantId
-                ) {
+                );
 
-                    try {
 
-                        const alerts =
-                            await RiskEngineService
-                                .getFraudAlerts(
-                                    tenantId
-                                );
+            this.assertStatus(
+                loan,
+                WRITE_OFF_STATUSES
+            );
 
-                        const enhancedAlerts =
-                            (alerts || []).map(
-                                alert => {
 
-                                    let severity =
-                                        'LOW';
+            const writeOffAmount =
+                payload.amount !== undefined
 
-                                    if (
-                                        alert.riskScore >= 90
-                                    ) {
+                    ? this.normalizeAmount(
+                        payload.amount,
+                        'writeOff amount'
+                    )
 
-                                        severity =
-                                            'CRITICAL';
+                    : this.normalizeAmount(
+                        loan.outstandingBalance || 0,
+                        'writeOff amount'
+                    );
 
-                                    } else if (
-                                        alert.riskScore >= 75
-                                    ) {
 
-                                        severity =
-                                            'HIGH';
+            const outstanding =
+                Number(
+                    loan.outstandingBalance || 0
+                );
 
-                                    } else if (
-                                        alert.riskScore >= 50
-                                    ) {
 
-                                        severity =
-                                            'MEDIUM';
-                                    }
+            if (
+                writeOffAmount >
+                outstanding
+            ) {
 
-                                    return {
+                throw new Error(
+                    'Write-off amount cannot exceed outstanding balance'
+                );
+            }
 
-                                        ...alert,
 
-                                        severity,
+            if (
+                !payload.reason
+            ) {
 
-                                        priority:
+                throw new Error(
+                    'Write-off reason is required'
+                );
+            }
 
-                                            severity ===
-                                                'CRITICAL'
 
-                                                ? 1
+            const writeOffDate =
+                new Date();
 
-                                                : severity ===
-                                                    'HIGH'
 
-                                                    ? 2
+            const writeOffData = {
 
-                                                    : severity ===
-                                                        'MEDIUM'
+                status:
+                    STATUS.WRITTEN_OFF,
 
-                                                        ? 3
+                writeOffAmount,
 
-                                                        : 4,
+                writeOffReason:
+                    payload.reason,
 
-                                        escalationRequired:
+                writeOffReference:
+                    payload.reference ||
+                    this.generateReference('WO'),
 
-                                            severity ===
-                                            'CRITICAL' ||
-                                            severity ===
-                                            'HIGH'
-                                    };
-                                }
-                            );
+                writeOffApprovedBy:
+                    this.getActorId(actor),
 
-                        const summary = {
+                writeOffApprovedByName:
+                    this.getActorName(actor),
 
-                            totalAlerts:
-                                enhancedAlerts.length,
+                writeOffDate,
 
-                            criticalAlerts:
-                                enhancedAlerts.filter(
-                                    item =>
-                                        item.severity ===
-                                        'CRITICAL'
-                                ).length,
+                provisionReleased:
+                    Boolean(
+                        payload.provisionReleased
+                    ),
 
-                            highRiskAlerts:
-                                enhancedAlerts.filter(
-                                    item =>
-                                        item.severity ===
-                                        'HIGH'
-                                ).length,
+                boardApprovalReference:
+                    payload.boardApprovalReference,
 
-                            mediumRiskAlerts:
-                                enhancedAlerts.filter(
-                                    item =>
-                                        item.severity ===
-                                        'MEDIUM'
-                                ).length,
+                outstandingBalance:
+                    this.roundMoney(
+                        outstanding -
+                        writeOffAmount
+                    )
+            };
 
-                            lowRiskAlerts:
-                                enhancedAlerts.filter(
-                                    item =>
-                                        item.severity ===
-                                        'LOW'
-                                ).length
-                        };
-
-                        logger.info(
-                            '[LoanWorkflow] Fraud alerts retrieved',
-                            {
-
-                                /* =======================================================================
-                                    AUDIT
-                                   ======================================================================= */
-
-                                static async getAuditTrail(
-                                    loanId,
-                                    tenantId
-                                ) {
-
-                                    try {
-
-                                        const loan =
-                                            await LoanRepository.findById(
-                                                loanId,
-                                                tenantId
-                                            );
-
-                                        if (!loan) {
-
-                                            throw new Error(
-                                                'Loan not found'
-                                            );
-                                        }
-
-                                        const auditRecords =
-                                            await LoanAuditRepository
-                                                .findByLoan(
-                                                    loanId,
-                                                    tenantId
-                                                );
-
-                                        const timeline =
-                                            auditRecords.map(
-                                                record => ({
-
-                                                    auditId:
-                                                        record._id,
-
-                                                    action:
-                                                        record.action,
-
-                                                    actor:
-                                                        record.actor,
-
-                                                    actorName:
-                                                        record.actorName,
-
-                                                    metadata:
-                                                        record.metadata,
-
-                                                    ipAddress:
-                                                        record.ipAddress,
-
-                                                    source:
-                                                        record.source ||
-                                                        'SYSTEM',
-
-                                                    timestamp:
-                                                        record.createdAt
-                                                })
-                                            );
-
-                                        const statistics = {
-
-                                            totalEvents:
-                                                timeline.length,
-
-                                            approvals:
-                                                timeline.filter(
-                                                    item =>
-                                                        item.action ===
-                                                        'LOAN_APPROVED'
-                                                ).length,
-
-                                            rejections:
-                                                timeline.filter(
-                                                    item =>
-                                                        item.action ===
-                                                        'LOAN_REJECTED'
-                                                ).length,
-
-                                            disbursements:
-                                                timeline.filter(
-                                                    item =>
-                                                        item.action ===
-                                                        'LOAN_DISBURSED'
-                                                ).length,
-
-                                            repayments:
-                                                timeline.filter(
-                                                    item =>
-                                                        item.action ===
-                                                        'LOAN_REPAYMENT_RECORDED'
-                                                ).length,
-
-                                            manualReviews:
-                                                timeline.filter(
-                                                    item =>
-                                                        item.action ===
-                                                        'LOAN_MANUAL_REVIEW'
-                                                ).length
-                                        };
-
-                                        const latestActivity =
-                                            timeline.length > 0
-
-                                                ? timeline
-                                                [
-
-                                                /* =======================================================================
-                                                     WRITE OFFS
-                                                   ======================================================================= */
-
-                                                static async writeOffLoan(
-                                                    loanId,
-                                                    payload,
-                                                    actor,
-                                                    tenantId
-                                                ) {
-
-                                                    try {
-
-                                                        const loan =
-                                                            await LoanRepository.findById(
-                                                                loanId,
-                                                                tenantId
-                                                            );
-
-                                                        if (!loan) {
-
-                                                            throw new Error(
-                                                                'Loan not found'
-                                                            );
-                                                        }
-
-                                                        if (
-                                                            ![
-                                                                'DEFAULTED',
-                                                                'OVERDUE'
-                                                            ].includes(
-                                                                loan.status
-                                                            )
-                                                        ) {
-
-                                                            throw new Error(
-                                                                'Only defaulted or overdue loans can be written off'
-                                                            );
-                                                        }
-
-                                                        const writeOffAmount =
-                                                            payload?.amount ||
-                                                            loan.outstandingBalance ||
-                                                            0;
-
-                                                        const writeOffData = {
-
-                                                            status:
-                                                                'WRITTEN_OFF',
-
-                                                            writeOffAmount,
-
-                                                            writeOffReason:
-                                                                payload?.reason,
-
-                                                            writeOffReference:
-                                                                payload?.reference,
-
-                                                            writeOffApprovedBy:
-                                                                actor?._id ||
-                                                                actor?.id,
-
-                                                            writeOffApprovedByName:
-                                                                actor?.name,
-
-                                                            writeOffDate:
-                                                                new Date(),
-
-                                                            provisionReleased:
-                                                                payload?.provisionReleased ||
-                                                                false,
-
-                                                            boardApprovalReference:
-                                                                payload?.boardApprovalReference
-                                                        };
-
-                                                        const updatedLoan =
-                                                            await LoanRepository.update(
-                                                                loanId,
-                                                                writeOffData,
-                                                                tenantId
-                                                            );
-
-                                                        await LoanAuditRepository.create({
-
-                                                            tenantId,
-
-                                                            loanId,
-
-                                                            action:
-                                                                'LOAN_WRITTEN_OFF',
-
-                                                            actor:
-                                                                actor?._id ||
-                                                                actor?.id,
-
-                                                            metadata:
-                                                                writeOffData
-                                                        });
-
-                                                        logger.info(
-                                                            '[LoanWorkflow] Loan written off',
-                                                            {
-                                                                tenantId,
-                                                                loanId,
-                                                                amount:
-                                                                    writeOffAmount
-                                                            }
-                                                        );
-
-                                                        return {
-
-                                                            success: true,
-
-                                                            status:
-                                                                'WRITTEN_OFF',
-
-                                                            loan:
-                                                                updatedLoan,
-
-                                                            writeOffAmount,
-
-                                                            writeOffDate:
-                                                                writeOffData.writeOffDate
-                                                        };
-
-                                                    } catch (error) {
-
-                                                        logger.error(
-                                                            '[LoanWorkflow] Write-off failed',
-                                                            {
-                                                                loanId,
-                                                                tenantId,
-                                                                error:
-                                                                    error.message
-                                                            }
-                                                        );
-
-                                                        throw error;
-                                                    }
-                                                }
-
-static async recoverLoan(
-                                                    loanId,
-                                                    payload,
-                                                    actor,
-                                                    tenantId
-                                                ) {
-
-                                    try {
-
-                                        const loan =
-                                            await LoanRepository.findById(
-                                                loanId,
-                                                tenantId
-                                            );
-
-                                        if (!loan) {
-
-                                            throw new Error(
-                                                'Loan not found'
-                                            );
-                                        }
-
-                                        if (
-                                            ![
-                                                'WRITTEN_OFF',
-                                                'DEFAULTED'
-                                            ].includes(
-                                                loan.status
-                                            )
-                                        ) {
-
-                                            throw new Error(
-                                                'Loan is not eligible for recovery'
-                                            );
-                                        }
-
-                                        const recoveryAmount =
-                                            Number(
-                                                payload?.amount || 0
-                                            );
-
-                                        if (
-                                            recoveryAmount <= 0
-                                        ) {
-
-                                            throw new Error(
-                                                'Recovery amount must be greater than zero'
-                                            );
-                                        }
-
-                                        const previousBalance =
-                                            loan.outstandingBalance || 0;
-
-                                        const remainingBalance =
-                                            Math.max(
-                                                previousBalance -
-                                                recoveryAmount,
-                                                0
-                                            );
-
-                                        const recoveryData = {
-
-                                            recoveredAmount:
-                                                recoveryAmount,
-
-                                            recoveryReason:
-                                                payload?.reason,
-
-                                            recoveryReference:
-                                                payload?.reference ||
-                                                `REC-${Date.now()}`,
-
-                                            recoveryChannel:
-                                                payload?.channel ||
-                                                'MANUAL',
-
-                                            recoveredBy:
-                                                actor?._id ||
-                                                actor?.id,
-
-                                            recoveredByName:
-                                                actor?.name,
-
-                                            recoveredAt:
-                                                new Date(),
-
-                                            transactionReference:
-                                                payload?.transactionReference
-                                        };
-
-                                        if (
-                                            LoanRepository
-                                                .recordRecovery
-                                        ) {
-
-                                            await LoanRepository
-                                                .recordRecovery(
-                                                    loanId,
-                                                    recoveryData,
-                                                    tenantId
-                                                );
-                                        }
-
-                                        const updatePayload = {
-
-                                            outstandingBalance:
-                                                remainingBalance,
-
-                                            recoveryStatus:
-                                                remainingBalance === 0
-                                                    ? 'FULLY_RECOVERED'
-                                                    : 'PARTIALLY_RECOVERED',
-
-                                            lastRecoveryDate:
-                                                recoveryData.recoveredAt,
-
-                                            totalRecovered:
-                                                (
-                                                    loan.totalRecovered ||
-                                                    0
-                                                ) +
-                                                recoveryAmount,
-
-                                            status:
-                                                remainingBalance === 0
-                                                    ? 'RECOVERED'
-                                                    : loan.status
-                                        };
-
-                                        const updatedLoan =
-                                            await LoanRepository.update(
-                                                loanId,
-                                                updatePayload,
-                                                tenantId
-                                            );
-
-                                        await LoanAuditRepository.create({
-
-                                            tenantId,
-
-                                            loanId,
-
-                                            action:
-                                                'LOAN_RECOVERY',
-
-                                            actor:
-                                                actor?._id ||
-                                                actor?.id,
-
-                                            metadata: {
-
-                                                recoveryAmount,
-
-                                                previousBalance,
-
-                                                remainingBalance,
-
-                                                reference:
-                                                    recoveryData.recoveryReference
-                                            }
-                                        });
-
-                                        logger.info(
-                                            '[LoanWorkflow] Loan recovery processed',
-                                            {
-                                                tenantId,
-                                                loanId,
-                                                amount:
-                                                    recoveryAmount
-                                            }
-                                        );
-
-                                        return {
-
-                                            success: true,
-
-                                            loan:
-                                                updatedLoan,
-
-                                            recoveredAmount:
-                                                recoveryAmount,
-
-                                            remainingBalance,
-
-                                            recoveryStatus:
-                                                updatePayload.recoveryStatus,
-
-                                            recoveredAt:
-                                                recoveryData.recoveredAt
-                                        };
-
-                                    } catch (error) {
-
-                                        logger.error(
-                                            '[LoanWorkflow] Loan recovery failed',
-                                            {
-                                                loanId,
-                                                tenantId,
-                                                error:
-                                                    error.message
-                                            }
-                                        );
-
-                                        throw error;
-                                    }
-                                }
-/* =======================================================================
-   RESTRUCTURING
-  ======================================================================= */
-
-static async restructureLoan(
-                                    loanId,
-                                    payload,
-                                    actor,
-                                    tenantId
-                                ) {
-
-                                    try {
-
-                                        const loan =
-                                            await LoanRepository.findById(
-                                                loanId,
-                                                tenantId
-                                            );
-
-                                        if (!loan) {
-
-                                            throw new Error(
-                                                'Loan not found'
-                                            );
-                                        }
-
-                                        if (
-                                            ![
-                                                'ACTIVE',
-                                                'OVERDUE',
-                                                'DEFAULTED'
-                                            ].includes(
-                                                loan.status
-                                            )
-                                        ) {
-
-                                            throw new Error(
-                                                `Loan with status ${loan.status} cannot be restructured`
-                                            );
-                                        }
-
-                                        const restructuringReference =
-                                            payload?.reference ||
-                                            `RST-${Date.now()}`;
-
-                                        const restructuringType =
-                                            payload?.restructureType ||
-                                            'RESCHEDULE';
-
-                                        const oldTerms = {
-
-                                            principal:
-                                                loan.principal,
-
-                                            interestRate:
-                                                loan.interestRate,
-
-                                            term:
-                                                loan.term,
-
-                                            maturityDate:
-                                                loan.maturityDate,
-
-                                            outstandingBalance:
-                                                loan.outstandingBalance
-                                        };
-
-                                        const restructuringData = {
-
-                                            status:
-                                                'RESTRUCTURED',
-
-                                            restructureType:
-                                                restructuringType,
-
-                                            restructuringReference,
-
-                                            restructuredAt:
-                                                new Date(),
-
-                                            restructuredBy:
-                                                actor?._id ||
-                                                actor?.id,
-
-                                            restructuredByName:
-                                                actor?.name,
-
-                                            restructuringReason:
-                                                payload?.reason,
-
-                                            originalTerm:
-                                                loan.term,
-
-                                            originalInterestRate:
-                                                loan.interestRate,
-
-                                            originalMaturityDate:
-                                                loan.maturityDate,
-
-                                            revisedTerm:
-                                                payload?.term ||
-                                                loan.term,
-
-                                            revisedInterestRate:
-                                                payload?.interestRate ??
-                                                loan.interestRate,
-
-                                            revisedPrincipal:
-                                                payload?.principal ??
-                                                loan.principal,
-
-                                            revisedMaturityDate:
-                                                payload?.maturityDate,
-
-                                            moratoriumMonths:
-                                                payload?.moratoriumMonths || 0,
-
-                                            committeeApprovalRef:
-                                                payload?.committeeApprovalRef,
-
-                                            restructuringNotes:
-                                                payload?.notes
-                                        };
-
-                                        const updatedLoan =
-                                            await LoanRepository.update(
-                                                loanId,
-                                                restructuringData,
-                                                tenantId
-                                            );
-
-                                        /*
-                                         * Regenerate repayment schedule
-                                         */
-
-                                        if (
-                                            ScheduleRepository &&
-                                            ScheduleRepository
-                                                .regenerateSchedule
-                                        ) {
-
-                                            await ScheduleRepository
-                                                .regenerateSchedule(
-                                                    loanId,
-                                                    {
-                                                        term:
-                                                            restructuringData
-                                                                .revisedTerm,
-
-                                                        interestRate:
-                                                            restructuringData
-                                                                .revisedInterestRate,
-
-                                                        principal:
-                                                            restructuringData
-                                                                .revisedPrincipal,
-
-                                                        moratoriumMonths:
-                                                            restructuringData
-                                                                .moratoriumMonths
-                                                    },
-                                                    tenantId
-                                                );
-                                        }
-
-                                        /*
-                                         * Recalculate risk profile
-                                         */
-
-                                        let riskAssessment =
-                                            null;
 
-                                        if (
-                                            RiskEngineService &&
-                                            RiskEngineService
-                                                .assessRestructuredLoan
-                                        ) {
-
-                                            riskAssessment =
-                                                await RiskEngineService
-                                                    .assessRestructuredLoan(
-                                                        updatedLoan,
-                                                        tenantId
-                                                    );
-                                        }
+            const updatedLoan =
+                await LoanRepository.update(
+                    loanId,
+                    tenantId,
+                    writeOffData
+                );
 
-                                        await LoanAuditRepository.create({
 
-                                            tenantId,
+            await this.audit({
 
-                                            loanId,
+                tenantId,
 
-                                            action:
-                                                'LOAN_RESTRUCTURED',
-
-                                            actor:
-                                                actor?._id ||
-                                                actor?.id,
-
-                                            metadata: {
-
-                                                restructuringReference,
-
-                                                restructuringType,
-
-                                                reason:
-                                                    payload?.reason,
-
-                                                oldTerms,
-
-                                                newTerms: {
-
-                                                    principal:
-                                                        restructuringData
-                                                            .revisedPrincipal,
-
-                                                    interestRate:
-                                                        restructuringData
-                                                            .revisedInterestRate,
-
-                                                    term:
-                                                        restructuringData
-                                                            .revisedTerm,
-
-                                                    maturityDate:
-                                                        restructuringData
-                                                            .revisedMaturityDate
-                                                },
-
-                                                riskAssessment
-                                            }
-                                        });
-
-                                        logger.info(
-                                            '[LoanWorkflow] Loan restructured',
-                                            {
-                                                tenantId,
-                                                loanId,
-                                                restructuringReference
-                                            }
-                                        );
+                loanId,
 
-                                        return {
+                action:
+                    ACTION.WRITTEN_OFF,
 
-                                            success: true,
-
-                                            status:
-                                                'RESTRUCTURED',
-
-                                            loan:
-                                                updatedLoan,
+                actor,
 
-                                            restructuringReference,
+                metadata:
+                    writeOffData
+            });
 
-                                            restructuringType,
 
-                                            previousTerms:
-                                                oldTerms,
+            return {
 
-                                            revisedTerms: {
+                success: true,
 
-                                                principal:
-                                                    restructuringData
-                                                        .revisedPrincipal,
+                status:
+                    STATUS.WRITTEN_OFF,
 
-                                                interestRate:
-                                                    restructuringData
-                                                        .revisedInterestRate,
-
-                                                term:
-                                                    restructuringData
-                                                        .revisedTerm,
-
-                                                maturityDate:
-                                                    restructuringData
-                                                        .revisedMaturityDate
-                                            },
+                loan:
+                    updatedLoan,
 
-                                            riskAssessment,
+                writeOffAmount,
 
-                                            restructuredAt:
-                                                restructuringData
-                                                    .restructuredAt
-                                        };
+                writeOffDate
+            };
 
-                                    } catch (error) {
+        } catch (error) {
 
-                                        logger.error(
-                                            '[LoanWorkflow] Loan restructuring failed',
-                                            {
-                                                tenantId,
-                                                loanId,
-                                                error:
-                                                    error.message
-                                            }
-                                        );
+            logger.error(
+                '[LoanWorkflow] Write-off failed',
+                {
+                    tenantId,
+                    loanId,
+                    error:
+                        error.message
+                }
+            );
 
-                                        throw error;
-                                    }
-                                }
+            throw error;
+        }
+    }
 
-    /* =======================================================================
-     BULK OPERATIONS
-     ======================================================================= */
 
-static async bulkApproveLoans(
-                                    loanIds,
-                                    actor,
-                                    tenantId
-                                ) {
+    /* ========================================================================
+     * RECOVERY
+     * ====================================================================== */
 
-                                    try {
+    static async recoverLoan(
+        loanId,
+        payload = {},
+        actor,
+        tenantId
+    ) {
 
-                                        if (
-                                            !Array.isArray(
-                                                loanIds
-                                            ) ||
-                                            loanIds.length === 0
-                                        ) {
+        this.assertTenant(tenantId);
 
-                                            throw new Error(
-                                                'Loan IDs are required'
-                                            );
-                                        }
+        try {
 
-                                        const results = {
+            const loan =
+                await this.getLoanOrThrow(
+                    loanId,
+                    tenantId
+                );
 
-                                            total:
-                                                loanIds.length,
 
-                                            approved: [],
+            this.assertStatus(
+                loan,
+                RECOVERY_STATUSES
+            );
 
-                                            failed: []
-                                        };
 
-                                        for (
-                                            const loanId of loanIds
-                                        ) {
+            const recoveryAmount =
+                this.normalizeAmount(
+                    payload.amount,
+                    'recovery amount'
+                );
 
-                                            try {
 
-                                                const loan =
-                                                    await LoanRepository
-                                                        .findById(
-                                                            loanId,
-                                                            tenantId
-                                                        );
+            const previousBalance =
+                this.roundMoney(
+                    loan.outstandingBalance || 0
+                );
 
-                                                if (!loan) {
 
-                                                    results.failed.push({
+            if (
+                recoveryAmount >
+                previousBalance
+            ) {
 
-                                                        loanId,
+                throw new Error(
+                    'Recovery amount cannot exceed outstanding balance'
+                );
+            }
 
-                                                        reason:
-                                                            'Loan not found'
-                                                    });
 
-                                                    continue;
-                                                }
+            const remainingBalance =
+                this.roundMoney(
+                    Math.max(
+                        previousBalance -
+                        recoveryAmount,
+                        0
+                    )
+                );
 
-                                                if (
-                                                    ![
-                                                        'PENDING',
-                                                        'MANUAL_REVIEW',
-                                                        'PENDING_CREDIT_COMMITTEE'
-                                                    ].includes(
-                                                        loan.status
-                                                    )
-                                                ) {
 
-                                                    results.failed.push({
+            const recoveredAt =
+                new Date();
 
-                                                        loanId,
 
-                                                        reason:
-                                                            `Invalid status: ${loan.status}`
-                                                    });
+            const recoveryData = {
 
-                                                    continue;
-                                                }
+                recoveredAmount:
+                    recoveryAmount,
 
-                                                await LoanRepository
-                                                    .update(
-                                                        loanId,
-                                                        {
+                recoveryReason:
+                    payload.reason,
 
-                                                            status:
-                                                                'APPROVED',
+                recoveryReference:
+                    payload.reference ||
+                    this.generateReference('REC'),
 
-                                                            approvedAt:
-                                                                new Date(),
+                recoveryChannel:
+                    payload.channel ||
+                    'MANUAL',
 
-                                                            approvedBy:
-                                                                actor?._id ||
-                                                                actor?.id,
+                recoveredBy:
+                    this.getActorId(actor),
 
-                                                            approvedByName:
-                                                                actor?.name
-                                                        },
-                                                        tenantId
-                                                    );
+                recoveredByName:
+                    this.getActorName(actor),
 
-                                                await LoanAuditRepository
-                                                    .create({
+                recoveredAt,
 
-                                                        tenantId,
+                transactionReference:
+                    payload.transactionReference
+            };
 
-                                                        loanId,
 
-                                                        action:
-                                                            'LOAN_APPROVED',
+            if (
+                typeof LoanRepository.recordRecovery ===
+                    'function'
+            ) {
 
-                                                        actor:
-                                                            actor?._id ||
-                                                            actor?.id,
+                await LoanRepository.recordRecovery(
+                    loanId,
+                    recoveryData,
+                    tenantId
+                );
+            }
 
-                                                        metadata: {
-                                                            bulkOperation:
-                                                                true
-                                                        }
-                                                    });
 
-                                                results.approved.push(
-                                                    loanId
-                                                );
+            const updatePayload = {
 
-                                            } catch (error) {
+                outstandingBalance:
+                    remainingBalance,
 
-                                                results.failed.push({
+                recoveryStatus:
+                    remainingBalance === 0
+                        ? 'FULLY_RECOVERED'
+                        : 'PARTIALLY_RECOVERED',
 
-                                                    loanId,
+                lastRecoveryDate:
+                    recoveredAt,
 
-                                                    reason:
-                                                        error.message
-                                                });
-                                            }
-                                        }
+                totalRecovered:
+                    this.roundMoney(
+                        Number(
+                            loan.totalRecovered || 0
+                        ) +
+                        recoveryAmount
+                    ),
 
-                                        logger.info(
-                                            '[LoanWorkflow] Bulk approval completed',
-                                            {
-                                                tenantId,
-                                                approved:
-                                                    results.approved.length,
-                                                failed:
-                                                    results.failed.length
-                                            }
-                                        );
+                status:
+                    remainingBalance === 0
+                        ? STATUS.RECOVERED
+                        : loan.status
+            };
 
-                                        return {
 
-                                            success: true,
+            const updatedLoan =
+                await LoanRepository.update(
+                    loanId,
+                    tenantId,
+                    updatePayload
+                );
 
-                                            operation:
-                                                'BULK_APPROVE',
 
-                                            totalLoans:
-                                                results.total,
+            await this.audit({
 
-                                            approvedCount:
-                                                results.approved.length,
+                tenantId,
 
-                                            failedCount:
-                                                results.failed.length,
+                loanId,
 
-                                            approvedLoans:
-                                                results.approved,
+                action:
+                    ACTION.RECOVERY,
 
-                                            failedLoans:
-                                                results.failed,
+                actor,
 
-                                            completedAt:
-                                                new Date()
-                                                    .toISOString()
-                                        };
+                metadata: {
 
-                                    } catch (error) {
+                    recoveryAmount,
 
-                                        logger.error(
-                                            '[LoanWorkflow] Bulk approval failed',
-                                            {
-                                                tenantId,
-                                                error:
-                                                    error.message
-                                            }
-                                        );
+                    previousBalance,
 
-                                        throw error;
-                                    }
-                                }
+                    remainingBalance,
 
-static async bulkRejectLoans(
-                                    loanIds,
-                                    reason,
-                                    actor,
-                                    tenantId
-                                ) {
+                    reference:
+                        recoveryData.recoveryReference
+                }
+            });
 
-                                    try {
 
-                                        if (
-                                            !Array.isArray(
-                                                loanIds
-                                            ) ||
-                                            loanIds.length === 0
-                                        ) {
+            return {
 
-/* =======================================================================
-   EXPORTS
-======================================================================= */
+                success: true,
 
-static async exportLoans(
-                                            filters,
-                                            tenantId
-                                        ) {
+                loan:
+                    updatedLoan,
 
-                                    try {
+                recoveredAmount:
+                    recoveryAmount,
 
-                                        const exportData =
-                                            await LoanRepository
-                                                .exportLoans(
-                                                    filters,
-                                                    tenantId
-                                                );
+                remainingBalance,
 
-                                        const summary = {
+                recoveryStatus:
+                    updatePayload.recoveryStatus,
 
-                                            totalRecords:
-                                                exportData?.length || 0,
+                recoveredAt
+            };
 
-                                            exportType:
-                                                filters?.format ||
-                                                'JSON',
+        } catch (error) {
 
-                                            generatedAt:
-                                                new Date()
-                                                    .toISOString(),
+            logger.error(
+                '[LoanWorkflow] Loan recovery failed',
+                {
+                    tenantId,
+                    loanId,
+                    error:
+                        error.message
+                }
+            );
 
-                                            generatedBy:
-                                                filters?.requestedBy,
+            throw error;
+        }
+    }
 
-                                            tenantId
-                                        };
 
-                                        const portfolioMetrics =
-                                            await this
-                                                .getPortfolioMetrics(
-                                                    tenantId
-                                                );
+    /* ========================================================================
+     * RESTRUCTURING
+     * ====================================================================== */
 
-                                        logger.info(
-                                            '[LoanWorkflow] Loan export generated',
-                                            {
-                                                tenantId,
-                                                records:
-                                                    summary.totalRecords,
-                                                format:
-                                                    summary.exportType
-                                            }
-                                        );
+    static async restructureLoan(
+        loanId,
+        payload = {},
+        actor,
+        tenantId
+    ) {
 
-                                        return {
+        this.assertTenant(tenantId);
 
-                                            success: true,
+        try {
 
-                                            exportSummary:
-                                                summary,
+            const loan =
+                await this.getLoanOrThrow(
+                    loanId,
+                    tenantId
+                );
 
-                                            portfolioSnapshot:
-                                                portfolioMetrics,
 
-                                            data:
-                                                exportData
-                                        };
+            this.assertStatus(
+                loan,
+                RESTRUCTURABLE_STATUSES
+            );
 
-                                    } catch (error) {
 
-                                        logger.error(
-                                            '[LoanWorkflow] Export failed',
-                                            {
-                                                tenantId,
-                                                filters,
-                                                error:
-                                                    error.message
-                                            }
-                                        );
+            const restructuringReference =
+                payload.reference ||
+                this.generateReference('RST');
 
-                                        throw error;
-                                    }
-                                }
-                            }
 
-module.exports = LoanWorkflowService;
+            const restructuringType =
+                payload.restructureType ||
+                'RESCHEDULE';
+
+
+            const oldTerms = {
+
+                principal:
+                    loan.principal,
+
+                interestRate:
+                    loan.interestRate,
+
+                term:
+                    loan.term,
+
+                maturityDate:
+                    loan.maturityDate,
+
+                outstandingBalance:
+                    loan.outstandingBalance
+            };
+
+
+            const revisedTerm =
+                payload.term ??
+                loan.term;
+
+
+            const revisedInterestRate =
+                payload.interestRate ??
+                loan.interestRate;
+
+
+            const revisedPrincipal =
+                payload.principal ??
+                loan.principal;
+
+
+            const moratoriumMonths =
+                Number(
+                    payload.moratoriumMonths || 0
+                );
+
+
+            if (
+                Number(revisedTerm) <= 0
+            ) {
+
+                throw new Error(
+                    'Revised term must be greater than zero'
+                );
+            }
+
+
+            if (
+                Number(revisedInterestRate) < 0
+            ) {
+
+                throw new Error(
+                    'Revised interest rate cannot be negative'
+                );
+            }
+
+
+            if (
+                Number(revisedPrincipal) <= 0
+            ) {
+
+                throw new Error(
+                    'Revised principal must be greater than zero'
+                );
+            }
+
+
+            const restructuredAt =
+                new Date();
+
+
+            const restructuringData = {
+
+                status:
+                    STATUS.RESTRUCTURED,
+
+                restructureType:
+                    restructuringType,
+
+                restructuringReference,
+
+                restructuredAt,
+
+                restructuredBy:
+                    this.getActorId(actor),
+
+                restructuredByName:
+                    this.getActorName(actor),
+
+                restructuringReason:
+                    payload.reason,
+
+                originalTerm:
+                    loan.term,
+
+                originalInterestRate:
+                    loan.interestRate,
+
+                originalMaturityDate:
+                    loan.maturityDate,
+
+                revisedTerm,
+
+                revisedInterestRate,
+
+                revisedPrincipal,
+
+                revisedMaturityDate:
+                    payload.maturityDate,
+
+                moratoriumMonths,
+
+                committeeApprovalRef:
+                    payload.committeeApprovalRef,
+
+                restructuringNotes:
+                    payload.notes
+            };
+
+
+            const updatedLoan =
+                await LoanRepository.update(
+                    loanId,
+                    tenantId,
+                    restructuringData
+                );
+
+
+            if (
+                ScheduleRepository &&
+                typeof ScheduleRepository.regenerateSchedule ===
+                    'function'
+            ) {
+
+                await ScheduleRepository.regenerateSchedule(
+                    loanId,
+                    {
+                        term:
+                            revisedTerm,
+
+                        interestRate:
+                            revisedInterestRate,
+
+                        principal:
+                            revisedPrincipal,
+
+                        moratoriumMonths
+                    },
+                    tenantId
+                );
+            }
+
+
+            let riskAssessment =
+                null;
+
+
+            if (
+                RiskEngineService &&
+                typeof RiskEngineService.assessRestructuredLoan ===
+                    'function'
+            ) {
+
+                riskAssessment =
+                    await RiskEngineService.assessRestructuredLoan(
+                        updatedLoan,
+                        tenantId
+                    );
+            }
+
+
+            await this.audit({
+
+                tenantId,
+
+                loanId,
+
+                action:
+                    ACTION.RESTRUCTURED,
+
+                actor,
+
+                metadata: {
+
+                    restructuringReference,
+
+                    restructuringType,
+
+                    reason:
+                        payload.reason,
+
+                    oldTerms,
+
+                    newTerms: {
+
+                        principal:
+                            revisedPrincipal,
+
+                        interestRate:
+                            revisedInterestRate,
+
+                        term:
+                            revisedTerm,
+
+                        maturityDate:
+                            payload.maturityDate
+                    },
+
+                    riskAssessment
+                }
+            });
+
+
+            return {
+
+                success: true,
+
+                status:
+                    STATUS.RESTRUCTURED,
+
+                loan:
+                    updatedLoan,
+
+                restructuringReference,
+
+                restructuringType,
+
+                previousTerms:
+                    oldTerms,
+
+                revisedTerms: {
+
+                    principal:
+                        revisedPrincipal,
+
+                    interestRate:
+                        revisedInterestRate,
+
+                    term:
+                        revisedTerm,
+
+                    maturityDate:
+                        payload.maturityDate
+                },
+
+                riskAssessment,
+
+                restructuredAt
+            };
+
+        } catch (error) {
+
+            logger.error(
+                '[LoanWorkflow] Loan restructuring failed',
+                {
+                    tenantId,
+                    loanId,
+                    error:
+                        error.message
+                }
+            );
+
+            throw error;
+        }
+    }
+
+
+    /* ========================================================================
+     * BULK APPROVAL
+     * ====================================================================== */
+
+    static async bulkApproveLoans(
+        loanIds,
+        actor,
+        tenantId
+    ) {
+
+        this.assertTenant(tenantId);
+
+
+        if (
+            !Array.isArray(loanIds) ||
+            loanIds.length === 0
+        ) {
+
+            throw new Error(
+                'Loan IDs are required'
+            );
+        }
+
+
+        const uniqueLoanIds =
+            [
+                ...new Set(
+                    loanIds.map(
+                        id =>
+                            String(id)
+                    )
+                )
+            ];
+
+
+        const results = {
+
+            total:
+                uniqueLoanIds.length,
+
+            approved: [],
+
+            failed: []
+        };
+
+
+        for (
+            const loanId of uniqueLoanIds
+        ) {
+
+            try {
+
+                const result =
+                    await this.approveLoan(
+                        loanId,
+                        {
+                            reference:
+                                this.generateReference('BAPR')
+                        },
+                        actor,
+                        tenantId
+                    );
+
+
+                results.approved.push({
+
+                    loanId,
+
+                    status:
+                        result.status
+                });
+
+            } catch (error) {
+
+                results.failed.push({
+
+                    loanId,
+
+                    reason:
+                        error.message
+                });
+            }
+        }
+
+
+        await Promise.all(
+            results.approved.map(
+                item =>
+                    this.audit({
+
+                        tenantId,
+
+                        loanId:
+                            item.loanId,
+
+                        action:
+                            ACTION.BULK_APPROVED,
+
+                        actor,
+
+                        metadata: {
+
+                            bulkOperation:
+                                true
+                        }
+                    })
+            )
+        );
+
+
+        return {
+
+            success:
+                results.failed.length === 0,
+
+            operation:
+                'BULK_APPROVE',
+
+            totalLoans:
+                results.total,
+
+            approvedCount:
+                results.approved.length,
+
+            failedCount:
+                results.failed.length,
+
+            approvedLoans:
+                results.approved,
+
+            failedLoans:
+                results.failed,
+
+            completedAt:
+                new Date().toISOString()
+        };
+    }
+
+
+    /* ========================================================================
+     * BULK REJECTION
+     * ====================================================================== */
+
+    static async bulkRejectLoans(
+        loanIds,
+        reason,
+        actor,
+        tenantId
+    ) {
+
+        this.assertTenant(tenantId);
+
+
+        if (
+            !Array.isArray(loanIds) ||
+            loanIds.length === 0
+        ) {
+
+            throw new Error(
+                'Loan IDs are required'
+            );
+        }
+
+
+        if (
+            !reason ||
+            String(reason).trim().length < 3
+        ) {
+
+            throw new Error(
+                'Bulk rejection reason is required'
+            );
+        }
+
+
+        const uniqueLoanIds =
+            [
+                ...new Set(
+                    loanIds.map(
+                        id =>
+                            String(id)
+                    )
+                )
+            ];
+
+
+        const approved = [];
+        const failed = [];
+
+
+        for (
+            const loanId of uniqueLoanIds
+        ) {
+
+            try {
+
+                await this.rejectLoan(
+                    loanId,
+                    {
+                        reason,
+                        reference:
+                            this.generateReference('BREJ')
+                    },
+                    actor,
+                    tenantId
+                );
+
+
+                approved.push(
+                    loanId
+                );
+
+            } catch (error) {
+
+                failed.push({
+
+                    loanId,
+
+                    reason:
+                        error.message
+                });
+            }
+        }
+
+
+        return {
+
+            success:
+                failed.length === 0,
+
+            operation:
+                'BULK_REJECT',
+
+            totalLoans:
+                uniqueLoanIds.length,
+
+            rejectedCount:
+                approved.length,
+
+            failedCount:
+                failed.length,
+
+            rejectedLoans:
+                approved,
+
+            failedLoans:
+                failed,
+
+            completedAt:
+                new Date().toISOString()
+        };
+    }
+
+
+    /* ========================================================================
+     * EXPORT
+     * ====================================================================== */
+
+    static async exportLoans(
+        filters = {},
+        tenantId
+    ) {
+
+        this.assertTenant(tenantId);
+
+        try {
+
+            const {
+                format,
+                requestedBy,
+                ...loanFilters
+            } = filters || {};
+
+
+            const exportData =
+                await LoanRepository.exportLoans(
+                    loanFilters,
+                    tenantId
+                );
+
+
+            const portfolioMetrics =
+                await this.getPortfolioMetrics(
+                    tenantId
+                );
+
+
+            const summary = {
+
+                totalRecords:
+                    Array.isArray(
+                        exportData
+                    )
+                        ? exportData.length
+                        : 0,
+
+                exportType:
+                    format ||
+                    'JSON',
+
+                generatedAt:
+                    new Date().toISOString(),
+
+                generatedBy:
+                    requestedBy,
+
+                tenantId
+            };
+
+
+            logger.info(
+                '[LoanWorkflow] Loan export generated',
+                {
+                    tenantId,
+                    records:
+                        summary.totalRecords,
+                    format:
+                        summary.exportType
+                }
+            );
+
+
+            return {
+
+                success: true,
+
+                exportSummary:
+                    summary,
+
+                portfolioSnapshot:
+                    portfolioMetrics,
+
+                data:
+                    exportData
+            };
+
+        } catch (error) {
+
+            logger.error(
+                '[LoanWorkflow] Export failed',
+                {
+                    tenantId,
+                    error:
+                        error.message
+                }
+            );
+
+            throw error;
+        }
+    }
+}
+
+
+/* ============================================================================
+ * EXPORT
+ * ========================================================================== */
+
+module.exports =
+    LoanWorkflowService;

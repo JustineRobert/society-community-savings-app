@@ -1,18 +1,84 @@
+"use strict";
+
 /**
- * ============================================================
+ * ============================================================================
  * TITech Community Capital LTD
  * Enterprise SACCO Onboarding Validation
- * ============================================================
+ * ============================================================================
+ *
+ * File:
+ * backend/modules/onboarding/onboarding.validation.js
+ *
+ * Purpose:
+ * ----------------------------------------------------------------------------
+ * HTTP input validation for SACCO onboarding.
+ *
+ * Responsibilities:
+ * ----------------------------------------------------------------------------
+ * - Request shape validation
+ * - Data normalization
+ * - Field length protection
+ * - Enum validation
+ * - MongoDB ObjectId validation
+ * - Pagination validation
+ * - KYC payload validation
+ * - Subscription validation
+ * - Rejection validation
+ *
+ * Business rules remain in onboarding.service.js.
+ * ============================================================================
  */
 
-const { body, param, validationResult } =
-  require("express-validator");
+const {
+  body,
+  param,
+  query,
+  validationResult,
+} = require("express-validator");
 
 /**
- * ============================================================
- * VALIDATION RESULT HANDLER
- * ============================================================
+ * ============================================================================
+ * CONSTANTS
+ * ============================================================================
  */
+
+const SACCO_STATUSES = [
+  "DRAFT",
+  "VERIFICATION",
+  "KYC_PENDING",
+  "KYC_APPROVED",
+  "SUBSCRIPTION",
+  "LIVE",
+  "SUSPENDED",
+  "REJECTED",
+];
+
+const SUBSCRIPTION_PLANS = [
+  "STARTER",
+  "GROWTH",
+  "ENTERPRISE",
+  "CUSTOM",
+];
+
+const BILLING_CYCLES = [
+  "MONTHLY",
+  "QUARTERLY",
+  "ANNUAL",
+];
+
+const SUPPORTED_CURRENCIES = [
+  "UGX",
+  "USD",
+  "KES",
+  "TZS",
+];
+
+/**
+ * ============================================================================
+ * HELPERS
+ * ============================================================================
+ */
+
 const handleValidationErrors = (
   req,
   res,
@@ -24,8 +90,15 @@ const handleValidationErrors = (
   if (!errors.isEmpty()) {
     return res.status(422).json({
       success: false,
-      message: "Validation failed",
-      errors: errors.array()
+
+      code: "VALIDATION_ERROR",
+
+      message:
+        "Request validation failed",
+
+      errors: errors.array({
+        onlyFirstError: true,
+      }),
     });
   }
 
@@ -33,114 +106,366 @@ const handleValidationErrors = (
 };
 
 /**
- * ============================================================
- * SACCO REGISTRATION
- * ============================================================
+ * ============================================================================
+ * PHONE VALIDATION
+ * ============================================================================
+ *
+ * Accepted examples:
+ *
+ * 0772123546
+ * 256772123546
+ * +256772123546
+ *
+ * ============================================================================
  */
+
+const ugandaPhoneRegex =
+  /^(?:\+256|256|0)(7\d{8})$/;
+
+/**
+ * ============================================================================
+ * SACCO REGISTRATION VALIDATION
+ * ============================================================================
+ */
+
 exports.validateSacco = [
   body("saccoName")
-    .trim()
-    .notEmpty()
+    .exists()
     .withMessage(
       "SACCO name is required"
     )
+    .bail()
+    .isString()
+    .withMessage(
+      "SACCO name must be a string"
+    )
+    .bail()
+    .trim()
     .isLength({
       min: 3,
-      max: 150
+      max: 150,
     })
     .withMessage(
       "SACCO name must be between 3 and 150 characters"
     ),
 
-  body("registrationNumber")
+  /**
+   * Client must NOT provide tenantId.
+   *
+   * Tenant identity must come from authenticated
+   * tenant context.
+   */
+  body("tenantId")
     .optional()
+    .custom(() => {
+      throw new Error(
+        "tenantId must not be supplied by the client"
+      );
+    }),
+
+  body("registrationNumber")
+    .optional({
+      nullable: true,
+    })
+    .isString()
+    .withMessage(
+      "Registration number must be a string"
+    )
+    .bail()
+    .trim()
     .isLength({
       min: 3,
-      max: 100
+      max: 100,
     })
     .withMessage(
       "Invalid registration number"
+    )
+    .bail()
+    .matches(
+      /^[A-Za-z0-9./_-]+$/
+    )
+    .withMessage(
+      "Registration number contains invalid characters"
     ),
 
   body("tinNumber")
-    .optional()
+    .optional({
+      nullable: true,
+    })
+    .isString()
+    .withMessage(
+      "TIN number must be a string"
+    )
+    .bail()
+    .trim()
     .isLength({
       min: 5,
-      max: 30
+      max: 30,
     })
     .withMessage(
       "Invalid TIN number"
     ),
 
   body("district")
-    .optional()
-    .trim(),
+    .optional({
+      nullable: true,
+    })
+    .isString()
+    .withMessage(
+      "District must be a string"
+    )
+    .bail()
+    .trim()
+    .isLength({
+      max: 100,
+    }),
 
   body("region")
-    .optional()
-    .trim(),
+    .optional({
+      nullable: true,
+    })
+    .isString()
+    .withMessage(
+      "Region must be a string"
+    )
+    .bail()
+    .trim()
+    .isLength({
+      max: 100,
+    }),
 
   body("country")
-    .optional()
-    .trim(),
+    .optional({
+      nullable: true,
+    })
+    .isString()
+    .withMessage(
+      "Country must be a string"
+    )
+    .bail()
+    .trim()
+    .isLength({
+      min: 2,
+      max: 100,
+    }),
+
+  body("physicalAddress")
+    .optional({
+      nullable: true,
+    })
+    .isString()
+    .withMessage(
+      "Physical address must be a string"
+    )
+    .bail()
+    .trim()
+    .isLength({
+      max: 500,
+    }),
+
+  body("postalAddress")
+    .optional({
+      nullable: true,
+    })
+    .isString()
+    .withMessage(
+      "Postal address must be a string"
+    )
+    .bail()
+    .trim()
+    .isLength({
+      max: 500,
+    }),
 
   body("website")
-    .optional()
-    .isURL()
+    .optional({
+      nullable: true,
+    })
+    .isURL({
+      protocols: [
+        "http",
+        "https",
+      ],
+      require_protocol: true,
+    })
     .withMessage(
       "Please provide a valid website URL"
     ),
 
   body("phone")
-    .notEmpty()
+    .exists()
     .withMessage(
       "Phone number is required"
     )
+    .bail()
+    .isString()
+    .withMessage(
+      "Phone number must be a string"
+    )
+    .bail()
+    .trim()
     .matches(
-      /^(\+256|256|0)(7[0-9]{8})$/
+      ugandaPhoneRegex
     )
     .withMessage(
       "Provide a valid Uganda phone number"
     ),
 
   body("email")
-    .notEmpty()
+    .exists()
     .withMessage(
       "Email address is required"
     )
+    .bail()
     .isEmail()
     .withMessage(
       "Provide a valid email address"
     )
+    .bail()
     .normalizeEmail(),
 
-  body("contactPerson.fullName")
-    .notEmpty()
+  /**
+   * CONTACT PERSON
+   */
+
+  body("contactPerson")
+    .optional({
+      nullable: true,
+    })
+    .isObject()
     .withMessage(
-      "Contact person name is required"
+      "contactPerson must be an object"
     ),
 
+  body("contactPerson.fullName")
+    .exists()
+    .withMessage(
+      "Contact person name is required"
+    )
+    .bail()
+    .isString()
+    .withMessage(
+      "Contact person name must be a string"
+    )
+    .bail()
+    .trim()
+    .isLength({
+      min: 2,
+      max: 150,
+    })
+    .withMessage(
+      "Invalid contact person name"
+    ),
+
+  body("contactPerson.designation")
+    .optional({
+      nullable: true,
+    })
+    .isString()
+    .withMessage(
+      "Contact designation must be a string"
+    )
+    .bail()
+    .trim()
+    .isLength({
+      max: 150,
+    }),
+
   body("contactPerson.phone")
-    .notEmpty()
+    .exists()
     .withMessage(
       "Contact person phone is required"
+    )
+    .bail()
+    .isString()
+    .withMessage(
+      "Contact person phone must be a string"
+    )
+    .bail()
+    .trim()
+    .matches(
+      ugandaPhoneRegex
+    )
+    .withMessage(
+      "Provide a valid Uganda contact phone number"
     ),
 
   body("contactPerson.email")
-    .optional()
+    .optional({
+      nullable: true,
+    })
     .isEmail()
     .withMessage(
       "Invalid contact person email"
+    )
+    .normalizeEmail(),
+
+  body("contactPerson.nationalId")
+    .optional({
+      nullable: true,
+    })
+    .isString()
+    .withMessage(
+      "National ID must be a string"
+    )
+    .bail()
+    .trim()
+    .isLength({
+      min: 5,
+      max: 50,
+    }),
+
+  /**
+   * BUSINESS METRICS
+   */
+
+  body("expectedMembers")
+    .optional()
+    .isInt({
+      min: 0,
+      max: 100000000,
+    })
+    .withMessage(
+      "Expected members must be a non-negative integer"
     ),
 
-  handleValidationErrors
+  body("expectedStaff")
+    .optional()
+    .isInt({
+      min: 0,
+      max: 1000000,
+    })
+    .withMessage(
+      "Expected staff must be a non-negative integer"
+    ),
+
+  body("expectedLoanPortfolio")
+    .optional()
+    .isFloat({
+      min: 0,
+    })
+    .withMessage(
+      "Expected loan portfolio must be non-negative"
+    ),
+
+  body("monthlyRevenueEstimate")
+    .optional()
+    .isFloat({
+      min: 0,
+    })
+    .withMessage(
+      "Monthly revenue estimate must be non-negative"
+    ),
+
+  handleValidationErrors,
 ];
 
 /**
- * ============================================================
+ * ============================================================================
  * KYC VALIDATION
- * ============================================================
+ * ============================================================================
  */
+
 exports.validateKYC = [
   param("id")
     .isMongoId()
@@ -150,38 +475,112 @@ exports.validateKYC = [
 
   body("directorNames")
     .optional()
-    .isArray()
+    .isArray({
+      min: 1,
+      max: 100,
+    })
     .withMessage(
-      "directorNames must be an array"
+      "directorNames must be an array containing 1 to 100 directors"
+    ),
+
+  body("directorNames.*")
+    .optional()
+    .isString()
+    .withMessage(
+      "Director name must be a string"
+    )
+    .bail()
+    .trim()
+    .isLength({
+      min: 2,
+      max: 150,
+    })
+    .withMessage(
+      "Invalid director name"
     ),
 
   body("boardChairperson")
     .optional()
-    .notEmpty()
+    .isString()
     .withMessage(
-      "Board chairperson name required"
-    ),
+      "Board chairperson must be a string"
+    )
+    .bail()
+    .trim()
+    .isLength({
+      min: 2,
+      max: 150,
+    }),
 
   body("registrationCertificate")
     .optional()
-    .notEmpty(),
+    .isString()
+    .withMessage(
+      "Registration certificate must be a string"
+    )
+    .bail()
+    .trim()
+    .isLength({
+      max: 500,
+    }),
 
   body("proofOfAddress")
     .optional()
-    .notEmpty(),
+    .isString()
+    .withMessage(
+      "Proof of address must be a string"
+    )
+    .bail()
+    .trim()
+    .isLength({
+      max: 500,
+    }),
 
   body("taxComplianceCertificate")
     .optional()
-    .notEmpty(),
+    .isString()
+    .withMessage(
+      "Tax compliance certificate must be a string"
+    )
+    .bail()
+    .trim()
+    .isLength({
+      max: 500,
+    }),
 
-  handleValidationErrors
+  body("kycRiskLevel")
+    .optional()
+    .isIn([
+      "LOW",
+      "MEDIUM",
+      "HIGH",
+      "CRITICAL",
+    ])
+    .withMessage(
+      "Invalid KYC risk level"
+    ),
+
+  body("notes")
+    .optional()
+    .isString()
+    .withMessage(
+      "KYC notes must be a string"
+    )
+    .bail()
+    .trim()
+    .isLength({
+      max: 5000,
+    }),
+
+  handleValidationErrors,
 ];
 
 /**
- * ============================================================
+ * ============================================================================
  * SUBSCRIPTION VALIDATION
- * ============================================================
+ * ============================================================================
  */
+
 exports.validateSubscription = [
   param("id")
     .isMongoId()
@@ -190,64 +589,71 @@ exports.validateSubscription = [
     ),
 
   body("plan")
-    .notEmpty()
+    .exists()
     .withMessage(
       "Subscription plan required"
     )
-    .isIn([
-      "STARTER",
-      "GROWTH",
-      "ENTERPRISE",
-      "CUSTOM"
-    ])
+    .bail()
+    .isIn(
+      SUBSCRIPTION_PLANS
+    )
     .withMessage(
       "Invalid subscription plan"
     ),
 
   body("billingCycle")
-    .notEmpty()
+    .exists()
     .withMessage(
       "Billing cycle required"
     )
-    .isIn([
-      "MONTHLY",
-      "QUARTERLY",
-      "ANNUAL"
-    ])
+    .bail()
+    .isIn(
+      BILLING_CYCLES
+    )
     .withMessage(
       "Invalid billing cycle"
     ),
 
   body("price")
-    .notEmpty()
+    .exists()
     .withMessage(
       "Subscription price required"
     )
-    .isNumeric()
+    .bail()
+    .isFloat({
+      min: 0,
+    })
     .withMessage(
-      "Price must be numeric"
+      "Subscription price must be a non-negative number"
     ),
 
   body("currency")
     .optional()
-    .isIn([
-      "UGX",
-      "USD",
-      "KES",
-      "TZS"
-    ])
+    .isIn(
+      SUPPORTED_CURRENCIES
+    )
     .withMessage(
       "Unsupported currency"
     ),
 
-  handleValidationErrors
+  body("expiresAt")
+    .optional({
+      nullable: true,
+    })
+    .isISO8601()
+    .withMessage(
+      "expiresAt must be a valid ISO date"
+    ),
+
+  handleValidationErrors,
 ];
 
 /**
- * ============================================================
+ * ============================================================================
  * REJECTION VALIDATION
- * ============================================================
+ * ============================================================================
  */
+
 exports.validateRejection = [
   param("id")
     .isMongoId()
@@ -256,26 +662,34 @@ exports.validateRejection = [
     ),
 
   body("reason")
-    .notEmpty()
+    .exists()
     .withMessage(
       "Rejection reason required"
     )
+    .bail()
+    .isString()
+    .withMessage(
+      "Rejection reason must be a string"
+    )
+    .bail()
+    .trim()
     .isLength({
       min: 10,
-      max: 1000
+      max: 1000,
     })
     .withMessage(
       "Reason must be between 10 and 1000 characters"
     ),
 
-  handleValidationErrors
+  handleValidationErrors,
 ];
 
 /**
- * ============================================================
+ * ============================================================================
  * DOCUMENT UPLOAD VALIDATION
- * ============================================================
+ * ============================================================================
  */
+
 exports.validateDocumentUpload = [
   param("id")
     .isMongoId()
@@ -283,14 +697,43 @@ exports.validateDocumentUpload = [
       "Invalid SACCO ID"
     ),
 
-  handleValidationErrors
+  handleValidationErrors,
 ];
 
 /**
- * ============================================================
- * SACCO STATUS CHANGE VALIDATION
- * ============================================================
+ * ============================================================================
+ * DOCUMENT VERIFICATION VALIDATION
+ * ============================================================================
  */
+
+exports.validateDocumentVerification = [
+  param("id")
+    .isMongoId()
+    .withMessage(
+      "Invalid SACCO ID"
+    ),
+
+  param("documentId")
+    .isMongoId()
+    .withMessage(
+      "Invalid document ID"
+    ),
+
+  handleValidationErrors,
+];
+
+/**
+ * ============================================================================
+ * STATUS CHANGE VALIDATION
+ * ============================================================================
+ *
+ * Kept for administrative workflows.
+ *
+ * IMPORTANT:
+ * The service MUST still enforce the transition matrix.
+ * ============================================================================
+ */
+
 exports.validateStatusChange = [
   param("id")
     .isMongoId()
@@ -299,28 +742,27 @@ exports.validateStatusChange = [
     ),
 
   body("status")
-    .isIn([
-      "DRAFT",
-      "VERIFICATION",
-      "KYC_PENDING",
-      "KYC_APPROVED",
-      "SUBSCRIPTION",
-      "LIVE",
-      "SUSPENDED",
-      "REJECTED"
-    ])
+    .exists()
+    .withMessage(
+      "Status is required"
+    )
+    .bail()
+    .isIn(
+      SACCO_STATUSES
+    )
     .withMessage(
       "Invalid status provided"
     ),
 
-  handleValidationErrors
+  handleValidationErrors,
 ];
 
 /**
- * ============================================================
+ * ============================================================================
  * GO LIVE VALIDATION
- * ============================================================
+ * ============================================================================
  */
+
 exports.validateGoLive = [
   param("id")
     .isMongoId()
@@ -328,49 +770,211 @@ exports.validateGoLive = [
       "Invalid SACCO ID"
     ),
 
-  handleValidationErrors
+  handleValidationErrors,
 ];
 
 /**
- * ============================================================
- * QUERY VALIDATION
- * ============================================================
+ * ============================================================================
+ * SUSPENSION VALIDATION
+ * ============================================================================
  */
-exports.validateListing = [
-  body("page")
-    .optional()
-    .isInt({
-      min: 1
+
+exports.validateSuspension = [
+  param("id")
+    .isMongoId()
+    .withMessage(
+      "Invalid SACCO ID"
+    ),
+
+  body("reason")
+    .exists()
+    .withMessage(
+      "Suspension reason is required"
+    )
+    .bail()
+    .isString()
+    .withMessage(
+      "Suspension reason must be a string"
+    )
+    .bail()
+    .trim()
+    .isLength({
+      min: 10,
+      max: 1000,
+    })
+    .withMessage(
+      "Suspension reason must be between 10 and 1000 characters"
+    ),
+
+  handleValidationErrors,
+];
+
+/**
+ * ============================================================================
+ * MOBILE MONEY VALIDATION
+ * ============================================================================
+ */
+
+exports.validateMtnMomoSetup = [
+  param("id")
+    .isMongoId()
+    .withMessage(
+      "Invalid SACCO ID"
+    ),
+
+  body("collectionAccount")
+    .optional({
+      nullable: true,
+    })
+    .isString()
+    .withMessage(
+      "MTN collection account must be a string"
+    )
+    .bail()
+    .trim()
+    .isLength({
+      min: 5,
+      max: 100,
     }),
 
-  body("limit")
+  handleValidationErrors,
+];
+
+exports.validateAirtelMoneySetup = [
+  param("id")
+    .isMongoId()
+    .withMessage(
+      "Invalid SACCO ID"
+    ),
+
+  body("collectionAccount")
+    .optional({
+      nullable: true,
+    })
+    .isString()
+    .withMessage(
+      "Airtel collection account must be a string"
+    )
+    .bail()
+    .trim()
+    .isLength({
+      min: 5,
+      max: 100,
+    }),
+
+  handleValidationErrors,
+];
+
+/**
+ * ============================================================================
+ * QUERY / LIST VALIDATION
+ * ============================================================================
+ */
+
+exports.validateListing = [
+  query("page")
     .optional()
     .isInt({
       min: 1,
-      max: 100
-    }),
+      max: 1000000,
+    })
+    .withMessage(
+      "page must be a positive integer"
+    )
+    .toInt(),
 
-  handleValidationErrors
+  query("limit")
+    .optional()
+    .isInt({
+      min: 1,
+      max: 100,
+    })
+    .withMessage(
+      "limit must be between 1 and 100"
+    )
+    .toInt(),
+
+  query("status")
+    .optional()
+    .isIn(
+      SACCO_STATUSES
+    )
+    .withMessage(
+      "Invalid SACCO status"
+    ),
+
+  query("search")
+    .optional()
+    .isString()
+    .withMessage(
+      "search must be a string"
+    )
+    .bail()
+    .trim()
+    .isLength({
+      min: 1,
+      max: 100,
+    })
+    .withMessage(
+      "Search must be between 1 and 100 characters"
+    ),
+
+  /**
+   * tenantId is deliberately NOT accepted.
+   *
+   * Tenant identity must be resolved from authenticated
+   * tenant context.
+   */
+  query("tenantId")
+    .not()
+    .exists()
+    .withMessage(
+      "tenantId must not be supplied by the client"
+    ),
+
+  handleValidationErrors,
 ];
 
 /**
- * ============================================================
+ * ============================================================================
  * EXPORTS
- * ============================================================
+ * ============================================================================
  */
+
 module.exports = {
-  validateSacco: exports.validateSacco,
-  validateKYC: exports.validateKYC,
+  validateSacco:
+    exports.validateSacco,
+
+  validateKYC:
+    exports.validateKYC,
+
   validateSubscription:
     exports.validateSubscription,
+
   validateRejection:
     exports.validateRejection,
+
   validateDocumentUpload:
     exports.validateDocumentUpload,
+
+  validateDocumentVerification:
+    exports.validateDocumentVerification,
+
   validateStatusChange:
     exports.validateStatusChange,
+
   validateGoLive:
     exports.validateGoLive,
+
+  validateSuspension:
+    exports.validateSuspension,
+
+  validateMtnMomoSetup:
+    exports.validateMtnMomoSetup,
+
+  validateAirtelMoneySetup:
+    exports.validateAirtelMoneySetup,
+
   validateListing:
-    exports.validateListing
+    exports.validateListing,
 };
