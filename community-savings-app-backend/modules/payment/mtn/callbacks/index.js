@@ -67,7 +67,7 @@ function validateDependencies(dependencies = {}) {
 
     const missing = required.filter(
         dependency => dependencies[dependency] === undefined ||
-                      dependencies[dependency] === null
+            dependencies[dependency] === null
     );
 
     if (missing.length) {
@@ -79,6 +79,38 @@ function validateDependencies(dependencies = {}) {
         );
 
     }
+
+
+    const MTNCallbackRegistry =
+        require('./mtnCallbackRegistry');
+
+    const MTNCallbackNormalizer =
+        require('./mtnCallbackNormalizer');
+
+    const MTNCallbackValidator =
+        require('./mtnCallbackValidator');
+
+    const MTNCallbackProcessor =
+        require('./mtnCallbackProcessor');
+
+    const MTNCallbackIdempotency =
+        require('./mtnCallbackIdempotency');
+
+    const MTNCallbackDeadLetter =
+        require('./mtnCallbackDeadLetter');
+
+    const errors =
+        require('./mtnCallbackErrors');
+
+    module.exports = {
+        MTNCallbackRegistry,
+        MTNCallbackNormalizer,
+        MTNCallbackValidator,
+        MTNCallbackProcessor,
+        MTNCallbackIdempotency,
+        MTNCallbackDeadLetter,
+        ...errors,
+    };
 
 }
 

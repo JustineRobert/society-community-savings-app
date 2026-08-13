@@ -1,373 +1,1568 @@
-// backend/modules/paymentProviderInterface.js
+'use strict';
+
 /**
  * ============================================================================
+ * TITech Community Capital LTD
  * Payment Provider Interface
  * ============================================================================
- * TITech Community Capital
  *
- * Abstract contract for all payment providers:
+ * File:
+ * backend/modules/paymentProviderInterface.js
  *
- * Supported Providers:
+ * Purpose:
+ * Enterprise abstract contract for all external payment providers.
+ *
+ * Supported / Planned Providers:
  *  - MTN Mobile Money
  *  - Airtel Money
  *  - Flutterwave
  *  - Pesapal
  *  - Stripe
  *  - Bank APIs
- *  - Future integrations
+ *  - Future payment rails
  *
- * Every provider implementation MUST extend this class.
+ * Architecture Position:
+ *
+ * Payment Orchestrator
+ *        |
+ *        v
+ * PaymentProviderInterface
+ *        |
+ *  +-----+------+-------+--------+
+ *  |            |       |        |
+ * MTN          Airtel  Bank    Other
+ *
+ * Design Principles:
+ *  - Backward compatible
+ *  - Provider agnostic
+ *  - Idempotency aware
+ *  - Retry aware
+ *  - Webhook security aware
+ *  - Reconciliation aware
+ *  - Settlement aware
+ *  - Observability ready
+ *  - Multi-tenant ready
+ *  - Ledger integration ready
+ *  - AML/Fraud integration ready
+ *  - Production safe
+ *
+ * IMPORTANT:
+ * Every concrete provider implementation MUST extend this class.
+ *
+ * ============================================================================
+ */
+
+const crypto = require('crypto');
+
+/**
+ * ============================================================================
+ * CONSTANTS
+ * ============================================================================
+ */
+
+const INTERFACE_VERSION = '2.0.0';
+
+const PROVIDER_STATUS = Object.freeze({
+    UNKNOWN: 'UNKNOWN',
+    INITIALIZING: 'INITIALIZING',
+    READY: 'READY',
+    DEGRADED: 'DEGRADED',
+    UNAVAILABLE: 'UNAVAILABLE',
+    AUTHENTICATION_FAILED: 'AUTHENTICATION_FAILED',
+    MAINTENANCE: 'MAINTENANCE',
+});
+
+const TRANSACTION_STATUS = Object.freeze({
+    UNKNOWN: 'UNKNOWN',
+    PENDING: 'PENDING',
+    PROCESSING: 'PROCESSING',
+    SUCCESS: 'SUCCESS',
+    FAILED: 'FAILED',
+    REVERSED: 'REVERSED',
+    CANCELLED: 'CANCELLED',
+    EXPIRED: 'EXPIRED',
+    REFUNDED: 'REFUNDED',
+    PARTIALLY_REFUNDED: 'PARTIALLY_REFUNDED',
+});
+
+const OPERATION = Object.freeze({
+    AUTHENTICATE: 'AUTHENTICATE',
+
+    COLLECT: 'COLLECT',
+    REVERSE_COLLECTION: 'REVERSE_COLLECTION',
+
+    DISBURSE: 'DISBURSE',
+    REVERSE_DISBURSEMENT: 'REVERSE_DISBURSEMENT',
+
+    GET_TRANSACTION_STATUS: 'GET_TRANSACTION_STATUS',
+    GET_TRANSACTION: 'GET_TRANSACTION',
+    RETRY_TRANSACTION: 'RETRY_TRANSACTION',
+    CANCEL_TRANSACTION: 'CANCEL_TRANSACTION',
+
+    GET_BALANCE: 'GET_BALANCE',
+    GET_SETTLEMENT_BALANCE: 'GET_SETTLEMENT_BALANCE',
+
+    VERIFY_WEBHOOK: 'VERIFY_WEBHOOK',
+    HANDLE_WEBHOOK: 'HANDLE_WEBHOOK',
+
+    RECONCILE: 'RECONCILE',
+    GET_SETTLEMENT_REPORT: 'GET_SETTLEMENT_REPORT',
+
+    HEALTH_CHECK: 'HEALTH_CHECK',
+    PROVIDER_STATUS: 'PROVIDER_STATUS',
+});
+
+const ERROR_CODE = Object.freeze({
+    PROVIDER_ERROR: 'PROVIDER_ERROR',
+    PROVIDER_UNAVAILABLE: 'PROVIDER_UNAVAILABLE',
+    PROVIDER_TIMEOUT: 'PROVIDER_TIMEOUT',
+    PROVIDER_AUTHENTICATION_FAILED:
+        'PROVIDER_AUTHENTICATION_FAILED',
+
+    INVALID_CONFIGURATION: 'INVALID_CONFIGURATION',
+    INVALID_REQUEST: 'INVALID_REQUEST',
+    INVALID_RESPONSE: 'INVALID_RESPONSE',
+
+    INVALID_AMOUNT: 'INVALID_AMOUNT',
+    INVALID_CURRENCY: 'INVALID_CURRENCY',
+    INVALID_REFERENCE: 'INVALID_REFERENCE',
+    INVALID_PHONE_NUMBER: 'INVALID_PHONE_NUMBER',
+
+    UNSUPPORTED_OPERATION: 'UNSUPPORTED_OPERATION',
+    UNSUPPORTED_CURRENCY: 'UNSUPPORTED_CURRENCY',
+
+    DUPLICATE_TRANSACTION: 'DUPLICATE_TRANSACTION',
+    IDEMPOTENCY_CONFLICT: 'IDEMPOTENCY_CONFLICT',
+
+    TRANSACTION_NOT_FOUND: 'TRANSACTION_NOT_FOUND',
+    TRANSACTION_FAILED: 'TRANSACTION_FAILED',
+    TRANSACTION_TIMEOUT: 'TRANSACTION_TIMEOUT',
+
+    WEBHOOK_INVALID_SIGNATURE: 'WEBHOOK_INVALID_SIGNATURE',
+    WEBHOOK_INVALID_PAYLOAD: 'WEBHOOK_INVALID_PAYLOAD',
+    WEBHOOK_REPLAY: 'WEBHOOK_REPLAY',
+
+    RECONCILIATION_FAILED: 'RECONCILIATION_FAILED',
+    SETTLEMENT_FAILED: 'SETTLEMENT_FAILED',
+});
+
+const DEFAULT_CAPABILITIES = Object.freeze({
+    collections: false,
+    disbursements: false,
+    reversals: false,
+    reconciliation: false,
+    settlements: false,
+    balanceInquiry: false,
+    webhookVerification: false,
+    transactionLookup: false,
+    transactionRetry: false,
+    cancellation: false,
+
+    refunds: false,
+    partialRefunds: false,
+
+    asynchronousTransactions: true,
+    synchronousTransactions: false,
+
+    idempotency: false,
+    webhookReplayProtection: false,
+
+    multiCurrency: false,
+    multiCountry: false,
+
+    sandbox: false,
+    production: true,
+});
+
+const DEFAULT_RETRY_POLICY = Object.freeze({
+    enabled: true,
+
+    maxAttempts: 3,
+
+    initialDelayMs: 500,
+
+    maxDelayMs: 30_000,
+
+    backoffMultiplier: 2,
+
+    jitter: true,
+
+    retryableErrors: Object.freeze([
+        ERROR_CODE.PROVIDER_TIMEOUT,
+        ERROR_CODE.PROVIDER_UNAVAILABLE,
+        ERROR_CODE.TRANSACTION_TIMEOUT,
+    ]),
+});
+
+const DEFAULT_TIMEOUTS = Object.freeze({
+    authenticate: 10_000,
+    collect: 30_000,
+    reverseCollection: 30_000,
+    disburse: 30_000,
+    reverseDisbursement: 30_000,
+
+    getTransactionStatus: 15_000,
+    getTransaction: 15_000,
+    retryTransaction: 30_000,
+    cancelTransaction: 30_000,
+
+    getBalance: 15_000,
+    getSettlementBalance: 15_000,
+
+    verifyWebhook: 10_000,
+    handleWebhook: 15_000,
+
+    reconcile: 60_000,
+    getSettlementReport: 60_000,
+
+    healthCheck: 10_000,
+    getProviderStatus: 10_000,
+});
+
+/**
+ * ============================================================================
+ * CUSTOM ERROR
+ * ============================================================================
+ */
+
+class PaymentProviderError extends Error {
+    constructor(message, options = {}) {
+        super(message);
+
+        this.name = 'PaymentProviderError';
+
+        this.code =
+            options.code ||
+            ERROR_CODE.PROVIDER_ERROR;
+
+        this.provider =
+            options.provider || null;
+
+        this.operation =
+            options.operation || null;
+
+        this.retryable =
+            Boolean(options.retryable);
+
+        this.httpStatus =
+            options.httpStatus || null;
+
+        this.providerCode =
+            options.providerCode || null;
+
+        this.providerMessage =
+            options.providerMessage || null;
+
+        this.transactionReference =
+            options.transactionReference || null;
+
+        this.correlationId =
+            options.correlationId || null;
+
+        this.details =
+            options.details || null;
+
+        this.timestamp =
+            options.timestamp ||
+            new Date().toISOString();
+
+        if (Error.captureStackTrace) {
+            Error.captureStackTrace(
+                this,
+                PaymentProviderError
+            );
+        }
+    }
+}
+
+/**
+ * ============================================================================
+ * PAYMENT PROVIDER INTERFACE
  * ============================================================================
  */
 
 class PaymentProviderInterface {
-  constructor(config = {}) {
-    if (new.target === PaymentProviderInterface) {
-      throw new Error(
-        "PaymentProviderInterface is abstract and cannot be instantiated directly"
-      );
+    constructor(config = {}) {
+        if (new.target === PaymentProviderInterface) {
+            throw new Error(
+                'PaymentProviderInterface is abstract and cannot be instantiated directly'
+            );
+        }
+
+        if (
+            config === null ||
+            typeof config !== 'object'
+        ) {
+            throw new TypeError(
+                'Payment provider configuration must be an object'
+            );
+        }
+
+        this.config = {
+            ...config,
+        };
+
+        this.providerName =
+            config.providerName ||
+            this.constructor.name ||
+            'UNKNOWN_PROVIDER';
+
+        this.providerCode =
+            config.providerCode ||
+            this.providerName
+                .toUpperCase()
+                .replace(/[^A-Z0-9]+/g, '_');
+
+        this.environment =
+            config.environment ||
+            process.env.NODE_ENV ||
+            'development';
+
+        this.interfaceVersion =
+            INTERFACE_VERSION;
+
+        this.providerVersion =
+            config.providerVersion ||
+            '1.0.0';
+
+        this.tenantAware =
+            config.tenantAware !== false;
+
+        this.idempotencyEnabled =
+            config.idempotencyEnabled !== false;
+
+        this.defaultCurrency =
+            config.defaultCurrency ||
+            'UGX';
+
+        this.timeout =
+            Number(config.timeout) ||
+            30_000;
+
+        this.timeouts = {
+            ...DEFAULT_TIMEOUTS,
+            ...(config.timeouts || {}),
+        };
+
+        this.retryPolicy = {
+            ...DEFAULT_RETRY_POLICY,
+            ...(config.retryPolicy || {}),
+        };
+
+        this.logger =
+            config.logger ||
+            console;
+
+        this.metrics =
+            config.metrics || null;
+
+        this.auditService =
+            config.auditService || null;
+
+        this.eventPublisher =
+            config.eventPublisher || null;
+
+        this.status =
+            PROVIDER_STATUS.INITIALIZING;
+
+        this.createdAt =
+            new Date().toISOString();
+
+        this.initializedAt = null;
     }
 
-    this.config = config;
-    this.providerName = config.providerName || "UNKNOWN_PROVIDER";
-  }
+    /**
+     * =========================================================================
+     * PROVIDER LIFECYCLE
+     * =========================================================================
+     */
 
-  /**
-   * ==========================================================================
-   * AUTHENTICATION
-   * ==========================================================================
-   */
+    async initialize() {
+        this.status =
+            PROVIDER_STATUS.INITIALIZING;
 
-  async authenticate() {
-    throw new Error(
-      `${this.providerName}: authenticate() must be implemented`
-    );
-  }
+        this.validateConfiguration();
 
-  async refreshToken() {
-    throw new Error(
-      `${this.providerName}: refreshToken() must be implemented`
-    );
-  }
+        this.initializedAt =
+            new Date().toISOString();
 
-  /**
-   * ==========================================================================
-   * COLLECTIONS
-   * ==========================================================================
-   */
+        this.status =
+            PROVIDER_STATUS.READY;
 
-  /**
-   * Initiate customer payment collection
-   *
-   * @param {Object} payload
-   * @returns {Promise<Object>}
-   */
-  async collect(payload) {
-    throw new Error(
-      `${this.providerName}: collect() must be implemented`
-    );
-  }
+        return this.success({
+            status: this.status,
+        });
+    }
 
-  /**
-   * Reverse collection transaction
-   *
-   * @param {Object} payload
-   * @returns {Promise<Object>}
-   */
-  async reverseCollection(payload) {
-    throw new Error(
-      `${this.providerName}: reverseCollection() must be implemented`
-    );
-  }
+    async shutdown() {
+        this.status =
+            PROVIDER_STATUS.UNAVAILABLE;
 
-  /**
-   * ==========================================================================
-   * DISBURSEMENTS
-   * ==========================================================================
-   */
+        return this.success({
+            status: this.status,
+        });
+    }
 
-  /**
-   * Send money to customer
-   *
-   * @param {Object} payload
-   * @returns {Promise<Object>}
-   */
-  async disburse(payload) {
-    throw new Error(
-      `${this.providerName}: disburse() must be implemented`
-    );
-  }
+    validateConfiguration() {
+        if (
+            !this.providerName ||
+            this.providerName ===
+                'UNKNOWN_PROVIDER'
+        ) {
+            throw new PaymentProviderError(
+                'Provider name is required',
+                {
+                    code:
+                        ERROR_CODE.INVALID_CONFIGURATION,
+                    provider: this.providerName,
+                }
+            );
+        }
 
-  /**
-   * Reverse payout
-   *
-   * @param {Object} payload
-   * @returns {Promise<Object>}
-   */
-  async reverseDisbursement(payload) {
-    throw new Error(
-      `${this.providerName}: reverseDisbursement() must be implemented`
-    );
-  }
+        return true;
+    }
 
-  /**
-   * ==========================================================================
-   * TRANSACTION MANAGEMENT
-   * ==========================================================================
-   */
+    /**
+     * =========================================================================
+     * AUTHENTICATION
+     * =========================================================================
+     */
 
-  /**
-   * Get transaction status
-   *
-   * @param {string} reference
-   * @returns {Promise<Object>}
-   */
-  async getTransactionStatus(reference) {
-    throw new Error(
-      `${this.providerName}: getTransactionStatus() must be implemented`
-    );
-  }
+    async authenticate() {
+        return this.notImplemented(
+            OPERATION.AUTHENTICATE
+        );
+    }
 
-  /**
-   * Get transaction details
-   *
-   * @param {string} reference
-   * @returns {Promise<Object>}
-   */
-  async getTransaction(reference) {
-    throw new Error(
-      `${this.providerName}: getTransaction() must be implemented`
-    );
-  }
+    async refreshToken() {
+        return this.notImplemented(
+            'REFRESH_TOKEN'
+        );
+    }
 
-  /**
-   * Retry failed transaction
-   *
-   * @param {string} reference
-   * @returns {Promise<Object>}
-   */
-  async retryTransaction(reference) {
-    throw new Error(
-      `${this.providerName}: retryTransaction() must be implemented`
-    );
-  }
+    /**
+     * =========================================================================
+     * COLLECTIONS
+     * =========================================================================
+     */
 
-  /**
-   * Cancel pending transaction
-   *
-   * @param {string} reference
-   * @returns {Promise<Object>}
-   */
-  async cancelTransaction(reference) {
-    throw new Error(
-      `${this.providerName}: cancelTransaction() must be implemented`
-    );
-  }
+    async collect(payload) {
+        return this.notImplemented(
+            OPERATION.COLLECT,
+            payload
+        );
+    }
 
-  /**
-   * ==========================================================================
-   * ACCOUNT INFORMATION
-   * ==========================================================================
-   */
+    async reverseCollection(payload) {
+        return this.notImplemented(
+            OPERATION.REVERSE_COLLECTION,
+            payload
+        );
+    }
 
-  /**
-   * Provider wallet/account balance
-   *
-   * @returns {Promise<Object>}
-   */
-  async getBalance() {
-    throw new Error(
-      `${this.providerName}: getBalance() must be implemented`
-    );
-  }
+    /**
+     * =========================================================================
+     * DISBURSEMENTS
+     * =========================================================================
+     */
 
-  /**
-   * Settlement account balance
-   *
-   * @returns {Promise<Object>}
-   */
-  async getSettlementBalance() {
-    throw new Error(
-      `${this.providerName}: getSettlementBalance() must be implemented`
-    );
-  }
+    async disburse(payload) {
+        return this.notImplemented(
+            OPERATION.DISBURSE,
+            payload
+        );
+    }
 
-  /**
-   * ==========================================================================
-   * WEBHOOKS
-   * ==========================================================================
-   */
+    async reverseDisbursement(payload) {
+        return this.notImplemented(
+            OPERATION.REVERSE_DISBURSEMENT,
+            payload
+        );
+    }
 
-  /**
-   * Verify provider webhook signature
-   *
-   * @param {Object} headers
-   * @param {String|Object} payload
-   * @returns {Promise<boolean>}
-   */
-  async verifyWebhook(headers, payload) {
-    throw new Error(
-      `${this.providerName}: verifyWebhook() must be implemented`
-    );
-  }
+    /**
+     * =========================================================================
+     * TRANSACTION MANAGEMENT
+     * =========================================================================
+     */
 
-  /**
-   * Process provider webhook
-   *
-   * @param {Object} payload
-   * @returns {Promise<Object>}
-   */
-  async handleWebhook(payload) {
-    throw new Error(
-      `${this.providerName}: handleWebhook() must be implemented`
-    );
-  }
+    async getTransactionStatus(reference) {
+        this.validateReference(reference);
 
-  /**
-   * ==========================================================================
-   * RECONCILIATION
-   * ==========================================================================
-   */
+        return this.notImplemented(
+            OPERATION.GET_TRANSACTION_STATUS,
+            reference
+        );
+    }
 
-  /**
-   * Fetch reconciliation report
-   *
-   * @param {Date|string} date
-   * @returns {Promise<Object>}
-   */
-  async reconcile(date) {
-    throw new Error(
-      `${this.providerName}: reconcile() must be implemented`
-    );
-  }
+    async getTransaction(reference) {
+        this.validateReference(reference);
 
-  /**
-   * Settlement report
-   *
-   * @param {Date|string} date
-   * @returns {Promise<Object>}
-   */
-  async getSettlementReport(date) {
-    throw new Error(
-      `${this.providerName}: getSettlementReport() must be implemented`
-    );
-  }
+        return this.notImplemented(
+            OPERATION.GET_TRANSACTION,
+            reference
+        );
+    }
 
-  /**
-   * ==========================================================================
-   * HEALTH & MONITORING
-   * ==========================================================================
-   */
+    async retryTransaction(reference) {
+        this.validateReference(reference);
 
-  /**
-   * Provider connectivity test
-   *
-   * @returns {Promise<Object>}
-   */
-  async healthCheck() {
-    throw new Error(
-      `${this.providerName}: healthCheck() must be implemented`
-    );
-  }
+        return this.notImplemented(
+            OPERATION.RETRY_TRANSACTION,
+            reference
+        );
+    }
 
-  /**
-   * Get provider status
-   *
-   * @returns {Promise<Object>}
-   */
-  async getProviderStatus() {
-    throw new Error(
-      `${this.providerName}: getProviderStatus() must be implemented`
-    );
-  }
+    async cancelTransaction(reference) {
+        this.validateReference(reference);
 
-  /**
-   * ==========================================================================
-   * PROVIDER CAPABILITIES
-   * ==========================================================================
-   */
+        return this.notImplemented(
+            OPERATION.CANCEL_TRANSACTION,
+            reference
+        );
+    }
 
-  /**
-   * Returns supported features.
-   */
-  getCapabilities() {
-    return {
-      collections: false,
-      disbursements: false,
-      reversals: false,
-      reconciliation: false,
-      settlements: false,
-      balanceInquiry: false,
-      webhookVerification: false,
-      transactionLookup: false,
-      transactionRetry: false,
-      cancellation: false,
-    };
-  }
+    /**
+     * =========================================================================
+     * ACCOUNT / BALANCE
+     * =========================================================================
+     */
 
-  /**
-   * ==========================================================================
-   * UTILITIES
-   * ==========================================================================
-   */
+    async getBalance() {
+        return this.notImplemented(
+            OPERATION.GET_BALANCE
+        );
+    }
 
-  /**
-   * Normalize provider response.
-   *
-   * @param {Object} response
-   * @returns {Object}
-   */
-  normalizeResponse(response) {
-    return response;
-  }
+    async getSettlementBalance() {
+        return this.notImplemented(
+            OPERATION.GET_SETTLEMENT_BALANCE
+        );
+    }
 
-  /**
-   * Normalize provider errors.
-   *
-   * @param {Error} error
-   * @returns {Object}
-   */
-  normalizeError(error) {
-    return {
-      success: false,
-      provider: this.providerName,
-      code: error.code || "PROVIDER_ERROR",
-      message: error.message,
-      timestamp: new Date().toISOString(),
-    };
-  }
+    /**
+     * =========================================================================
+     * WEBHOOKS
+     * =========================================================================
+     */
 
-  /**
-   * Standardized success response.
-   *
-   * @param {Object} data
-   * @returns {Object}
-   */
-  success(data = {}) {
-    return {
-      success: true,
-      provider: this.providerName,
-      timestamp: new Date().toISOString(),
-      ...data,
-    };
-  }
+    async verifyWebhook(
+        headers,
+        payload
+    ) {
+        if (
+            !headers ||
+            typeof headers !== 'object'
+        ) {
+            throw new PaymentProviderError(
+                'Webhook headers are required',
+                {
+                    code:
+                        ERROR_CODE.WEBHOOK_INVALID_PAYLOAD,
+                    provider: this.providerName,
+                    operation:
+                        OPERATION.VERIFY_WEBHOOK,
+                }
+            );
+        }
 
-  /**
-   * Standardized failure response.
-   *
-   * @param {String} message
-   * @param {String} code
-   * @returns {Object}
-   */
-  failure(message, code = "PROVIDER_ERROR") {
-    return {
-      success: false,
-      provider: this.providerName,
-      code,
-      message,
-      timestamp: new Date().toISOString(),
-    };
-  }
+        return this.notImplemented(
+            OPERATION.VERIFY_WEBHOOK,
+            {
+                headers,
+                payload,
+            }
+        );
+    }
+
+    async handleWebhook(payload) {
+        if (
+            payload === undefined ||
+            payload === null
+        ) {
+            throw new PaymentProviderError(
+                'Webhook payload is required',
+                {
+                    code:
+                        ERROR_CODE.WEBHOOK_INVALID_PAYLOAD,
+                    provider: this.providerName,
+                    operation:
+                        OPERATION.HANDLE_WEBHOOK,
+                }
+            );
+        }
+
+        return this.notImplemented(
+            OPERATION.HANDLE_WEBHOOK,
+            payload
+        );
+    }
+
+    /**
+     * =========================================================================
+     * RECONCILIATION
+     * =========================================================================
+     */
+
+    async reconcile(date) {
+        const normalizedDate =
+            this.normalizeDate(date);
+
+        return this.notImplemented(
+            OPERATION.RECONCILE,
+            normalizedDate
+        );
+    }
+
+    async getSettlementReport(date) {
+        const normalizedDate =
+            this.normalizeDate(date);
+
+        return this.notImplemented(
+            OPERATION.GET_SETTLEMENT_REPORT,
+            normalizedDate
+        );
+    }
+
+    /**
+     * =========================================================================
+     * HEALTH & MONITORING
+     * =========================================================================
+     */
+
+    async healthCheck() {
+        return this.notImplemented(
+            OPERATION.HEALTH_CHECK
+        );
+    }
+
+    async getProviderStatus() {
+        return this.success({
+            status: this.status,
+
+            provider: this.providerName,
+
+            providerCode:
+                this.providerCode,
+
+            environment:
+                this.environment,
+
+            interfaceVersion:
+                this.interfaceVersion,
+
+            providerVersion:
+                this.providerVersion,
+
+            capabilities:
+                this.getCapabilities(),
+
+            timestamp:
+                new Date().toISOString(),
+        });
+    }
+
+    /**
+     * =========================================================================
+     * PROVIDER CAPABILITIES
+     * =========================================================================
+     */
+
+    getCapabilities() {
+        return {
+            ...DEFAULT_CAPABILITIES,
+        };
+    }
+
+    supports(capability) {
+        const capabilities =
+            this.getCapabilities();
+
+        return (
+            Object.prototype.hasOwnProperty.call(
+                capabilities,
+                capability
+            ) &&
+            capabilities[capability] === true
+        );
+    }
+
+    assertCapability(capability) {
+        if (!this.supports(capability)) {
+            throw new PaymentProviderError(
+                `${this.providerName} does not support capability: ${capability}`,
+                {
+                    code:
+                        ERROR_CODE.UNSUPPORTED_OPERATION,
+                    provider: this.providerName,
+                }
+            );
+        }
+
+        return true;
+    }
+
+    /**
+     * =========================================================================
+     * IDEMPOTENCY
+     * =========================================================================
+     */
+
+    generateIdempotencyKey(
+        operation,
+        payload = {}
+    ) {
+        const serialized =
+            JSON.stringify(
+                this.sortObject(payload)
+            );
+
+        return crypto
+            .createHash('sha256')
+            .update(
+                `${this.providerCode}:${operation}:${serialized}`
+            )
+            .digest('hex');
+    }
+
+    getIdempotencyKey(payload = {}) {
+        return (
+            payload.idempotencyKey ||
+            payload.idempotency_key ||
+            this.generateIdempotencyKey(
+                payload.operation ||
+                    'PAYMENT',
+                payload
+            )
+        );
+    }
+
+    /**
+     * =========================================================================
+     * REQUEST VALIDATION
+     * =========================================================================
+     */
+
+    validatePayload(
+        payload,
+        operation = 'UNKNOWN'
+    ) {
+        if (
+            !payload ||
+            typeof payload !== 'object'
+        ) {
+            throw new PaymentProviderError(
+                `${operation}: payload must be an object`,
+                {
+                    code:
+                        ERROR_CODE.INVALID_REQUEST,
+                    provider: this.providerName,
+                    operation,
+                }
+            );
+        }
+
+        return true;
+    }
+
+    validateReference(reference) {
+        if (
+            reference === undefined ||
+            reference === null ||
+            String(reference).trim() === ''
+        ) {
+            throw new PaymentProviderError(
+                'Transaction reference is required',
+                {
+                    code:
+                        ERROR_CODE.INVALID_REFERENCE,
+                    provider: this.providerName,
+                }
+            );
+        }
+
+        return true;
+    }
+
+    validateAmount(amount) {
+        const numericAmount =
+            Number(amount);
+
+        if (
+            !Number.isFinite(numericAmount) ||
+            numericAmount <= 0
+        ) {
+            throw new PaymentProviderError(
+                'Transaction amount must be greater than zero',
+                {
+                    code:
+                        ERROR_CODE.INVALID_AMOUNT,
+                    provider: this.providerName,
+                }
+            );
+        }
+
+        return numericAmount;
+    }
+
+    validateCurrency(currency) {
+        const normalized =
+            String(
+                currency ||
+                    this.defaultCurrency
+            )
+                .trim()
+                .toUpperCase();
+
+        if (
+            !/^[A-Z]{3}$/.test(normalized)
+        ) {
+            throw new PaymentProviderError(
+                `Invalid currency: ${currency}`,
+                {
+                    code:
+                        ERROR_CODE.INVALID_CURRENCY,
+                    provider: this.providerName,
+                }
+            );
+        }
+
+        return normalized;
+    }
+
+    /**
+     * =========================================================================
+     * NORMALIZATION
+     * =========================================================================
+     */
+
+    normalizeResponse(response) {
+        if (
+            response === null ||
+            response === undefined
+        ) {
+            throw new PaymentProviderError(
+                'Provider returned an empty response',
+                {
+                    code:
+                        ERROR_CODE.INVALID_RESPONSE,
+                    provider: this.providerName,
+                }
+            );
+        }
+
+        return response;
+    }
+
+    normalizeTransactionStatus(status) {
+        if (!status) {
+            return TRANSACTION_STATUS.UNKNOWN;
+        }
+
+        const normalized =
+            String(status)
+                .trim()
+                .toUpperCase();
+
+        const aliases = {
+            SUCCESSFUL:
+                TRANSACTION_STATUS.SUCCESS,
+
+            COMPLETED:
+                TRANSACTION_STATUS.SUCCESS,
+
+            COMPLETE:
+                TRANSACTION_STATUS.SUCCESS,
+
+            PAID:
+                TRANSACTION_STATUS.SUCCESS,
+
+            PENDING:
+                TRANSACTION_STATUS.PENDING,
+
+            PROCESSING:
+                TRANSACTION_STATUS.PROCESSING,
+
+            FAILED:
+                TRANSACTION_STATUS.FAILED,
+
+            FAILURE:
+                TRANSACTION_STATUS.FAILED,
+
+            REVERSED:
+                TRANSACTION_STATUS.REVERSED,
+
+            CANCELLED:
+                TRANSACTION_STATUS.CANCELLED,
+
+            CANCELED:
+                TRANSACTION_STATUS.CANCELLED,
+
+            EXPIRED:
+                TRANSACTION_STATUS.EXPIRED,
+
+            REFUNDED:
+                TRANSACTION_STATUS.REFUNDED,
+        };
+
+        return (
+            aliases[normalized] ||
+            TRANSACTION_STATUS.UNKNOWN
+        );
+    }
+
+    normalizeAmount(amount) {
+        return this.validateAmount(
+            amount
+        );
+    }
+
+    normalizeCurrency(currency) {
+        return this.validateCurrency(
+            currency
+        );
+    }
+
+    normalizeDate(date) {
+        if (!date) {
+            return new Date();
+        }
+
+        const normalized =
+            date instanceof Date
+                ? date
+                : new Date(date);
+
+        if (
+            Number.isNaN(
+                normalized.getTime()
+            )
+        ) {
+            throw new PaymentProviderError(
+                `Invalid date: ${date}`,
+                {
+                    code:
+                        ERROR_CODE.INVALID_REQUEST,
+                    provider: this.providerName,
+                }
+            );
+        }
+
+        return normalized;
+    }
+
+    /**
+     * =========================================================================
+     * ERROR NORMALIZATION
+     * =========================================================================
+     */
+
+    normalizeError(
+        error,
+        context = {}
+    ) {
+        if (
+            error instanceof
+            PaymentProviderError
+        ) {
+            return {
+                success: false,
+
+                provider:
+                    this.providerName,
+
+                providerCode:
+                    this.providerCode,
+
+                code:
+                    error.code,
+
+                message:
+                    error.message,
+
+                retryable:
+                    error.retryable,
+
+                operation:
+                    context.operation ||
+                    error.operation ||
+                    null,
+
+                correlationId:
+                    context.correlationId ||
+                    error.correlationId ||
+                    null,
+
+                transactionReference:
+                    context.transactionReference ||
+                    error.transactionReference ||
+                    null,
+
+                timestamp:
+                    error.timestamp ||
+                    new Date().toISOString(),
+            };
+        }
+
+        return {
+            success: false,
+
+            provider:
+                this.providerName,
+
+            providerCode:
+                this.providerCode,
+
+            code:
+                error?.code ||
+                ERROR_CODE.PROVIDER_ERROR,
+
+            message:
+                error?.message ||
+                'Payment provider error',
+
+            retryable:
+                Boolean(
+                    error?.retryable
+                ),
+
+            operation:
+                context.operation ||
+                null,
+
+            correlationId:
+                context.correlationId ||
+                null,
+
+            transactionReference:
+                context.transactionReference ||
+                null,
+
+            timestamp:
+                new Date().toISOString(),
+        };
+    }
+
+    createError(
+        message,
+        options = {}
+    ) {
+        return new PaymentProviderError(
+            message,
+            {
+                provider:
+                    this.providerName,
+
+                ...options,
+            }
+        );
+    }
+
+    /**
+     * =========================================================================
+     * RETRY POLICY
+     * =========================================================================
+     */
+
+    getRetryPolicy() {
+        return {
+            ...this.retryPolicy,
+            retryableErrors: [
+                ...this.retryPolicy
+                    .retryableErrors,
+            ],
+        };
+    }
+
+    isRetryableError(error) {
+        if (
+            error?.retryable === true
+        ) {
+            return true;
+        }
+
+        const code =
+            error?.code;
+
+        return this.retryPolicy
+            .retryableErrors
+            .includes(code);
+    }
+
+    calculateRetryDelay(
+        attempt = 1
+    ) {
+        const policy =
+            this.retryPolicy;
+
+        const exponentialDelay =
+            policy.initialDelayMs *
+            Math.pow(
+                policy.backoffMultiplier,
+                Math.max(
+                    0,
+                    attempt - 1
+                )
+            );
+
+        let delay =
+            Math.min(
+                exponentialDelay,
+                policy.maxDelayMs
+            );
+
+        if (policy.jitter) {
+            delay =
+                Math.floor(
+                    delay *
+                        (0.5 +
+                            Math.random())
+                );
+        }
+
+        return delay;
+    }
+
+    /**
+     * =========================================================================
+     * TIMEOUT CONFIGURATION
+     * =========================================================================
+     */
+
+    getTimeout(operation) {
+        return (
+            this.timeouts[operation] ||
+            this.timeout
+        );
+    }
+
+    /**
+     * =========================================================================
+     * STANDARD SUCCESS / FAILURE
+     * =========================================================================
+     */
+
+    success(data = {}) {
+        return {
+            success: true,
+
+            provider:
+                this.providerName,
+
+            providerCode:
+                this.providerCode,
+
+            interfaceVersion:
+                this.interfaceVersion,
+
+            timestamp:
+                new Date().toISOString(),
+
+            ...data,
+        };
+    }
+
+    failure(
+        message,
+        code = ERROR_CODE.PROVIDER_ERROR,
+        data = {}
+    ) {
+        return {
+            success: false,
+
+            provider:
+                this.providerName,
+
+            providerCode:
+                this.providerCode,
+
+            interfaceVersion:
+                this.interfaceVersion,
+
+            code,
+
+            message,
+
+            timestamp:
+                new Date().toISOString(),
+
+            ...data,
+        };
+    }
+
+    /**
+     * =========================================================================
+     * CORRELATION / REQUEST CONTEXT
+     * =========================================================================
+     */
+
+    createRequestContext(
+        context = {}
+    ) {
+        return {
+            correlationId:
+                context.correlationId ||
+                crypto.randomUUID(),
+
+            requestId:
+                context.requestId ||
+                crypto.randomUUID(),
+
+            tenantId:
+                context.tenantId ||
+                null,
+
+            customerId:
+                context.customerId ||
+                null,
+
+            transactionId:
+                context.transactionId ||
+                null,
+
+            idempotencyKey:
+                context.idempotencyKey ||
+                null,
+
+            operation:
+                context.operation ||
+                null,
+
+            provider:
+                this.providerName,
+
+            providerCode:
+                this.providerCode,
+
+            createdAt:
+                new Date().toISOString(),
+        };
+    }
+
+    /**
+     * =========================================================================
+     * SAFE LOGGING / DATA REDACTION
+     * =========================================================================
+     *
+     * Payment providers frequently handle:
+     *  - phone numbers
+     *  - access tokens
+     *  - secrets
+     *  - API keys
+     *  - account numbers
+     *  - payment references
+     *
+     * Never log these blindly.
+     */
+
+    redact(value, options = {}) {
+        const sensitiveKeys =
+            new Set([
+                'password',
+                'token',
+                'accessToken',
+                'refreshToken',
+                'clientSecret',
+                'client_secret',
+                'apiKey',
+                'api_key',
+                'secret',
+                'authorization',
+                'signature',
+                'phone',
+                'phoneNumber',
+                'msisdn',
+                'accountNumber',
+                'cardNumber',
+                ...(options.sensitiveKeys || []),
+            ]);
+
+        const redactValue =
+            (input) => {
+                if (
+                    input === null ||
+                    input === undefined
+                ) {
+                    return input;
+                }
+
+                if (
+                    typeof input !==
+                    'object'
+                ) {
+                    return input;
+                }
+
+                if (
+                    Array.isArray(input)
+                ) {
+                    return input.map(
+                        redactValue
+                    );
+                }
+
+                const output = {};
+
+                for (
+                    const [
+                        key,
+                        currentValue,
+                    ] of Object.entries(
+                        input
+                    )
+                ) {
+                    if (
+                        sensitiveKeys.has(
+                            key
+                        )
+                    ) {
+                        output[key] =
+                            '[REDACTED]';
+                        continue;
+                    }
+
+                    output[key] =
+                        typeof currentValue ===
+                        'object'
+                            ? redactValue(
+                                  currentValue
+                              )
+                            : currentValue;
+                }
+
+                return output;
+            };
+
+        return redactValue(value);
+    }
+
+    /**
+     * =========================================================================
+     * OBJECT UTILITIES
+     * =========================================================================
+     */
+
+    sortObject(object) {
+        if (
+            object === null ||
+            typeof object !== 'object'
+        ) {
+            return object;
+        }
+
+        if (
+            Array.isArray(object)
+        ) {
+            return object.map(
+                (item) =>
+                    this.sortObject(item)
+            );
+        }
+
+        return Object.keys(object)
+            .sort()
+            .reduce(
+                (result, key) => {
+                    result[key] =
+                        this.sortObject(
+                            object[key]
+                        );
+
+                    return result;
+                },
+                {}
+            );
+    }
+
+    /**
+     * =========================================================================
+     * OPERATION GUARD
+     * =========================================================================
+     */
+
+    assertOperationSupported(
+        operation
+    ) {
+        const operationMap = {
+            [OPERATION.COLLECT]:
+                'collections',
+
+            [OPERATION.REVERSE_COLLECTION]:
+                'reversals',
+
+            [OPERATION.DISBURSE]:
+                'disbursements',
+
+            [OPERATION.REVERSE_DISBURSEMENT]:
+                'reversals',
+
+            [OPERATION.GET_TRANSACTION_STATUS]:
+                'transactionLookup',
+
+            [OPERATION.GET_TRANSACTION]:
+                'transactionLookup',
+
+            [OPERATION.RETRY_TRANSACTION]:
+                'transactionRetry',
+
+            [OPERATION.CANCEL_TRANSACTION]:
+                'cancellation',
+
+            [OPERATION.GET_BALANCE]:
+                'balanceInquiry',
+
+            [OPERATION.GET_SETTLEMENT_BALANCE]:
+                'balanceInquiry',
+
+            [OPERATION.VERIFY_WEBHOOK]:
+                'webhookVerification',
+
+            [OPERATION.RECONCILE]:
+                'reconciliation',
+
+            [OPERATION.GET_SETTLEMENT_REPORT]:
+                'settlements',
+        };
+
+        const capability =
+            operationMap[operation];
+
+        if (
+            capability &&
+            !this.supports(capability)
+        ) {
+            throw this.createError(
+                `${this.providerName} does not support operation: ${operation}`,
+                {
+                    code:
+                        ERROR_CODE.UNSUPPORTED_OPERATION,
+                    operation,
+                }
+            );
+        }
+
+        return true;
+    }
+
+    /**
+     * =========================================================================
+     * ABSTRACT METHOD HELPER
+     * =========================================================================
+     */
+
+    notImplemented(
+        operation,
+        payload
+    ) {
+        throw this.createError(
+            `${operation} must be implemented by ${this.providerName}`,
+            {
+                code:
+                    ERROR_CODE.UNSUPPORTED_OPERATION,
+                operation,
+                details:
+                    payload !== undefined
+                        ? {
+                              received:
+                                  true,
+                          }
+                        : null,
+            }
+        );
+    }
+
+    /**
+     * =========================================================================
+     * PROVIDER METADATA
+     * =========================================================================
+     */
+
+    getMetadata() {
+        return {
+            providerName:
+                this.providerName,
+
+            providerCode:
+                this.providerCode,
+
+            providerVersion:
+                this.providerVersion,
+
+            interfaceVersion:
+                this.interfaceVersion,
+
+            environment:
+                this.environment,
+
+            status:
+                this.status,
+
+            tenantAware:
+                this.tenantAware,
+
+            idempotencyEnabled:
+                this.idempotencyEnabled,
+
+            defaultCurrency:
+                this.defaultCurrency,
+
+            capabilities:
+                this.getCapabilities(),
+
+            retryPolicy:
+                this.getRetryPolicy(),
+
+            timeouts:
+                {
+                    ...this.timeouts,
+                },
+
+            initializedAt:
+                this.initializedAt,
+        };
+    }
 }
 
-module.exports = PaymentProviderInterface;
+/**
+ * ============================================================================
+ * STATIC EXPORTS
+ * ============================================================================
+ *
+ * Preserve:
+ *
+ * const PaymentProviderInterface =
+ *     require('./paymentProviderInterface');
+ *
+ * while also exposing enterprise constants/errors for advanced integrations.
+ * ============================================================================
+ */
+
+PaymentProviderInterface.PaymentProviderError =
+    PaymentProviderError;
+
+PaymentProviderInterface.PROVIDER_STATUS =
+    PROVIDER_STATUS;
+
+PaymentProviderInterface.TRANSACTION_STATUS =
+    TRANSACTION_STATUS;
+
+PaymentProviderInterface.OPERATION =
+    OPERATION;
+
+PaymentProviderInterface.ERROR_CODE =
+    ERROR_CODE;
+
+PaymentProviderInterface.DEFAULT_CAPABILITIES =
+    DEFAULT_CAPABILITIES;
+
+PaymentProviderInterface.DEFAULT_RETRY_POLICY =
+    DEFAULT_RETRY_POLICY;
+
+PaymentProviderInterface.DEFAULT_TIMEOUTS =
+    DEFAULT_TIMEOUTS;
+
+PaymentProviderInterface.INTERFACE_VERSION =
+    INTERFACE_VERSION;
+
+module.exports =
+    PaymentProviderInterface;

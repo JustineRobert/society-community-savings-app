@@ -12,14 +12,18 @@
  * • Single-flight token refresh
  * • Concurrent refresh prevention
  * • Tenant-isolated refresh locks
+ * • Optional distributed refresh locking
  * • Refresh retry orchestration
  * • Exponential backoff
+ * • Jitter protection
  * • Failure classification
+ * • Refresh timeout protection
  * • Metrics instrumentation
  * • Distributed tracing hooks
  * • Structured logging
  * • Refresh analytics
- * • Graceful failure handling
+ * • Observability lifecycle hooks
+ * • Graceful shutdown
  *
  * Explicitly NOT Responsible For
  * ------------------------------
@@ -31,32 +35,54 @@
  * ==========================================================
  */
 
-
 const crypto = require('crypto');
-
 
 const {
     normalizeError
-} = require('../../shared/errors');
+} = require('../../../shared/errors');
 
+
+const PROVIDER = 'AIRTEL';
 
 
 const REFRESH_STATUS = Object.freeze({
 
-    IDLE: 'IDLE',
+    IDLE:
+        'IDLE',
 
-    RUNNING: 'RUNNING',
+    RUNNING:
+        'RUNNING',
 
-    FAILED: 'FAILED',
+    FAILED:
+        'FAILED',
 
-    SUCCESS: 'SUCCESS'
+    SUCCESS:
+        'SUCCESS'
 
 });
 
 
+const DEFAULTS = Object.freeze({
 
+    maxRetries:
+        3,
 
+    initialDelayMs:
+        500,
 
+    maxDelayMs:
+        10000,
+
+    backoffMultiplier:
+        2,
+
+    jitterRatio:
+        0.20,
+
+    timeoutMs:
+        30000
+
+});
 
 
 class RefreshManager {
@@ -70,19 +96,36 @@ class RefreshManager {
 
         tracer,
 
-        maxRetries = 3,
+        observability = null,
 
-        initialDelayMs = 500,
+        distributedLock = null,
 
-        maxDelayMs = 10000,
+        maxRetries =
+            DEFAULTS.maxRetries,
 
-        backoffMultiplier = 2,
+        initialDelayMs =
+            DEFAULTS.initialDelayMs,
 
-        clock = Date
+        maxDelayMs =
+            DEFAULTS.maxDelayMs,
+
+        backoffMultiplier =
+            DEFAULTS.backoffMultiplier,
+
+        jitterRatio =
+            DEFAULTS.jitterRatio,
+
+        timeoutMs =
+            DEFAULTS.timeoutMs,
+
+        retryableError = null,
+
+        clock = Date,
+
+        random = Math.random
 
 
     } = {}) {
-
 
 
         this.logger =
@@ -97,157 +140,229 @@ class RefreshManager {
             tracer;
 
 
+        this.observability =
+            observability;
+
+
+        this.distributedLock =
+            distributedLock;
+
+
         this.maxRetries =
-            maxRetries;
+            this.normalizePositiveInteger(
+                maxRetries,
+                DEFAULTS.maxRetries
+            );
 
 
         this.initialDelayMs =
-            initialDelayMs;
+            this.normalizePositiveNumber(
+                initialDelayMs,
+                DEFAULTS.initialDelayMs
+            );
 
 
         this.maxDelayMs =
-            maxDelayMs;
+            this.normalizePositiveNumber(
+                maxDelayMs,
+                DEFAULTS.maxDelayMs
+            );
 
 
         this.backoffMultiplier =
-            backoffMultiplier;
+            this.normalizePositiveNumber(
+                backoffMultiplier,
+                DEFAULTS.backoffMultiplier
+            );
+
+
+        this.jitterRatio =
+            Math.min(
+                Math.max(
+                    Number(jitterRatio) || 0,
+                    0
+                ),
+                1
+            );
+
+
+        this.timeoutMs =
+            this.normalizePositiveNumber(
+                timeoutMs,
+                DEFAULTS.timeoutMs
+            );
+
+
+        this.retryableError =
+            typeof retryableError === 'function'
+                ? retryableError
+                : null;
 
 
         this.clock =
             clock;
 
 
-
+        this.random =
+            typeof random === 'function'
+                ? random
+                : Math.random;
 
 
         /**
-         * tenantId -> Promise
+         * ------------------------------------------------------
+         * Local Single-Flight Locks
          *
-         * Prevents refresh storms
+         * tenantId -> Promise
+         * ------------------------------------------------------
          */
+
         this.refreshLocks =
             new Map();
 
 
-
-
+        /**
+         * ------------------------------------------------------
+         * Refresh Runtime State
+         * ------------------------------------------------------
+         */
 
         this.refreshState =
             new Map();
 
 
+        /**
+         * ------------------------------------------------------
+         * Shutdown State
+         * ------------------------------------------------------
+         */
+
+        this.shuttingDown =
+            false;
 
 
+        /**
+         * ------------------------------------------------------
+         * Runtime Statistics
+         * ------------------------------------------------------
+         */
 
         this.statistics = {
 
+            attempts:
+                0,
 
-            attempts: 0,
+            successful:
+                0,
 
+            failed:
+                0,
 
-            successful: 0,
+            deduplicated:
+                0,
 
+            retries:
+                0,
 
-            failed: 0,
+            retrySkipped:
+                0,
 
+            timeoutFailures:
+                0,
 
-            deduplicated: 0,
+            distributedLockAcquired:
+                0,
 
+            distributedLockConflicts:
+                0,
 
-            retries: 0
-
+            startedAt:
+                new this.clock()
 
         };
-
-
 
     }
 
 
-
-
-
-
-
-
-
     /**
-     * ------------------------------------------------------
+     * ==========================================================
      * Execute Refresh
-     * ------------------------------------------------------
+     * ==========================================================
      */
+
     async execute({
 
         tenantId,
 
         refresh,
 
-        correlationId = crypto.randomUUID()
+        correlationId =
+            crypto.randomUUID(),
+
+        force = false
+
+    } = {}) {
 
 
-    }) {
+        this.validateTenant(
+            tenantId
+        );
 
 
+        this.validateRefresh(
+            refresh
+        );
 
-        if(!tenantId){
+
+        if(this.shuttingDown){
 
             throw new Error(
-
-                'tenantId required'
-
+                'Airtel refresh manager is shutting down'
             );
 
         }
 
 
-
-
-
+        /**
+         * ------------------------------------------------------
+         * Local single-flight protection
+         * ------------------------------------------------------
+         */
 
         const existing =
-
             this.refreshLocks.get(
-
                 tenantId
-
             );
 
 
-
-
-
-
-        if(existing){
-
-
+        if(existing && !force){
 
             this.statistics.deduplicated++;
 
 
-
             this.metrics?.counter?.(
-
                 'payment_airtel_refresh_deduplicated_total'
-
             );
 
+
+            this.logger?.debug?.({
+
+                message:
+                    'Airtel token refresh deduplicated',
+
+                tenantId,
+
+                correlationId
+
+            });
 
 
             return existing;
 
-
         }
 
 
-
-
-
-
-
-
-
         const operation =
-
             this.runRefresh({
 
                 tenantId,
@@ -259,60 +374,50 @@ class RefreshManager {
             });
 
 
-
-
-
-
-
         this.refreshLocks.set(
-
             tenantId,
-
             operation
-
         );
-
-
-
 
 
         try {
 
-
             return await operation;
 
-
         }
-
 
         finally {
 
+            /**
+             * Only remove our own operation.
+             *
+             * This protects against accidental replacement
+             * of a lock by another execution.
+             */
 
-            this.refreshLocks.delete(
+            if(
+                this.refreshLocks.get(
+                    tenantId
+                ) === operation
+            ){
 
-                tenantId
+                this.refreshLocks.delete(
+                    tenantId
+                );
 
-            );
-
+            }
 
         }
-
 
     }
 
 
-
-
-
-
-
-
-
     /**
-     * ------------------------------------------------------
+     * ==========================================================
      * Refresh Executor
-     * ------------------------------------------------------
+     * ==========================================================
      */
+
     async runRefresh({
 
         tenantId,
@@ -321,228 +426,314 @@ class RefreshManager {
 
         correlationId
 
-
     }) {
 
 
-
         const span =
-
             this.tracer?.startSpan?.(
-
                 'airtel.oauth.refresh'
-
             );
 
 
+        const startedAt =
+            Date.now();
+
+
+        let distributedLockToken =
+            null;
 
 
         try {
 
 
+            this.setSpanAttributes(
+                span,
+                {
+                    'provider.name':
+                        PROVIDER,
+
+                    'payment.provider':
+                        PROVIDER,
+
+                    'tenant.id':
+                        tenantId,
+
+                    'correlation.id':
+                        correlationId
+                }
+            );
+
 
             this.statistics.attempts++;
 
 
-
-
-
             this.setState(
-
                 tenantId,
-
                 REFRESH_STATUS.RUNNING
-
             );
 
 
+            this.observability?.refreshStarted?.({
+
+                tenantId,
+
+                correlationId
+
+            });
 
 
+            this.metrics?.counter?.(
+                'payment_airtel_refresh_started_total'
+            );
 
+
+            /**
+             * --------------------------------------------------
+             * Optional distributed lock
+             * --------------------------------------------------
+             */
+
+            if(this.distributedLock){
+
+                distributedLockToken =
+                    await this.acquireDistributedLock({
+
+                        tenantId,
+
+                        correlationId
+
+                    });
+
+
+                if(
+                    distributedLockToken === null
+                ){
+
+                    this.statistics.distributedLockConflicts++;
+
+
+                    /**
+                     * Another application instance is
+                     * refreshing this tenant.
+                     *
+                     * If the distributed lock implementation
+                     * exposes wait/get functionality, the
+                     * caller can resolve the newly stored token.
+                     */
+
+                    this.metrics?.counter?.(
+                        'payment_airtel_refresh_distributed_lock_conflict_total'
+                    );
+
+
+                    throw new Error(
+                        'Airtel token refresh is already running on another instance'
+                    );
+
+                }
+
+            }
 
 
             const result =
-
                 await this.executeWithRetry({
 
                     operation:
-
                         refresh,
-
 
                     tenantId,
 
-
                     correlationId
 
-
                 });
-
-
-
-
-
-
 
 
             this.statistics.successful++;
 
 
-
-
-
             this.setState(
-
                 tenantId,
-
                 REFRESH_STATUS.SUCCESS
-
             );
 
 
-
-
-
+            const durationMs =
+                Date.now() - startedAt;
 
 
             this.metrics?.counter?.(
-
                 'payment_airtel_refresh_success_total'
-
             );
 
 
+            this.metrics?.histogram?.(
+                'payment_airtel_refresh_duration_ms',
+                durationMs
+            );
 
 
+            this.observability?.refreshSucceeded?.({
 
+                tenantId,
+
+                correlationId
+
+            });
 
 
             this.logger?.info?.({
 
                 message:
-
                     'Airtel token refresh successful',
 
+                provider:
+                    PROVIDER,
 
                 tenantId,
 
+                correlationId,
 
-                correlationId
-
+                durationMs
 
             });
 
 
-
-
-
-
+            span?.setStatus?.({
+                code:
+                    'OK'
+            });
 
 
             return result;
 
-
-
         }
-
 
         catch(error){
 
+
+            const normalized =
+                normalizeError(error);
 
 
             this.statistics.failed++;
 
 
+            if(
+                this.isTimeoutError(
+                    error
+                )
+            ){
 
+                this.statistics.timeoutFailures++;
+
+
+                this.metrics?.counter?.(
+                    'payment_airtel_refresh_timeout_total'
+                );
+
+            }
 
 
             this.setState(
-
                 tenantId,
-
                 REFRESH_STATUS.FAILED
-
             );
-
-
-
-
-
 
 
             this.metrics?.counter?.(
-
                 'payment_airtel_refresh_failed_total'
-
             );
 
 
+            this.metrics?.histogram?.(
+                'payment_airtel_refresh_duration_ms',
+                Date.now() - startedAt
+            );
 
 
+            this.observability?.refreshFailed?.({
 
+                tenantId,
+
+                correlationId,
+
+                error:
+                    normalized
+
+            });
 
 
             this.logger?.error?.({
 
                 message:
-
                     'Airtel token refresh failed',
 
+                provider:
+                    PROVIDER,
 
                 tenantId,
 
-
                 correlationId,
 
+                durationMs:
+                    Date.now() - startedAt,
 
                 error:
-
-                    error.toJSON?.()
-
+                    normalized?.toJSON?.()
                     ||
-
-                    error
-
+                    normalized
 
             });
 
 
+            span?.recordException?.(
+                normalized
+            );
 
 
+            span?.setStatus?.({
+
+                code:
+                    'ERROR',
+
+                message:
+                    normalized?.message
+
+            });
 
 
-
-            throw normalizeError(error);
-
-
+            throw normalized;
 
         }
 
+        finally {
 
-        finally{
+
+            await this.releaseDistributedLock({
+
+                tenantId,
+
+                lockToken:
+                    distributedLockToken,
+
+                correlationId
+
+            });
 
 
             span?.end?.();
 
-
         }
-
 
     }
 
 
-
-
-
-
-
-
-
     /**
-     * ------------------------------------------------------
+     * ==========================================================
      * Retry Execution
-     * ------------------------------------------------------
+     * ==========================================================
      */
+
     async executeWithRetry({
 
         operation,
@@ -551,52 +742,88 @@ class RefreshManager {
 
         correlationId
 
-
     }) {
 
 
-
-        let attempt = 0;
-
-        let lastError;
+        let attempt =
+            0;
 
 
+        let lastError =
+            null;
 
 
+        while(
+            attempt < this.maxRetries
+        ){
 
 
+            attempt++;
 
-        while(attempt < this.maxRetries){
 
+            this.metrics?.counter?.(
+                'payment_airtel_refresh_attempt_total'
+            );
 
 
             try {
 
 
-                return await operation();
+                const result =
+                    await this.executeWithTimeout({
 
+                        operation,
+
+                        tenantId,
+
+                        correlationId,
+
+                        attempt
+
+                    });
+
+
+                return result;
 
             }
-
 
             catch(error){
 
 
-
-                lastError = error;
-
-
-                attempt++;
+                lastError =
+                    error;
 
 
+                const retryable =
+                    this.shouldRetry({
+
+                        error,
+
+                        attempt,
+
+                        tenantId
+
+                    });
 
 
+                if(!retryable){
+
+                    this.statistics.retrySkipped++;
+
+
+                    this.metrics?.counter?.(
+                        'payment_airtel_refresh_retry_skipped_total'
+                    );
+
+
+                    throw error;
+
+                }
 
 
                 if(
-
-                    attempt >= this.maxRetries
-
+                    attempt >=
+                    this.maxRetries
                 ){
 
                     break;
@@ -604,339 +831,1135 @@ class RefreshManager {
                 }
 
 
-
-
-
-
                 this.statistics.retries++;
 
 
-
-
-
                 const delay =
-
-                    Math.min(
-
-                        this.initialDelayMs *
-
-                        Math.pow(
-
-                            this.backoffMultiplier,
-
-                            attempt - 1
-
-                        ),
-
-                        this.maxDelayMs
-
+                    this.calculateBackoff(
+                        attempt
                     );
 
 
+                this.metrics?.counter?.(
+                    'payment_airtel_refresh_retry_total'
+                );
 
 
-
+                this.metrics?.histogram?.(
+                    'payment_airtel_refresh_retry_delay_ms',
+                    delay
+                );
 
 
                 this.logger?.warn?.({
 
                     message:
-
                         'Retrying Airtel token refresh',
 
+                    provider:
+                        PROVIDER,
 
                     tenantId,
 
-
                     attempt,
 
+                    nextAttempt:
+                        attempt + 1,
+
+                    maxRetries:
+                        this.maxRetries,
 
                     delay,
 
+                    correlationId,
 
-                    correlationId
-
+                    error:
+                        error?.message
 
                 });
 
 
-
-
-
-
-
-
-                await this.sleep(delay);
-
-
+                await this.sleep(
+                    delay
+                );
 
             }
-
 
         }
 
 
-
-
-
-
         throw lastError;
 
+    }
+
+
+    /**
+     * ==========================================================
+     * Timeout Protection
+     * ==========================================================
+     */
+
+    async executeWithTimeout({
+
+        operation,
+
+        tenantId,
+
+        correlationId,
+
+        attempt
+
+    }) {
+
+
+        if(
+            !this.timeoutMs ||
+            this.timeoutMs <= 0
+        ){
+
+            return operation();
+
+        }
+
+
+        let timer;
+
+
+        try {
+
+            return await Promise.race([
+
+                Promise.resolve().then(
+                    () => operation()
+                ),
+
+                new Promise(
+                    (_, reject) => {
+
+                        timer =
+                            setTimeout(
+                                () => {
+
+                                    const error =
+                                        new Error(
+                                            'Airtel token refresh timed out'
+                                        );
+
+                                    error.code =
+                                        'AIRTEL_REFRESH_TIMEOUT';
+
+                                    error.tenantId =
+                                        tenantId;
+
+                                    error.correlationId =
+                                        correlationId;
+
+                                    error.attempt =
+                                        attempt;
+
+                                    reject(error);
+
+                                },
+                                this.timeoutMs
+                            );
+
+                    }
+                )
+
+            ]);
+
+        }
+
+        finally {
+
+            if(timer){
+
+                clearTimeout(
+                    timer
+                );
+
+            }
+
+        }
 
     }
 
 
+    /**
+     * ==========================================================
+     * Retry Classification
+     * ==========================================================
+     */
+
+    shouldRetry({
+
+        error,
+
+        attempt,
+
+        tenantId
+
+    }) {
 
 
+        if(
+            attempt >=
+            this.maxRetries
+        ){
+
+            return false;
+
+        }
 
 
+        if(this.retryableError){
 
+            return Boolean(
+
+                this.retryableError(
+                    error,
+                    {
+                        tenantId,
+                        attempt,
+                        provider:
+                            PROVIDER
+                    }
+                )
+
+            );
+
+        }
+
+
+        /**
+         * Explicitly non-retryable authentication failures.
+         */
+
+        const code =
+            error?.code;
+
+
+        const status =
+            Number(
+                error?.statusCode
+                ||
+                error?.status
+                ||
+                error?.httpStatus
+            );
+
+
+        const nonRetryableCodes =
+            new Set([
+
+                'AUTHENTICATION_ERROR',
+
+                'INVALID_CREDENTIALS',
+
+                'INVALID_CLIENT',
+
+                'UNAUTHORIZED',
+
+                'FORBIDDEN',
+
+                'AIRTEL_INVALID_CREDENTIALS',
+
+                'VALIDATION_ERROR',
+
+                'AIRTEL_REFRESH_TIMEOUT'
+
+            ]);
+
+
+        if(
+            code &&
+            nonRetryableCodes.has(
+                String(code).toUpperCase()
+            )
+        ){
+
+            return false;
+
+        }
+
+
+        /**
+         * HTTP client errors generally should not retry,
+         * except rate limiting.
+         */
+
+        if(
+            status >= 400 &&
+            status < 500
+        ){
+
+            return status === 408 ||
+                status === 409 ||
+                status === 425 ||
+                status === 429;
+
+        }
+
+
+        /**
+         * Provider failures and transport failures
+         * are retry candidates.
+         */
+
+        if(
+            status >= 500
+        ){
+
+            return true;
+
+        }
+
+
+        const retryableCodes =
+            new Set([
+
+                'ECONNRESET',
+
+                'ECONNREFUSED',
+
+                'ECONNABORTED',
+
+                'ETIMEDOUT',
+
+                'EAI_AGAIN',
+
+                'ENETUNREACH',
+
+                'EHOSTUNREACH',
+
+                'PROVIDER_UNAVAILABLE',
+
+                'SERVICE_UNAVAILABLE',
+
+                'TIMEOUT',
+
+                'NETWORK_ERROR'
+
+            ]);
+
+
+        if(
+            code &&
+            retryableCodes.has(
+                String(code).toUpperCase()
+            )
+        ){
+
+            return true;
+
+        }
+
+
+        /**
+         * If the error explicitly declares retryability,
+         * respect it.
+         */
+
+        if(
+            typeof error?.retryable ===
+            'boolean'
+        ){
+
+            return error.retryable;
+
+        }
+
+
+        return false;
+
+    }
 
 
     /**
-     * ------------------------------------------------------
-     * Refresh Status
-     * ------------------------------------------------------
+     * ==========================================================
+     * Backoff Calculation
+     * ==========================================================
      */
-    getStatus(tenantId){
+
+    calculateBackoff(
+        attempt
+    ) {
 
 
+        const exponential =
+            this.initialDelayMs *
+            Math.pow(
+                this.backoffMultiplier,
+                Math.max(
+                    attempt - 1,
+                    0
+                )
+            );
 
-        return this.refreshState.get(
 
+        const capped =
+            Math.min(
+                exponential,
+                this.maxDelayMs
+            );
+
+
+        /**
+         * Full jitter around the calculated delay.
+         *
+         * Example with jitterRatio = 0.20:
+         *
+         * 500ms -> approximately 400-600ms
+         */
+
+        const jitter =
+            capped *
+            this.jitterRatio;
+
+
+        const min =
+            Math.max(
+                0,
+                capped - jitter
+            );
+
+
+        const max =
+            capped + jitter;
+
+
+        return Math.round(
+            min +
+            (
+                this.random() *
+                (max - min)
+            )
+        );
+
+    }
+
+
+    /**
+     * ==========================================================
+     * Distributed Lock
+     * ==========================================================
+     */
+
+    async acquireDistributedLock({
+
+        tenantId,
+
+        correlationId
+
+    }) {
+
+
+        if(!this.distributedLock){
+
+            return null;
+
+        }
+
+
+        const key =
+            this.buildLockKey(
+                tenantId
+            );
+
+
+        const token =
+            crypto.randomUUID();
+
+
+        /**
+         * Supported adapter contracts:
+         *
+         * acquire(key, ttl, token)
+         * acquire({ key, ttl, token })
+         */
+
+        let acquired;
+
+
+        if(
+            typeof this.distributedLock.acquire ===
+            'function'
+        ){
+
+            try {
+
+                acquired =
+                    await this.distributedLock.acquire({
+
+                        key,
+
+                        ttl:
+                            this.timeoutMs *
+                            this.maxRetries,
+
+                        token,
+
+                        tenantId,
+
+                        provider:
+                            PROVIDER,
+
+                        correlationId
+
+                    });
+
+            }
+
+            catch(firstError){
+
+                /**
+                 * Do not silently swallow distributed-lock
+                 * infrastructure failures.
+                 */
+
+                this.logger?.error?.({
+
+                    message:
+                        'Airtel distributed refresh lock acquisition failed',
+
+                    tenantId,
+
+                    correlationId,
+
+                    error:
+                        firstError?.message
+
+                });
+
+
+                throw firstError;
+
+            }
+
+        }
+        else {
+
+            throw new Error(
+                'Invalid Airtel distributedLock adapter'
+            );
+
+        }
+
+
+        if(
+            acquired === false ||
+            acquired === null ||
+            acquired === undefined
+        ){
+
+            return null;
+
+        }
+
+
+        this.statistics.distributedLockAcquired++;
+
+
+        this.metrics?.counter?.(
+            'payment_airtel_refresh_distributed_lock_acquired_total'
+        );
+
+
+        return (
+            typeof acquired === 'string'
+                ? acquired
+                : token
+        );
+
+    }
+
+
+    /**
+     * ==========================================================
+     * Distributed Lock Release
+     * ==========================================================
+     */
+
+    async releaseDistributedLock({
+
+        tenantId,
+
+        lockToken,
+
+        correlationId
+
+    }) {
+
+
+        if(
+            !this.distributedLock ||
+            !lockToken
+        ){
+
+            return;
+
+        }
+
+
+        const key =
+            this.buildLockKey(
+                tenantId
+            );
+
+
+        try {
+
+            if(
+                typeof this.distributedLock.release ===
+                'function'
+            ){
+
+                await this.distributedLock.release({
+
+                    key,
+
+                    token:
+                        lockToken,
+
+                    tenantId,
+
+                    provider:
+                        PROVIDER,
+
+                    correlationId
+
+                });
+
+            }
+
+        }
+
+        catch(error){
+
+            /**
+             * Lock release failure must be observable,
+             * but must not replace the actual refresh result.
+             */
+
+            this.metrics?.counter?.(
+                'payment_airtel_refresh_distributed_lock_release_failure_total'
+            );
+
+
+            this.logger?.error?.({
+
+                message:
+                    'Failed to release Airtel distributed refresh lock',
+
+                tenantId,
+
+                correlationId,
+
+                error:
+                    error?.message
+
+            });
+
+        }
+
+    }
+
+
+    /**
+     * ==========================================================
+     * Lock Key
+     * ==========================================================
+     */
+
+    buildLockKey(
+        tenantId
+    ) {
+
+        return [
+            'payment',
+            PROVIDER.toLowerCase(),
+            'oauth',
+            'refresh-lock',
             tenantId
+        ].join(':');
 
-        )
-
-        ||
-
-        {
+    }
 
 
-            status:
+    /**
+     * ==========================================================
+     * State
+     * ==========================================================
+     */
 
-                REFRESH_STATUS.IDLE
+    getStatus(
+        tenantId
+    ) {
 
 
+        this.validateTenant(
+            tenantId
+        );
+
+
+        const state =
+            this.refreshState.get(
+                tenantId
+            );
+
+
+        if(!state){
+
+            return {
+
+                status:
+                    REFRESH_STATUS.IDLE
+
+            };
+
+        }
+
+
+        return {
+            ...state
         };
 
-
     }
 
 
-
-
-
-
-
-
-
-    /**
-     * ------------------------------------------------------
-     * State Update
-     * ------------------------------------------------------
-     */
     setState(
 
         tenantId,
 
         status
 
-    ){
-
+    ) {
 
 
         this.refreshState.set(
 
             tenantId,
 
-            {
+            Object.freeze({
 
                 status,
 
-
                 updatedAt:
-
                     new this.clock()
 
-
-            }
-
+            })
 
         );
-
 
     }
 
 
-
-
-
-
-
-
-
-    /**
-     * ------------------------------------------------------
-     * Is Refresh Running
-     * ------------------------------------------------------
-     */
-    isRefreshing(tenantId){
-
-
+    isRefreshing(
+        tenantId
+    ) {
 
         return this.refreshLocks.has(
-
             tenantId
-
         );
-
 
     }
 
 
+    /**
+     * ==========================================================
+     * Validation
+     * ==========================================================
+     */
+
+    validateTenant(
+        tenantId
+    ) {
+
+        if(
+            typeof tenantId !==
+            'string' ||
+            !tenantId.trim()
+        ){
+
+            throw new Error(
+                'tenantId required'
+            );
+
+        }
+
+    }
 
 
+    validateRefresh(
+        refresh
+    ) {
+
+        if(
+            typeof refresh !==
+            'function'
+        ){
+
+            throw new TypeError(
+                'refresh must be a function'
+            );
+
+        }
+
+    }
 
 
+    normalizePositiveInteger(
+        value,
+        fallback
+    ) {
 
+        const parsed =
+            Number(value);
+
+
+        return Number.isInteger(parsed) &&
+            parsed > 0
+            ? parsed
+            : fallback;
+
+    }
+
+
+    normalizePositiveNumber(
+        value,
+        fallback
+    ) {
+
+        const parsed =
+            Number(value);
+
+
+        return Number.isFinite(parsed) &&
+            parsed > 0
+            ? parsed
+            : fallback;
+
+    }
 
 
     /**
-     * ------------------------------------------------------
+     * ==========================================================
      * Statistics
-     * ------------------------------------------------------
+     * ==========================================================
      */
-    stats(){
+
+    stats() {
 
 
-
-        return {
-
+        return Object.freeze({
 
             ...this.statistics,
 
-
             activeRefreshes:
+                this.refreshLocks.size,
 
-                this.refreshLocks.size
+            trackedTenants:
+                this.refreshState.size,
 
+            uptimeMs:
+                Date.now()
+                -
+                new Date(
+                    this.statistics.startedAt
+                ).getTime(),
 
-        };
+            shuttingDown:
+                this.shuttingDown,
 
+            maxRetries:
+                this.maxRetries,
+
+            timeoutMs:
+                this.timeoutMs,
+
+            initialDelayMs:
+                this.initialDelayMs,
+
+            maxDelayMs:
+                this.maxDelayMs,
+
+            jitterRatio:
+                this.jitterRatio
+
+        });
 
     }
 
 
-
-
-
-
-
-
-
     /**
-     * ------------------------------------------------------
+     * ==========================================================
      * Health
-     * ------------------------------------------------------
+     * ==========================================================
      */
-    health(){
 
+    health() {
+
+
+        const activeRefreshes =
+            this.refreshLocks.size;
 
 
         return {
 
-
             provider:
+                PROVIDER,
 
-                'AIRTEL',
-
+            component:
+                'oauth-refresh-manager',
 
             status:
+                this.shuttingDown
+                    ? 'DEGRADED'
+                    : 'UP',
 
-                'UP',
+            activeRefreshes,
 
-
-            activeRefreshes:
-
-                this.refreshLocks.size,
-
+            distributedLock:
+                Boolean(
+                    this.distributedLock
+                ),
 
             statistics:
-
                 this.stats()
 
-
         };
-
 
     }
 
 
+    /**
+     * ==========================================================
+     * Snapshot
+     * ==========================================================
+     */
+
+    snapshot() {
 
 
+        const states = {};
 
 
+        for(
+            const [
+                tenantId,
+                state
+            ]
+            of this.refreshState.entries()
+        ){
 
+            states[tenantId] = {
+                ...state
+            };
+
+        }
+
+
+        return {
+
+            provider:
+                PROVIDER,
+
+            component:
+                'oauth-refresh-manager',
+
+            shuttingDown:
+                this.shuttingDown,
+
+            activeRefreshes:
+                this.refreshLocks.size,
+
+            states,
+
+            statistics:
+                this.stats(),
+
+            generatedAt:
+                new this.clock()
+
+        };
+
+    }
 
 
     /**
-     * ------------------------------------------------------
+     * ==========================================================
      * Shutdown
-     * ------------------------------------------------------
+     * ==========================================================
      */
-    async shutdown(){
+
+    async shutdown({
+
+        waitForActive =
+            true,
+
+        timeoutMs =
+            10000
+
+    } = {}) {
 
 
-
-        this.refreshLocks.clear();
-
-
-
-        this.refreshState.clear();
+        this.shuttingDown =
+            true;
 
 
+        if(
+            !waitForActive ||
+            this.refreshLocks.size === 0
+        ){
+
+            this.refreshState.clear();
+
+            return true;
+
+        }
+
+
+        const active =
+            Array.from(
+                this.refreshLocks.values()
+            );
+
+
+        try {
+
+            await Promise.race([
+
+                Promise.allSettled(
+                    active
+                ),
+
+                this.sleep(
+                    timeoutMs
+                )
+
+            ]);
+
+        }
+
+        finally {
+
+            this.refreshLocks.clear();
+
+            this.refreshState.clear();
+
+        }
 
 
         return true;
 
+    }
+
+
+    /**
+     * ==========================================================
+     * Sleep
+     * ==========================================================
+     */
+
+    sleep(
+        ms
+    ) {
+
+        return new Promise(
+            resolve =>
+                setTimeout(
+                    resolve,
+                    ms
+                )
+        );
 
     }
 
 
+    /**
+     * ==========================================================
+     * Span Attributes
+     * ==========================================================
+     */
+
+    setSpanAttributes(
+        span,
+        attributes
+    ) {
 
 
+        if(!span){
+
+            return;
+
+        }
 
 
+        for(
+            const [
+                key,
+                value
+            ]
+            of Object.entries(
+                attributes
+            )
+        ){
+
+            try {
+
+                span.setAttribute?.(
+                    key,
+                    value
+                );
+
+            }
+
+            catch{
+
+                // Observability must never break authentication.
+
+            }
+
+        }
+
+    }
 
 
+    /**
+     * ==========================================================
+     * Timeout Detection
+     * ==========================================================
+     */
 
-    sleep(ms){
+    isTimeoutError(
+        error
+    ) {
 
 
+        return (
 
-        return new Promise(
+            error?.code ===
+            'AIRTEL_REFRESH_TIMEOUT'
 
-            resolve =>
+        ) ||
 
-                setTimeout(
+        (
 
-                    resolve,
+            error?.code ===
+            'ETIMEDOUT'
 
-                    ms
+        ) ||
 
-                )
+        (
+
+            error?.code ===
+            'ECONNABORTED'
 
         );
 
-
     }
 
-
-
 }
-
-
 
 
 module.exports = {

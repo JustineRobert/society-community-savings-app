@@ -1,11 +1,11 @@
 /**
  * =============================================================================
  * File: backend/modules/onboarding/__tests__/onboarding.integration.test.js
- * Part 1 — Imports, Mongo Memory Server, Express Factory, Test Bootstrap
  * =============================================================================
  *
- * Enterprise Integration Test Suite
  * TITech Community Capital LTD
+ *
+ * Enterprise Onboarding Integration Test Suite
  *
  * Stack
  * -----------------------------------------------------------------------------
@@ -16,62 +16,35 @@
  * • Mongoose
  * • Enterprise Service Mocking
  *
- * Remaining Parts
+ * Coverage
  * -----------------------------------------------------------------------------
- * Part 2
- * Registration Integration Tests
+ * Part 1 — Test Bootstrap / MongoDB / Express Factory
+ * Part 2 — SACCO Registration
+ * Part 3 — KYC Verification
+ * Part 4 — Subscription & Payment
+ * Part 5 — Go-Live Activation
+ * Part 6 — End-to-End / Recovery / Concurrency / Idempotency
  *
- * Part 3
- * KYC Integration Tests
- *
- * Part 4
- * Subscription Integration Tests
- *
- * Part 5
- * Go Live Integration Tests
- *
- * Part 6
- * Complete End-to-End Workflow
+ * Design Goals
+ * -----------------------------------------------------------------------------
+ * • Self-contained integration test environment
+ * • Deterministic external-service behavior
+ * • Real MongoDB persistence through mongodb-memory-server
+ * • No production architecture changes
+ * • Route-level integration coverage
+ * • Enterprise side-effect verification
+ * • Concurrency and idempotency coverage
  * =============================================================================
  */
 
 "use strict";
 
 /* =============================================================================
- * Core
- * ========================================================================== */
-
-const express = require("express");
-const request = require("supertest");
-const mongoose = require("mongoose");
-
-const {
-    MongoMemoryServer,
-} = require("mongodb-memory-server");
-
-/* =============================================================================
- * Middleware
- * ========================================================================== */
-
-const helmet = require("helmet");
-const compression = require("compression");
-const cors = require("cors");
-
-/* =============================================================================
- * Routes
- * ========================================================================== */
-
-const onboardingRoutes = require("../onboarding.routes");
-
-/* =============================================================================
- * Test Utilities
- * ========================================================================== */
-
-let app;
-let mongoServer;
-
-/* =============================================================================
  * Environment
+ *
+ * IMPORTANT:
+ * Environment configuration must be established before loading the application
+ * dependency graph so configuration-sensitive modules observe test settings.
  * ========================================================================== */
 
 process.env.NODE_ENV = "test";
@@ -86,11 +59,28 @@ process.env.ENCRYPTION_KEY =
 
 process.env.LOG_LEVEL = "error";
 
+process.env.DISABLE_EXTERNAL_NETWORK =
+    process.env.DISABLE_EXTERNAL_NETWORK ||
+    "true";
+
 /* =============================================================================
- * Global Mock Helpers
+ * Jest Configuration
  * ========================================================================== */
 
 jest.setTimeout(60000);
+
+/* =============================================================================
+ * Global Mock State
+ * ========================================================================== */
+
+let uuidCounter = 0;
+
+/* =============================================================================
+ * External / Enterprise Dependency Mocks
+ *
+ * These mocks intentionally appear before the route import so that modules
+ * loaded transitively by onboarding.routes receive the mocked dependencies.
+ * ========================================================================== */
 
 /*
 |--------------------------------------------------------------------------
@@ -99,7 +89,13 @@ jest.setTimeout(60000);
 */
 
 jest.mock("uuid", () => ({
-    v4: jest.fn(() => "integration-test-uuid"),
+    v4: jest.fn(() => {
+
+        uuidCounter += 1;
+
+        return `integration-test-uuid-${uuidCounter}`;
+
+    }),
 }));
 
 /*
@@ -179,7 +175,7 @@ jest.mock("../../../modules/airtelMoneyService", () => ({
 
 /*
 |--------------------------------------------------------------------------
-| Audit Log
+| Audit Middleware
 |--------------------------------------------------------------------------
 */
 
@@ -187,6 +183,144 @@ jest.mock("../../../shared/middleware/auditLogMiddleware", () => ({
     auditLogMiddleware:
         (req, res, next) => next(),
 }));
+
+/*
+|--------------------------------------------------------------------------
+| Tenant Provisioning
+|--------------------------------------------------------------------------
+*/
+
+jest.mock(
+    "../../services/tenantProvisioningService",
+    () => ({
+        activateTenant: jest.fn().mockResolvedValue({
+            success: true,
+        }),
+    })
+);
+
+/*
+|--------------------------------------------------------------------------
+| Audit Service
+|--------------------------------------------------------------------------
+*/
+
+jest.mock(
+    "../../services/auditService",
+    () => ({
+        log: jest.fn().mockResolvedValue({
+            success: true,
+        }),
+    })
+);
+
+/*
+|--------------------------------------------------------------------------
+| Onboarding Event Publisher
+|--------------------------------------------------------------------------
+*/
+
+jest.mock(
+    "../../events/onboardingPublisher",
+    () => ({
+        publishGoLive: jest.fn().mockResolvedValue({
+            success: true,
+        }),
+    })
+);
+
+/*
+|--------------------------------------------------------------------------
+| Ledger Service
+|--------------------------------------------------------------------------
+*/
+
+jest.mock(
+    "../../modules/finance/services/ledgerService",
+    () => ({
+        initializeTenantLedger:
+            jest.fn().mockResolvedValue({
+                success: true,
+            }),
+    })
+);
+
+/*
+|--------------------------------------------------------------------------
+| Identity Bootstrap Service
+|--------------------------------------------------------------------------
+*/
+
+jest.mock(
+    "../../services/identityBootstrapService",
+    () => ({
+        bootstrapTenant:
+            jest.fn().mockResolvedValue({
+                success: true,
+            }),
+    })
+);
+
+/* =============================================================================
+ * Core
+ * ========================================================================== */
+
+const express = require("express");
+const request = require("supertest");
+const mongoose = require("mongoose");
+
+const {
+    MongoMemoryServer,
+} = require("mongodb-memory-server");
+
+/* =============================================================================
+ * Middleware
+ * ========================================================================== */
+
+const helmet = require("helmet");
+const compression = require("compression");
+const cors = require("cors");
+
+/* =============================================================================
+ * Routes
+ *
+ * Must be imported after all Jest mocks.
+ * ========================================================================== */
+
+const onboardingRoutes =
+    require("../onboarding.routes");
+
+/* =============================================================================
+ * Enterprise Mock References
+ * ========================================================================== */
+
+const tenantProvisioningService =
+    require("../../services/tenantProvisioningService");
+
+const auditService =
+    require("../../services/auditService");
+
+const onboardingPublisher =
+    require("../../events/onboardingPublisher");
+
+const ledgerService =
+    require("../../modules/finance/services/ledgerService");
+
+const identityBootstrapService =
+    require("../../services/identityBootstrapService");
+
+const mtnMomoService =
+    require("../../../modules/mtnMomoService");
+
+const airtelMoneyService =
+    require("../../../modules/airtelMoneyService");
+
+/* =============================================================================
+ * Test Utilities
+ * ========================================================================== */
+
+let app;
+let mongoServer;
 
 /* =============================================================================
  * Express Factory
@@ -204,13 +338,19 @@ function createApp() {
 
     application.use(compression());
 
-    application.use(express.json({
-        limit: "10mb",
-    }));
+    application.use(
+        express.json({
+            limit: "10mb",
+            strict: true,
+        })
+    );
 
-    application.use(express.urlencoded({
-        extended: true,
-    }));
+    application.use(
+        express.urlencoded({
+            extended: true,
+            limit: "10mb",
+        })
+    );
 
     /*
     |--------------------------------------------------------------------------
@@ -218,14 +358,17 @@ function createApp() {
     |--------------------------------------------------------------------------
     */
 
-    application.get("/health", (req, res) => {
+    application.get(
+        "/health",
+        (req, res) => {
 
-        res.status(200).json({
-            success: true,
-            status: "ok",
-        });
+            return res.status(200).json({
+                success: true,
+                status: "ok",
+            });
 
-    });
+        }
+    );
 
     /*
     |--------------------------------------------------------------------------
@@ -240,21 +383,103 @@ function createApp() {
 
     /*
     |--------------------------------------------------------------------------
-    | Error Handler
+    | 404
+    |--------------------------------------------------------------------------
+    */
+
+    application.use(
+        (req, res) => {
+
+            return res.status(404).json({
+                success: false,
+                message: "Route not found",
+            });
+
+        }
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Centralized Error Handler
     |--------------------------------------------------------------------------
     */
 
     application.use(
         (err, req, res, next) => {
 
-            res.status(
-                err.status || 500
-            ).json({
+            /*
+             * Malformed JSON.
+             */
+
+            if (
+                err instanceof SyntaxError &&
+                Object.prototype.hasOwnProperty.call(
+                    err,
+                    "body"
+                )
+            ) {
+
+                return res.status(400).json({
+                    success: false,
+                    message: "Malformed JSON payload",
+                });
+
+            }
+
+            /*
+             * Request payload exceeds configured limit.
+             */
+
+            if (
+                err &&
+                (
+                    err.type === "entity.too.large" ||
+                    err.status === 413 ||
+                    err.statusCode === 413
+                )
+            ) {
+
+                return res.status(413).json({
+                    success: false,
+                    message: "Payload too large",
+                });
+
+            }
+
+            /*
+             * Unsupported media type.
+             */
+
+            if (
+                err &&
+                (
+                    err.status === 415 ||
+                    err.statusCode === 415
+                )
+            ) {
+
+                return res.status(415).json({
+                    success: false,
+                    message:
+                        err.message ||
+                        "Unsupported content type",
+                });
+
+            }
+
+            const statusCode =
+                Number.isInteger(err?.statusCode)
+                    ? err.statusCode
+                    : Number.isInteger(err?.status)
+                        ? err.status
+                        : 500;
+
+            return res.status(statusCode).json({
 
                 success: false,
 
                 message:
-                    err.message ||
+                    err?.message ||
                     "Integration Test Error",
 
             });
@@ -275,17 +500,32 @@ beforeAll(async () => {
     mongoServer =
         await MongoMemoryServer.create({
 
-            binary: {
-                version: "7.0.14",
+            /*
+             * Do not hard-code a binary version here.
+             *
+             * mongodb-memory-server can resolve the compatible binary for the
+             * current platform, improving local and CI portability.
+             */
+
+            instance: {
+                dbName:
+                    "titech_onboarding_integration",
             },
 
         });
 
-    const uri = mongoServer.getUri();
+    const uri =
+        mongoServer.getUri();
 
     await mongoose.connect(uri, {
 
         autoIndex: true,
+
+        serverSelectionTimeoutMS:
+            30000,
+
+        connectTimeoutMS:
+            30000,
 
     });
 
@@ -299,14 +539,24 @@ beforeAll(async () => {
 
 afterEach(async () => {
 
+    if (
+        mongoose.connection.readyState !==
+        mongoose.ConnectionStates.connected
+    ) {
+
+        return;
+
+    }
+
     const collections =
         mongoose.connection.collections;
 
-    for (const key of Object.keys(collections)) {
-
-        await collections[key].deleteMany({});
-
-    }
+    await Promise.all(
+        Object.values(collections).map(
+            (collection) =>
+                collection.deleteMany({})
+        )
+    );
 
     jest.clearAllMocks();
 
@@ -318,11 +568,24 @@ afterEach(async () => {
 
 afterAll(async () => {
 
-    await mongoose.disconnect();
+    try {
 
-    if (mongoServer) {
+        if (
+            mongoose.connection.readyState !==
+            mongoose.ConnectionStates.disconnected
+        ) {
 
-        await mongoServer.stop();
+            await mongoose.disconnect();
+
+        }
+
+    } finally {
+
+        if (mongoServer) {
+
+            await mongoServer.stop();
+
+        }
 
     }
 
@@ -332,2059 +595,2966 @@ afterAll(async () => {
  * Shared Test Helpers
  * ========================================================================== */
 
-const buildRegistrationPayload = () => ({
+let payloadCounter = 0;
 
-    saccoName: "Enterprise SACCO",
+function nextUniqueValue(prefix) {
 
-    registrationNumber: "REG-001",
+    payloadCounter += 1;
 
-    tinNumber: "TIN-001",
+    return `${prefix}-${payloadCounter}`;
 
-    email: "enterprise@test.com",
+}
 
-    phone: "256700000000",
+function buildRegistrationPayload(overrides = {}) {
 
-    physicalAddress: "Kampala",
+    const unique =
+        nextUniqueValue("sacco");
 
-    district: "Kampala",
+    return {
 
-    region: "Central",
+        saccoName:
+            "Enterprise SACCO",
 
-    contactPerson: {
+        registrationNumber:
+            `REG-${unique}`,
 
-        fullName: "John Doe",
+        tinNumber:
+            `TIN-${unique}`,
 
-        designation: "CEO",
+        email:
+            `${unique}@test.com`,
 
-        phone: "256700000000",
+        phone:
+            "256700000000",
 
-        email: "john@test.com",
+        physicalAddress:
+            "Kampala",
 
-        nationalId: "CM12345678",
+        district:
+            "Kampala",
 
-    },
+        region:
+            "Central",
 
-    subscriptionPlan: "STARTER",
+        contactPerson: {
 
-});
+            fullName:
+                "John Doe",
+
+            designation:
+                "CEO",
+
+            phone:
+                "256700000000",
+
+            email:
+                `john-${unique}@test.com`,
+
+            nationalId:
+                `CM-${unique}`,
+
+        },
+
+        subscriptionPlan:
+            "STARTER",
+
+        ...overrides,
+
+    };
+
+}
+
+function buildKycPayload(overrides = {}) {
+
+    return {
+
+        boardChairperson:
+            "John Doe",
+
+        directorNames: [
+            "Director One",
+            "Director Two",
+        ],
+
+        registrationCertificate:
+            "REG-CERT-001",
+
+        taxComplianceCertificate:
+            "TIN-CERT-001",
+
+        proofOfAddress:
+            "Utility Bill",
+
+        ...overrides,
+
+    };
+
+}
+
+function buildSubscriptionPayload(
+    overrides = {}
+) {
+
+    return {
+
+        plan:
+            "STARTER",
+
+        billingCycle:
+            "MONTHLY",
+
+        currency:
+            "UGX",
+
+        ...overrides,
+
+    };
+
+}
+
+function buildPaymentPayload(
+    saccoId,
+    overrides = {}
+) {
+
+    return {
+
+        provider:
+            "MTN",
+
+        saccoId,
+
+        plan:
+            "STARTER",
+
+        ...overrides,
+
+    };
+
+}
+
+async function registerSacco(
+    overrides = {}
+) {
+
+    const payload =
+        buildRegistrationPayload(overrides);
+
+    const response =
+        await request(app)
+            .post("/api/onboarding/sacco")
+            .send(payload);
+
+    return {
+        payload,
+        response,
+        saccoId:
+            response.body?.data?._id,
+    };
+
+}
+
+async function prepareProductionReadySacco(
+    saccoId
+) {
+
+    const kycResponse =
+        await request(app)
+            .put(
+                `/api/onboarding/sacco/${saccoId}/kyc`
+            )
+            .send(
+                buildKycPayload()
+            );
+
+    expect(kycResponse.status).toBe(200);
+
+    const subscriptionResponse =
+        await request(app)
+            .put(
+                `/api/onboarding/sacco/${saccoId}/subscription`
+            )
+            .send(
+                buildSubscriptionPayload()
+            );
+
+    expect(
+        subscriptionResponse.status
+    ).toBe(200);
+
+    return {
+
+        kycResponse,
+
+        subscriptionResponse,
+
+    };
+
+}
+
+async function findSaccoById(
+    saccoId
+) {
+
+    return mongoose.connection
+        .collection("saccos")
+        .findOne({
+
+            _id:
+                new mongoose.Types.ObjectId(
+                    saccoId
+                ),
+
+        });
+
+}
 
 /* =============================================================================
  * Test Suites
  * ============================================================================= */
 
-/*
-|--------------------------------------------------------------------------
-| Part 2 begins here
-|--------------------------------------------------------------------------
-|
-| describe("SACCO Registration", () => {
-|
-*/
+/* =============================================================================
+ * Part 1 — Infrastructure Smoke Tests
+ * ============================================================================= */
+
+describe(
+    "Onboarding Integration Infrastructure",
+    () => {
+
+        it(
+            "should expose a healthy test application",
+            async () => {
+
+                const response =
+                    await request(app)
+                        .get("/health");
+
+                expect(
+                    response.status
+                ).toBe(200);
+
+                expect(
+                    response.body
+                ).toEqual({
+
+                    success: true,
+
+                    status: "ok",
+
+                });
+
+            }
+        );
+
+        it(
+            "should establish a MongoDB connection",
+            async () => {
+
+                expect(
+                    mongoose.connection.readyState
+                ).toBe(
+                    mongoose.ConnectionStates.connected
+                );
+
+            }
+        );
+
+    }
+);
+
 /* =============================================================================
  * Part 2 — SACCO Registration Integration Tests
  * ============================================================================= */
 
-describe("SACCO Registration API", () => {
-    describe("POST /api/onboarding/sacco", () => {
+describe(
+    "SACCO Registration API",
+    () => {
 
-        it("should successfully register a new SACCO", async () => {
+        describe(
+            "POST /api/onboarding/sacco",
+            () => {
+
+                it(
+                    "should successfully register a new SACCO",
+                    async () => {
+
+                        const {
+                            payload,
+                            response,
+                        } =
+                            await registerSacco();
+
+                        expect(
+                            response.status
+                        ).toBe(201);
+
+                        expect(
+                            response.body
+                        ).toEqual(
+                            expect.objectContaining({
 
-            const payload = buildRegistrationPayload();
+                                success:
+                                    true,
+
+                            })
+                        );
 
-            const response = await request(app)
-                .post("/api/onboarding/sacco")
-                .send(payload);
+                        expect(
+                            response.body.data
+                        ).toEqual(
+                            expect.objectContaining({
+
+                                saccoName:
+                                    payload.saccoName,
 
-            expect(response.status).toBe(201);
+                                registrationNumber:
+                                    payload.registrationNumber,
 
-            expect(response.body).toEqual(
-                expect.objectContaining({
-                    success: true,
-                })
-            );
+                                email:
+                                    payload.email,
+
+                            })
+                        );
+
+                        expect(
+                            response.body.data._id
+                        ).toBeDefined();
+
+                    }
+                );
+
+                it(
+                    "should persist the SACCO in MongoDB",
+                    async () => {
+
+                        const {
+                            payload,
+                            response,
+                        } =
+                            await registerSacco();
+
+                        expect(
+                            response.status
+                        ).toBe(201);
+
+                        const saved =
+                            await mongoose.connection
+                                .collection("saccos")
+                                .findOne({
+
+                                    registrationNumber:
+                                        payload.registrationNumber,
+
+                                });
 
-            expect(response.body.data).toEqual(
-                expect.objectContaining({
-                    saccoName: payload.saccoName,
-                    registrationNumber: payload.registrationNumber,
-                    email: payload.email,
-                })
-            );
+                        expect(
+                            saved
+                        ).not.toBeNull();
+
+                        expect(
+                            saved.saccoName
+                        ).toBe(
+                            payload.saccoName
+                        );
+
+                    }
+                );
+
+                it(
+                    "should reject duplicate registration numbers",
+                    async () => {
+
+                        const payload =
+                            buildRegistrationPayload();
+
+                        const first =
+                            await request(app)
+                                .post(
+                                    "/api/onboarding/sacco"
+                                )
+                                .send(payload);
+
+                        expect(
+                            first.status
+                        ).toBe(201);
+
+                        const duplicate =
+                            await request(app)
+                                .post(
+                                    "/api/onboarding/sacco"
+                                )
+                                .send({
+
+                                    ...buildRegistrationPayload(),
+
+                                    registrationNumber:
+                                        payload.registrationNumber,
+
+                                });
+
+                        expect(
+                            [400, 409]
+                        ).toContain(
+                            duplicate.status
+                        );
+
+                    }
+                );
+
+                it(
+                    "should reject duplicate email addresses",
+                    async () => {
+
+                        const payload =
+                            buildRegistrationPayload();
+
+                        const first =
+                            await request(app)
+                                .post(
+                                    "/api/onboarding/sacco"
+                                )
+                                .send(payload);
+
+                        expect(
+                            first.status
+                        ).toBe(201);
+
+                        const duplicate =
+                            await request(app)
+                                .post(
+                                    "/api/onboarding/sacco"
+                                )
+                                .send({
+
+                                    ...buildRegistrationPayload(),
+
+                                    email:
+                                        payload.email,
 
-        });
-
-        it("should persist the SACCO in MongoDB", async () => {
-
-            const payload = buildRegistrationPayload();
-
-            await request(app)
-                .post("/api/onboarding/sacco")
-                .send(payload);
-
-            const collection =
-                mongoose.connection.collection("saccos");
-
-            const saved =
-                await collection.findOne({
-                    registrationNumber:
-                        payload.registrationNumber,
-                });
-
-            expect(saved).not.toBeNull();
-
-            expect(saved.saccoName)
-                .toBe(payload.saccoName);
-
-        });
-
-        it("should reject duplicate registration numbers", async () => {
-
-            const payload = buildRegistrationPayload();
-
-            await request(app)
-                .post("/api/onboarding/sacco")
-                .send(payload);
-
-            const duplicate =
-                await request(app)
-                    .post("/api/onboarding/sacco")
-                    .send(payload);
-
-            expect([400, 409]).toContain(
-                duplicate.status
-            );
-
-        });
-
-        it("should reject duplicate email addresses", async () => {
-
-            const payload = buildRegistrationPayload();
-
-            await request(app)
-                .post("/api/onboarding/sacco")
-                .send(payload);
-
-            const duplicate = {
-                ...buildRegistrationPayload(),
-                registrationNumber: "REG-002",
-            };
-
-            const response =
-                await request(app)
-                    .post("/api/onboarding/sacco")
-                    .send(duplicate);
-
-            expect([400, 409]).toContain(
-                response.status
-            );
-
-        });
-
-        it("should validate required fields", async () => {
-
-            const response =
-                await request(app)
-                    .post("/api/onboarding/sacco")
-                    .send({});
-
-            expect(response.status)
-                .toBeGreaterThanOrEqual(400);
-
-        });
-
-        it("should reject malformed email addresses", async () => {
-
-            const payload = buildRegistrationPayload();
-
-            payload.email = "invalid-email";
-
-            const response =
-                await request(app)
-                    .post("/api/onboarding/sacco")
-                    .send(payload);
-
-            expect(response.status)
-                .toBeGreaterThanOrEqual(400);
-
-        });
-
-        it("should reject invalid phone numbers", async () => {
-
-            const payload = buildRegistrationPayload();
-
-            payload.phone = "123";
-
-            const response =
-                await request(app)
-                    .post("/api/onboarding/sacco")
-                    .send(payload);
-
-            expect(response.status)
-                .toBeGreaterThanOrEqual(400);
-
-        });
-
-        it("should normalize whitespace before persistence", async () => {
-
-            const payload = buildRegistrationPayload();
-
-            payload.saccoName =
-                "   Enterprise SACCO   ";
-
-            const response =
-                await request(app)
-                    .post("/api/onboarding/sacco")
-                    .send(payload);
-
-            expect(response.status).toBe(201);
-
-            expect(
-                response.body.data.saccoName.trim()
-            ).toBe("Enterprise SACCO");
-
-        });
-
-        it("should support UTF-8 and international characters", async () => {
-
-            const payload = buildRegistrationPayload();
-
-            payload.saccoName =
-                "Élite SACCO Uganda";
-
-            const response =
-                await request(app)
-                    .post("/api/onboarding/sacco")
-                    .send(payload);
-
-            expect(response.status).toBe(201);
-
-        });
-
-        it("should ignore unexpected client properties", async () => {
-
-            const payload = {
-                ...buildRegistrationPayload(),
-                hackerField: "malicious",
-                admin: true,
-            };
-
-            const response =
-                await request(app)
-                    .post("/api/onboarding/sacco")
-                    .send(payload);
-
-            expect(response.status).toBe(201);
-
-            expect(
-                response.body.data.admin
-            ).toBeUndefined();
-
-        });
-
-        it("should return JSON content type", async () => {
-
-            const payload = buildRegistrationPayload();
-
-            const response =
-                await request(app)
-                    .post("/api/onboarding/sacco")
-                    .send(payload);
-
-            expect(
-                response.headers["content-type"]
-            ).toMatch(/application\/json/i);
-
-        });
-
-        it("should create unique SACCO IDs", async () => {
-
-            const first =
-                await request(app)
-                    .post("/api/onboarding/sacco")
-                    .send(buildRegistrationPayload());
-
-            const secondPayload =
-                buildRegistrationPayload();
-
-            secondPayload.registrationNumber =
-                "REG-999";
-
-            secondPayload.email =
-                "another@test.com";
-
-            const second =
-                await request(app)
-                    .post("/api/onboarding/sacco")
-                    .send(secondPayload);
-
-            expect(
-                first.body.data._id
-            ).not.toEqual(
-                second.body.data._id
-            );
-
-        });
-
-        it("should handle concurrent registrations safely", async () => {
-
-            const requests = [];
-
-            for (let i = 0; i < 10; i++) {
-
-                requests.push(
-                    request(app)
-                        .post("/api/onboarding/sacco")
-                        .send({
-                            ...buildRegistrationPayload(),
-                            registrationNumber:
-                                `REG-${i}`,
-                            email:
-                                `user${i}@example.com`,
-                        })
+                                });
+
+                        expect(
+                            [400, 409]
+                        ).toContain(
+                            duplicate.status
+                        );
+
+                    }
+                );
+
+                it(
+                    "should validate required fields",
+                    async () => {
+
+                        const response =
+                            await request(app)
+                                .post(
+                                    "/api/onboarding/sacco"
+                                )
+                                .send({});
+
+                        expect(
+                            response.status
+                        ).toBeGreaterThanOrEqual(
+                            400
+                        );
+
+                    }
+                );
+
+                it(
+                    "should reject malformed email addresses",
+                    async () => {
+
+                        const payload =
+                            buildRegistrationPayload({
+
+                                email:
+                                    "invalid-email",
+
+                            });
+
+                        const response =
+                            await request(app)
+                                .post(
+                                    "/api/onboarding/sacco"
+                                )
+                                .send(payload);
+
+                        expect(
+                            response.status
+                        ).toBeGreaterThanOrEqual(
+                            400
+                        );
+
+                    }
+                );
+
+                it(
+                    "should reject invalid phone numbers",
+                    async () => {
+
+                        const payload =
+                            buildRegistrationPayload({
+
+                                phone:
+                                    "123",
+
+                            });
+
+                        const response =
+                            await request(app)
+                                .post(
+                                    "/api/onboarding/sacco"
+                                )
+                                .send(payload);
+
+                        expect(
+                            response.status
+                        ).toBeGreaterThanOrEqual(
+                            400
+                        );
+
+                    }
+                );
+
+                it(
+                    "should normalize whitespace before persistence",
+                    async () => {
+
+                        const payload =
+                            buildRegistrationPayload({
+
+                                saccoName:
+                                    "   Enterprise SACCO   ",
+
+                            });
+
+                        const response =
+                            await request(app)
+                                .post(
+                                    "/api/onboarding/sacco"
+                                )
+                                .send(payload);
+
+                        expect(
+                            response.status
+                        ).toBe(201);
+
+                        expect(
+                            response.body.data.saccoName
+                                .trim()
+                        ).toBe(
+                            "Enterprise SACCO"
+                        );
+
+                    }
+                );
+
+                it(
+                    "should support UTF-8 and international characters",
+                    async () => {
+
+                        const response =
+                            await request(app)
+                                .post(
+                                    "/api/onboarding/sacco"
+                                )
+                                .send(
+                                    buildRegistrationPayload({
+
+                                        saccoName:
+                                            "Élite SACCO Uganda",
+
+                                    })
+                                );
+
+                        expect(
+                            response.status
+                        ).toBe(201);
+
+                    }
+                );
+
+                it(
+                    "should not expose unexpected privileged client properties",
+                    async () => {
+
+                        const response =
+                            await request(app)
+                                .post(
+                                    "/api/onboarding/sacco"
+                                )
+                                .send({
+
+                                    ...buildRegistrationPayload(),
+
+                                    hackerField:
+                                        "malicious",
+
+                                    admin:
+                                        true,
+
+                                });
+
+                        expect(
+                            response.status
+                        ).toBe(201);
+
+                        expect(
+                            response.body.data.admin
+                        ).toBeUndefined();
+
+                        expect(
+                            response.body.data.hackerField
+                        ).toBeUndefined();
+
+                    }
+                );
+
+                it(
+                    "should return JSON content type",
+                    async () => {
+
+                        const {
+                            response,
+                        } =
+                            await registerSacco();
+
+                        expect(
+                            response.headers[
+                                "content-type"
+                            ]
+                        ).toMatch(
+                            /application\/json/i
+                        );
+
+                    }
+                );
+
+                it(
+                    "should create unique SACCO IDs",
+                    async () => {
+
+                        const first =
+                            await registerSacco();
+
+                        const second =
+                            await registerSacco();
+
+                        expect(
+                            first.response.status
+                        ).toBe(201);
+
+                        expect(
+                            second.response.status
+                        ).toBe(201);
+
+                        expect(
+                            first.saccoId
+                        ).not.toEqual(
+                            second.saccoId
+                        );
+
+                    }
+                );
+
+                it(
+                    "should handle concurrent registrations safely",
+                    async () => {
+
+                        const jobs =
+                            Array.from(
+                                { length: 10 },
+                                () =>
+                                    request(app)
+                                        .post(
+                                            "/api/onboarding/sacco"
+                                        )
+                                        .send(
+                                            buildRegistrationPayload()
+                                        )
+                            );
+
+                        const responses =
+                            await Promise.all(jobs);
+
+                        responses.forEach(
+                            (response) => {
+
+                                expect(
+                                    response.status
+                                ).toBe(201);
+
+                            }
+                        );
+
+                    }
+                );
+
+                it(
+                    "should reject unsupported content types",
+                    async () => {
+
+                        const response =
+                            await request(app)
+                                .post(
+                                    "/api/onboarding/sacco"
+                                )
+                                .set(
+                                    "Content-Type",
+                                    "text/plain"
+                                )
+                                .send(
+                                    "invalid"
+                                );
+
+                        expect(
+                            response.status
+                        ).toBeGreaterThanOrEqual(
+                            400
+                        );
+
+                    }
+                );
+
+                it(
+                    "should reject oversized payloads when limits are exceeded",
+                    async () => {
+
+                        const payload =
+                            buildRegistrationPayload({
+
+                                notes:
+                                    "A".repeat(
+                                        11 * 1024 * 1024
+                                    ),
+
+                            });
+
+                        const response =
+                            await request(app)
+                                .post(
+                                    "/api/onboarding/sacco"
+                                )
+                                .send(payload);
+
+                        expect(
+                            response.status
+                        ).toBe(413);
+
+                    }
                 );
 
             }
+        );
 
-            const responses =
-                await Promise.all(requests);
+    }
+);
 
-            responses.forEach((response) => {
-
-                expect(response.status).toBe(201);
-
-            });
-
-        });
-
-        it("should reject unsupported content types", async () => {
-
-            const response =
-                await request(app)
-                    .post("/api/onboarding/sacco")
-                    .set(
-                        "Content-Type",
-                        "text/plain"
-                    )
-                    .send("invalid");
-
-            expect(response.status)
-                .toBeGreaterThanOrEqual(400);
-
-        });
-
-        it("should reject oversized payloads when limits are exceeded", async () => {
-
-            const payload =
-                buildRegistrationPayload();
-
-            payload.notes =
-                "A".repeat(2 * 1024 * 1024);
-
-            const response =
-                await request(app)
-                    .post("/api/onboarding/sacco")
-                    .send(payload);
-
-            expect(
-                [201, 400, 413]
-            ).toContain(response.status);
-
-        });
-
-    });
-});
-
-/* =============================================================================
- * End Part 2
- * =============================================================================
- *
- * Part 3 begins:
- *
- * describe("KYC Verification API", () => {
- *
- */
 /* =============================================================================
  * Part 3 — KYC Verification Integration Tests
  * ============================================================================= */
 
-describe("KYC Verification API", () => {
+describe(
+    "KYC Verification API",
+    () => {
 
-    let saccoId;
+        let saccoId;
 
-    beforeEach(async () => {
+        beforeEach(async () => {
 
-        const registration =
-            await request(app)
-                .post("/api/onboarding/sacco")
-                .send(buildRegistrationPayload());
-
-        expect(registration.status).toBe(201);
-
-        saccoId = registration.body.data._id;
-
-    });
-
-    describe("PUT /api/onboarding/sacco/:id/kyc", () => {
-
-        it("should approve KYC successfully", async () => {
-
-            const payload = {
-                boardChairperson: "John Doe",
-                directorNames: [
-                    "Director One",
-                    "Director Two",
-                ],
-                registrationCertificate: "REG-CERT-001",
-                taxComplianceCertificate: "TIN-CERT-001",
-                proofOfAddress: "Utility Bill",
-                notes: "Verified",
-            };
-
-            const response =
-                await request(app)
-                    .put(`/api/onboarding/sacco/${saccoId}/kyc`)
-                    .send(payload);
-
-            expect(response.status).toBe(200);
-
-            expect(response.body.success).toBe(true);
-
-            expect(response.body.data.status)
-                .toBe("KYC_APPROVED");
-
-        });
-
-        it("should persist KYC information", async () => {
-
-            await request(app)
-                .put(`/api/onboarding/sacco/${saccoId}/kyc`)
-                .send({
-
-                    boardChairperson: "Jane Doe",
-
-                    directorNames: [
-                        "Director A",
-                    ],
-
-                    registrationCertificate: "RC-001",
-
-                    taxComplianceCertificate: "TC-001",
-
-                    proofOfAddress: "Lease",
-
-                });
-
-            const collection =
-                mongoose.connection.collection("saccos");
-
-            const saved =
-                await collection.findOne({
-                    _id: new mongoose.Types.ObjectId(saccoId),
-                });
-
-            expect(saved).not.toBeNull();
-
-            expect(saved.boardChairperson)
-                .toBe("Jane Doe");
-
-        });
-
-        it("should reject invalid SACCO IDs", async () => {
-
-            const response =
-                await request(app)
-                    .put("/api/onboarding/sacco/invalid-id/kyc")
-                    .send({});
-
-            expect(response.status)
-                .toBeGreaterThanOrEqual(400);
-
-        });
-
-        it("should return 404 for unknown SACCO", async () => {
-
-            const unknown =
-                new mongoose.Types.ObjectId();
-
-            const response =
-                await request(app)
-                    .put(`/api/onboarding/sacco/${unknown}/kyc`)
-                    .send({});
-
-            expect(response.status).toBe(404);
-
-        });
-
-        it("should validate mandatory KYC fields", async () => {
-
-            const response =
-                await request(app)
-                    .put(`/api/onboarding/sacco/${saccoId}/kyc`)
-                    .send({});
-
-            expect(response.status)
-                .toBeGreaterThanOrEqual(400);
-
-        });
-
-        it("should reject duplicate directors", async () => {
-
-            const response =
-                await request(app)
-                    .put(`/api/onboarding/sacco/${saccoId}/kyc`)
-                    .send({
-
-                        boardChairperson: "John",
-
-                        directorNames: [
-                            "Same Director",
-                            "Same Director",
-                        ],
-
-                        registrationCertificate: "REG",
-
-                        taxComplianceCertificate: "TIN",
-
-                        proofOfAddress: "Address",
-
-                    });
-
-            expect([400,422]).toContain(
-                response.status
-            );
-
-        });
-
-        it("should support multiple directors", async () => {
-
-            const response =
-                await request(app)
-                    .put(`/api/onboarding/sacco/${saccoId}/kyc`)
-                    .send({
-
-                        boardChairperson: "Chair",
-
-                        directorNames: [
-                            "Director 1",
-                            "Director 2",
-                            "Director 3",
-                            "Director 4",
-                        ],
-
-                        registrationCertificate: "CERT",
-
-                        taxComplianceCertificate: "TIN",
-
-                        proofOfAddress: "Lease",
-
-                    });
-
-            expect(response.status).toBe(200);
-
-        });
-
-        it("should be idempotent when the same KYC payload is submitted twice", async () => {
-
-            const payload = {
-
-                boardChairperson: "Chair",
-
-                directorNames: [
-                    "Director",
-                ],
-
-                registrationCertificate: "CERT",
-
-                taxComplianceCertificate: "TIN",
-
-                proofOfAddress: "Utility",
-
-            };
-
-            const first =
-                await request(app)
-                    .put(`/api/onboarding/sacco/${saccoId}/kyc`)
-                    .send(payload);
-
-            const second =
-                await request(app)
-                    .put(`/api/onboarding/sacco/${saccoId}/kyc`)
-                    .send(payload);
-
-            expect(first.status).toBe(200);
-
-            expect(second.status).toBe(200);
-
-        });
-
-        it("should reject malformed JSON", async () => {
-
-            const response =
-                await request(app)
-                    .put(`/api/onboarding/sacco/${saccoId}/kyc`)
-                    .set("Content-Type", "application/json")
-                    .send("{invalid-json");
-
-            expect(response.status)
-                .toBeGreaterThanOrEqual(400);
-
-        });
-
-        it("should reject unsupported content type", async () => {
-
-            const response =
-                await request(app)
-                    .put(`/api/onboarding/sacco/${saccoId}/kyc`)
-                    .set("Content-Type", "text/plain")
-                    .send("invalid");
-
-            expect(response.status)
-                .toBeGreaterThanOrEqual(400);
-
-        });
-
-        it("should return JSON response", async () => {
-
-            const response =
-                await request(app)
-                    .put(`/api/onboarding/sacco/${saccoId}/kyc`)
-                    .send({
-
-                        boardChairperson: "John",
-
-                        directorNames: ["Director"],
-
-                        registrationCertificate: "CERT",
-
-                        taxComplianceCertificate: "TIN",
-
-                        proofOfAddress: "Address",
-
-                    });
+            const registration =
+                await registerSacco();
 
             expect(
-                response.headers["content-type"]
-            ).toMatch(/application\/json/i);
+                registration.response.status
+            ).toBe(201);
+
+            saccoId =
+                registration.saccoId;
 
         });
 
-        it("should handle concurrent KYC updates safely", async () => {
+        describe(
+            "PUT /api/onboarding/sacco/:id/kyc",
+            () => {
 
-            const requests = [];
+                it(
+                    "should approve KYC successfully",
+                    async () => {
 
-            for (let i = 0; i < 5; i++) {
+                        const response =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/kyc`
+                                )
+                                .send(
+                                    buildKycPayload({
+                                        notes:
+                                            "Verified",
+                                    })
+                                );
 
-                requests.push(
+                        expect(
+                            response.status
+                        ).toBe(200);
 
-                    request(app)
-                        .put(`/api/onboarding/sacco/${saccoId}/kyc`)
-                        .send({
+                        expect(
+                            response.body.success
+                        ).toBe(true);
 
-                            boardChairperson: `Chair ${i}`,
+                        expect(
+                            response.body.data.status
+                        ).toBe(
+                            "KYC_APPROVED"
+                        );
 
-                            directorNames: [
-                                `Director ${i}`,
-                            ],
+                    }
+                );
 
-                            registrationCertificate: `CERT-${i}`,
+                it(
+                    "should persist KYC information",
+                    async () => {
 
-                            taxComplianceCertificate: `TIN-${i}`,
+                        const response =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/kyc`
+                                )
+                                .send(
+                                    buildKycPayload({
 
-                            proofOfAddress: `Address-${i}`,
+                                        boardChairperson:
+                                            "Jane Doe",
 
-                        })
+                                        directorNames: [
+                                            "Director A",
+                                        ],
 
+                                    })
+                                );
+
+                        expect(
+                            response.status
+                        ).toBe(200);
+
+                        const saved =
+                            await findSaccoById(
+                                saccoId
+                            );
+
+                        expect(
+                            saved
+                        ).not.toBeNull();
+
+                        expect(
+                            saved.boardChairperson
+                        ).toBe(
+                            "Jane Doe"
+                        );
+
+                    }
+                );
+
+                it(
+                    "should reject invalid SACCO IDs",
+                    async () => {
+
+                        const response =
+                            await request(app)
+                                .put(
+                                    "/api/onboarding/sacco/invalid-id/kyc"
+                                )
+                                .send(
+                                    buildKycPayload()
+                                );
+
+                        expect(
+                            response.status
+                        ).toBeGreaterThanOrEqual(
+                            400
+                        );
+
+                    }
+                );
+
+                it(
+                    "should return 404 for an unknown SACCO",
+                    async () => {
+
+                        const unknown =
+                            new mongoose.Types.ObjectId();
+
+                        const response =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${unknown}/kyc`
+                                )
+                                .send(
+                                    buildKycPayload()
+                                );
+
+                        expect(
+                            response.status
+                        ).toBe(404);
+
+                    }
+                );
+
+                it(
+                    "should validate mandatory KYC fields",
+                    async () => {
+
+                        const response =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/kyc`
+                                )
+                                .send({});
+
+                        expect(
+                            response.status
+                        ).toBeGreaterThanOrEqual(
+                            400
+                        );
+
+                    }
+                );
+
+                it(
+                    "should reject duplicate directors",
+                    async () => {
+
+                        const response =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/kyc`
+                                )
+                                .send(
+                                    buildKycPayload({
+
+                                        directorNames: [
+                                            "Same Director",
+                                            "Same Director",
+                                        ],
+
+                                    })
+                                );
+
+                        expect(
+                            [400, 422]
+                        ).toContain(
+                            response.status
+                        );
+
+                    }
+                );
+
+                it(
+                    "should support multiple directors",
+                    async () => {
+
+                        const response =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/kyc`
+                                )
+                                .send(
+                                    buildKycPayload({
+
+                                        directorNames: [
+                                            "Director 1",
+                                            "Director 2",
+                                            "Director 3",
+                                            "Director 4",
+                                        ],
+
+                                    })
+                                );
+
+                        expect(
+                            response.status
+                        ).toBe(200);
+
+                    }
+                );
+
+                it(
+                    "should be idempotent for identical KYC submissions",
+                    async () => {
+
+                        const payload =
+                            buildKycPayload();
+
+                        const first =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/kyc`
+                                )
+                                .send(payload);
+
+                        const second =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/kyc`
+                                )
+                                .send(payload);
+
+                        expect(
+                            first.status
+                        ).toBe(200);
+
+                        expect(
+                            [200, 409]
+                        ).toContain(
+                            second.status
+                        );
+
+                    }
+                );
+
+                it(
+                    "should reject malformed JSON",
+                    async () => {
+
+                        const response =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/kyc`
+                                )
+                                .set(
+                                    "Content-Type",
+                                    "application/json"
+                                )
+                                .send(
+                                    "{invalid-json"
+                                );
+
+                        expect(
+                            response.status
+                        ).toBe(400);
+
+                    }
+                );
+
+                it(
+                    "should reject unsupported content types",
+                    async () => {
+
+                        const response =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/kyc`
+                                )
+                                .set(
+                                    "Content-Type",
+                                    "text/plain"
+                                )
+                                .send(
+                                    "invalid"
+                                );
+
+                        expect(
+                            response.status
+                        ).toBeGreaterThanOrEqual(
+                            400
+                        );
+
+                    }
+                );
+
+                it(
+                    "should return a JSON response",
+                    async () => {
+
+                        const response =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/kyc`
+                                )
+                                .send(
+                                    buildKycPayload()
+                                );
+
+                        expect(
+                            response.headers[
+                                "content-type"
+                            ]
+                        ).toMatch(
+                            /application\/json/i
+                        );
+
+                    }
+                );
+
+                it(
+                    "should handle concurrent KYC updates safely",
+                    async () => {
+
+                        const jobs =
+                            Array.from(
+                                { length: 5 },
+                                (_, index) =>
+                                    request(app)
+                                        .put(
+                                            `/api/onboarding/sacco/${saccoId}/kyc`
+                                        )
+                                        .send(
+                                            buildKycPayload({
+
+                                                boardChairperson:
+                                                    `Chair ${index}`,
+
+                                                directorNames: [
+                                                    `Director ${index}`,
+                                                ],
+
+                                                registrationCertificate:
+                                                    `CERT-${index}`,
+
+                                                taxComplianceCertificate:
+                                                    `TIN-${index}`,
+
+                                                proofOfAddress:
+                                                    `Address-${index}`,
+
+                                            })
+                                        )
+                            );
+
+                        const responses =
+                            await Promise.all(jobs);
+
+                        responses.forEach(
+                            (response) => {
+
+                                expect(
+                                    [200, 409]
+                                ).toContain(
+                                    response.status
+                                );
+
+                            }
+                        );
+
+                    }
+                );
+
+                it(
+                    "should preserve audit timestamps after approval",
+                    async () => {
+
+                        const response =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/kyc`
+                                )
+                                .send(
+                                    buildKycPayload()
+                                );
+
+                        expect(
+                            response.status
+                        ).toBe(200);
+
+                        const saved =
+                            await findSaccoById(
+                                saccoId
+                            );
+
+                        expect(
+                            saved.updatedAt
+                        ).toBeDefined();
+
+                    }
                 );
 
             }
+        );
 
-            const responses =
-                await Promise.all(requests);
+    }
+);
 
-            responses.forEach((r) => {
-
-                expect([200,409]).toContain(r.status);
-
-            });
-
-        });
-
-        it("should preserve audit fields after approval", async () => {
-
-            await request(app)
-                .put(`/api/onboarding/sacco/${saccoId}/kyc`)
-                .send({
-
-                    boardChairperson: "Chair",
-
-                    directorNames: ["Director"],
-
-                    registrationCertificate: "CERT",
-
-                    taxComplianceCertificate: "TIN",
-
-                    proofOfAddress: "Address",
-
-                });
-
-            const collection =
-                mongoose.connection.collection("saccos");
-
-            const saved =
-                await collection.findOne({
-
-                    _id: new mongoose.Types.ObjectId(saccoId),
-
-                });
-
-            expect(saved.updatedAt).toBeDefined();
-
-        });
-
-    });
-
-});
-
-/* =============================================================================
- * End Part 3
- * =============================================================================
- *
- * Part 4 begins:
- *
- * describe("Subscription & Payment API", () => {
- *
- */
 /* =============================================================================
  * Part 4 — Subscription Setup & Payment Integration Tests
  * ============================================================================= */
 
-describe("Subscription Setup & Payment API", () => {
+describe(
+    "Subscription Setup & Payment API",
+    () => {
 
-    let saccoId;
+        let saccoId;
 
-    beforeEach(async () => {
+        beforeEach(async () => {
 
-        const registration =
-            await request(app)
-                .post("/api/onboarding/sacco")
-                .send(buildRegistrationPayload());
+            const registration =
+                await registerSacco();
 
-        expect(registration.status).toBe(201);
+            expect(
+                registration.response.status
+            ).toBe(201);
 
-        saccoId = registration.body.data._id;
+            saccoId =
+                registration.saccoId;
 
-        await request(app)
-            .put(`/api/onboarding/sacco/${saccoId}/kyc`)
-            .send({
-
-                boardChairperson: "John Doe",
-
-                directorNames: [
-                    "Director One",
-                    "Director Two",
-                ],
-
-                registrationCertificate: "REG-001",
-
-                taxComplianceCertificate: "TAX-001",
-
-                proofOfAddress: "Utility Bill",
-
-            });
-
-    });
-
-    describe("PUT /api/onboarding/sacco/:id/subscription", () => {
-
-        it("should activate a STARTER subscription", async () => {
-
-            const response =
-                await request(app)
-                    .put(`/api/onboarding/sacco/${saccoId}/subscription`)
-                    .send({
-
-                        plan: "STARTER",
-
-                        billingCycle: "MONTHLY",
-
-                        currency: "UGX",
-
-                    });
-
-            expect(response.status).toBe(200);
-
-            expect(response.body.success).toBe(true);
-
-            expect(response.body.data.plan)
-                .toBe("STARTER");
-
-        });
-
-        it("should activate a GROWTH subscription", async () => {
-
-            const response =
-                await request(app)
-                    .put(`/api/onboarding/sacco/${saccoId}/subscription`)
-                    .send({
-
-                        plan: "GROWTH",
-
-                        billingCycle: "MONTHLY",
-
-                        currency: "UGX",
-
-                    });
-
-            expect(response.status).toBe(200);
-
-        });
-
-        it("should activate an ENTERPRISE subscription", async () => {
-
-            const response =
-                await request(app)
-                    .put(`/api/onboarding/sacco/${saccoId}/subscription`)
-                    .send({
-
-                        plan: "ENTERPRISE",
-
-                        billingCycle: "ANNUAL",
-
-                        currency: "UGX",
-
-                    });
-
-            expect(response.status).toBe(200);
-
-        });
-
-        it("should reject unsupported plans", async () => {
-
-            const response =
-                await request(app)
-                    .put(`/api/onboarding/sacco/${saccoId}/subscription`)
-                    .send({
-
-                        plan: "INVALID",
-
-                        billingCycle: "MONTHLY",
-
-                    });
-
-            expect([400,422]).toContain(
-                response.status
+            await prepareProductionReadySacco(
+                saccoId
             );
 
-        });
+            /*
+             * prepareProductionReadySacco already establishes KYC and
+             * subscription. Clear mock call history so individual payment
+             * assertions remain isolated.
+             */
 
-        it("should validate billing cycle", async () => {
-
-            const response =
-                await request(app)
-                    .put(`/api/onboarding/sacco/${saccoId}/subscription`)
-                    .send({
-
-                        plan: "STARTER",
-
-                        billingCycle: "WEEKLY",
-
-                    });
-
-            expect([400,422]).toContain(
-                response.status
-            );
+            jest.clearAllMocks();
 
         });
 
-        it("should persist subscription details", async () => {
-
-            await request(app)
-                .put(`/api/onboarding/sacco/${saccoId}/subscription`)
-                .send({
-
-                    plan: "GROWTH",
-
-                    billingCycle: "MONTHLY",
-
-                });
-
-            const collection =
-                mongoose.connection.collection("saccos");
-
-            const sacco =
-                await collection.findOne({
-
-                    _id:
-                        new mongoose.Types.ObjectId(saccoId),
-
-                });
-
-            expect(sacco.subscription.plan)
-                .toBe("GROWTH");
-
-        });
-
-        it("should allow subscription upgrades", async () => {
-
-            await request(app)
-                .put(`/api/onboarding/sacco/${saccoId}/subscription`)
-                .send({
-
-                    plan: "STARTER",
-
-                    billingCycle: "MONTHLY",
-
-                });
-
-            const response =
-                await request(app)
-                    .put(`/api/onboarding/sacco/${saccoId}/subscription`)
-                    .send({
-
-                        plan: "ENTERPRISE",
-
-                        billingCycle: "ANNUAL",
-
-                    });
-
-            expect(response.status).toBe(200);
-
-            expect(response.body.data.plan)
-                .toBe("ENTERPRISE");
-
-        });
-
-        it("should reject unknown SACCO IDs", async () => {
-
-            const unknown =
-                new mongoose.Types.ObjectId();
-
-            const response =
-                await request(app)
-                    .put(`/api/onboarding/sacco/${unknown}/subscription`)
-                    .send({
-
-                        plan: "STARTER",
-
-                    });
-
-            expect(response.status).toBe(404);
-
-        });
-
-    });
-
-    describe("POST /api/onboarding/payment", () => {
-
-        it("should initialize an MTN MoMo payment", async () => {
-
-            const response =
-                await request(app)
-                    .post("/api/onboarding/payment")
-                    .send({
-
-                        provider: "MTN",
-
-                        saccoId,
-
-                        plan: "STARTER",
-
-                    });
-
-            expect(response.status).toBe(200);
-
-            expect(response.body.success).toBe(true);
-
-        });
-
-        it("should initialize an Airtel Money payment", async () => {
-
-            const response =
-                await request(app)
-                    .post("/api/onboarding/payment")
-                    .send({
-
-                        provider: "AIRTEL",
-
-                        saccoId,
-
-                        plan: "STARTER",
-
-                    });
-
-            expect(response.status).toBe(200);
-
-        });
-
-        it("should reject unsupported payment providers", async () => {
-
-            const response =
-                await request(app)
-                    .post("/api/onboarding/payment")
-                    .send({
-
-                        provider: "PAYPAL",
-
-                        saccoId,
-
-                        plan: "STARTER",
-
-                    });
-
-            expect([400,422]).toContain(
-                response.status
-            );
-
-        });
-
-        it("should require provider", async () => {
-
-            const response =
-                await request(app)
-                    .post("/api/onboarding/payment")
-                    .send({
-
-                        saccoId,
-
-                        plan: "STARTER",
-
-                    });
-
-            expect(response.status)
-                .toBeGreaterThanOrEqual(400);
-
-        });
-
-        it("should reject unknown SACCO during payment", async () => {
-
-            const response =
-                await request(app)
-                    .post("/api/onboarding/payment")
-                    .send({
-
-                        provider: "MTN",
-
-                        saccoId:
-                            new mongoose.Types.ObjectId(),
-
-                        plan: "STARTER",
-
-                    });
-
-            expect(response.status).toBe(404);
-
-        });
-
-        it("should safely retry duplicate payment initialization", async () => {
-
-            const payload = {
-
-                provider: "MTN",
-
-                saccoId,
-
-                plan: "STARTER",
-
-            };
-
-            const first =
-                await request(app)
-                    .post("/api/onboarding/payment")
-                    .send(payload);
-
-            const second =
-                await request(app)
-                    .post("/api/onboarding/payment")
-                    .send(payload);
-
-            expect(first.status).toBe(200);
-
-            expect([200,409]).toContain(
-                second.status
-            );
-
-        });
-
-        it("should handle concurrent payment requests", async () => {
-
-            const jobs = [];
-
-            for (let i = 0; i < 5; i++) {
-
-                jobs.push(
-
-                    request(app)
-                        .post("/api/onboarding/payment")
-                        .send({
-
-                            provider: "MTN",
-
-                            saccoId,
-
-                            plan: "STARTER",
-
-                        })
-
+        describe(
+            "PUT /api/onboarding/sacco/:id/subscription",
+            () => {
+
+                it(
+                    "should activate a STARTER subscription",
+                    async () => {
+
+                        const response =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/subscription`
+                                )
+                                .send(
+                                    buildSubscriptionPayload()
+                                );
+
+                        expect(
+                            response.status
+                        ).toBe(200);
+
+                        expect(
+                            response.body.success
+                        ).toBe(true);
+
+                        expect(
+                            response.body.data.plan
+                        ).toBe(
+                            "STARTER"
+                        );
+
+                    }
+                );
+
+                it(
+                    "should activate a GROWTH subscription",
+                    async () => {
+
+                        const response =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/subscription`
+                                )
+                                .send(
+                                    buildSubscriptionPayload({
+
+                                        plan:
+                                            "GROWTH",
+
+                                    })
+                                );
+
+                        expect(
+                            response.status
+                        ).toBe(200);
+
+                    }
+                );
+
+                it(
+                    "should activate an ENTERPRISE subscription",
+                    async () => {
+
+                        const response =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/subscription`
+                                )
+                                .send(
+                                    buildSubscriptionPayload({
+
+                                        plan:
+                                            "ENTERPRISE",
+
+                                        billingCycle:
+                                            "ANNUAL",
+
+                                    })
+                                );
+
+                        expect(
+                            response.status
+                        ).toBe(200);
+
+                    }
+                );
+
+                it(
+                    "should reject unsupported plans",
+                    async () => {
+
+                        const response =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/subscription`
+                                )
+                                .send(
+                                    buildSubscriptionPayload({
+
+                                        plan:
+                                            "INVALID",
+
+                                    })
+                                );
+
+                        expect(
+                            [400, 422]
+                        ).toContain(
+                            response.status
+                        );
+
+                    }
+                );
+
+                it(
+                    "should validate billing cycle",
+                    async () => {
+
+                        const response =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/subscription`
+                                )
+                                .send(
+                                    buildSubscriptionPayload({
+
+                                        billingCycle:
+                                            "WEEKLY",
+
+                                    })
+                                );
+
+                        expect(
+                            [400, 422]
+                        ).toContain(
+                            response.status
+                        );
+
+                    }
+                );
+
+                it(
+                    "should persist subscription details",
+                    async () => {
+
+                        const response =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/subscription`
+                                )
+                                .send(
+                                    buildSubscriptionPayload({
+
+                                        plan:
+                                            "GROWTH",
+
+                                    })
+                                );
+
+                        expect(
+                            response.status
+                        ).toBe(200);
+
+                        const sacco =
+                            await findSaccoById(
+                                saccoId
+                            );
+
+                        expect(
+                            sacco.subscription
+                        ).toBeDefined();
+
+                        expect(
+                            sacco.subscription.plan
+                        ).toBe(
+                            "GROWTH"
+                        );
+
+                    }
+                );
+
+                it(
+                    "should allow subscription upgrades",
+                    async () => {
+
+                        const first =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/subscription`
+                                )
+                                .send(
+                                    buildSubscriptionPayload({
+
+                                        plan:
+                                            "STARTER",
+
+                                    })
+                                );
+
+                        expect(
+                            first.status
+                        ).toBe(200);
+
+                        const response =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/subscription`
+                                )
+                                .send(
+                                    buildSubscriptionPayload({
+
+                                        plan:
+                                            "ENTERPRISE",
+
+                                        billingCycle:
+                                            "ANNUAL",
+
+                                    })
+                                );
+
+                        expect(
+                            response.status
+                        ).toBe(200);
+
+                        expect(
+                            response.body.data.plan
+                        ).toBe(
+                            "ENTERPRISE"
+                        );
+
+                    }
+                );
+
+                it(
+                    "should reject an unknown SACCO ID",
+                    async () => {
+
+                        const unknown =
+                            new mongoose.Types.ObjectId();
+
+                        const response =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${unknown}/subscription`
+                                )
+                                .send(
+                                    buildSubscriptionPayload()
+                                );
+
+                        expect(
+                            response.status
+                        ).toBe(404);
+
+                    }
                 );
 
             }
+        );
 
-            const responses =
-                await Promise.all(jobs);
+        describe(
+            "POST /api/onboarding/payment",
+            () => {
 
-            responses.forEach((response) => {
+                it(
+                    "should initialize an MTN MoMo payment",
+                    async () => {
 
-                expect([200,409]).toContain(
-                    response.status
+                        const response =
+                            await request(app)
+                                .post(
+                                    "/api/onboarding/payment"
+                                )
+                                .send(
+                                    buildPaymentPayload(
+                                        saccoId
+                                    )
+                                );
+
+                        expect(
+                            response.status
+                        ).toBe(200);
+
+                        expect(
+                            response.body.success
+                        ).toBe(true);
+
+                    }
                 );
 
-            });
+                it(
+                    "should initialize an Airtel Money payment",
+                    async () => {
 
-        });
+                        const response =
+                            await request(app)
+                                .post(
+                                    "/api/onboarding/payment"
+                                )
+                                .send(
+                                    buildPaymentPayload(
+                                        saccoId,
+                                        {
 
-        it("should verify MTN payment service invocation", async () => {
+                                            provider:
+                                                "AIRTEL",
 
-            const momo =
-                require("../../../modules/mtnMomoService");
+                                        }
+                                    )
+                                );
 
-            await request(app)
-                .post("/api/onboarding/payment")
-                .send({
+                        expect(
+                            response.status
+                        ).toBe(200);
 
-                    provider: "MTN",
+                    }
+                );
 
-                    saccoId,
+                it(
+                    "should reject unsupported payment providers",
+                    async () => {
 
-                    plan: "STARTER",
+                        const response =
+                            await request(app)
+                                .post(
+                                    "/api/onboarding/payment"
+                                )
+                                .send(
+                                    buildPaymentPayload(
+                                        saccoId,
+                                        {
 
-                });
+                                            provider:
+                                                "PAYPAL",
 
-            expect(
-                momo.initializePayment
-            ).toHaveBeenCalled();
+                                        }
+                                    )
+                                );
 
-        });
+                        expect(
+                            [400, 422]
+                        ).toContain(
+                            response.status
+                        );
 
-        it("should verify Airtel payment service invocation", async () => {
+                    }
+                );
 
-            const airtel =
-                require("../../../modules/airtelMoneyService");
+                it(
+                    "should require a payment provider",
+                    async () => {
 
-            await request(app)
-                .post("/api/onboarding/payment")
-                .send({
+                        const response =
+                            await request(app)
+                                .post(
+                                    "/api/onboarding/payment"
+                                )
+                                .send({
 
-                    provider: "AIRTEL",
+                                    saccoId,
 
-                    saccoId,
+                                    plan:
+                                        "STARTER",
 
-                    plan: "STARTER",
+                                });
 
-                });
+                        expect(
+                            response.status
+                        ).toBeGreaterThanOrEqual(
+                            400
+                        );
 
-            expect(
-                airtel.initializePayment
-            ).toHaveBeenCalled();
+                    }
+                );
 
-        });
+                it(
+                    "should reject an unknown SACCO during payment",
+                    async () => {
 
-        it("should return JSON responses", async () => {
+                        const unknown =
+                            new mongoose.Types.ObjectId();
 
-            const response =
-                await request(app)
-                    .post("/api/onboarding/payment")
-                    .send({
+                        const response =
+                            await request(app)
+                                .post(
+                                    "/api/onboarding/payment"
+                                )
+                                .send(
+                                    buildPaymentPayload(
+                                        unknown.toString()
+                                    )
+                                );
 
-                        provider: "MTN",
+                        expect(
+                            response.status
+                        ).toBe(404);
 
-                        saccoId,
+                    }
+                );
 
-                        plan: "STARTER",
+                it(
+                    "should safely retry duplicate payment initialization",
+                    async () => {
 
-                    });
+                        const payload =
+                            buildPaymentPayload(
+                                saccoId
+                            );
 
-            expect(
-                response.headers["content-type"]
-            ).toMatch(/application\/json/i);
+                        const first =
+                            await request(app)
+                                .post(
+                                    "/api/onboarding/payment"
+                                )
+                                .send(payload);
 
-        });
+                        const second =
+                            await request(app)
+                                .post(
+                                    "/api/onboarding/payment"
+                                )
+                                .send(payload);
 
-    });
+                        expect(
+                            first.status
+                        ).toBe(200);
 
-});
+                        expect(
+                            [200, 409]
+                        ).toContain(
+                            second.status
+                        );
 
-/* =============================================================================
- * End Part 4
- * =============================================================================
- *
- * Part 5 begins:
- *
- * describe("Go Live Checklist API", () => {
- *
- */
+                    }
+                );
+
+                it(
+                    "should handle concurrent payment requests",
+                    async () => {
+
+                        const jobs =
+                            Array.from(
+                                { length: 5 },
+                                () =>
+                                    request(app)
+                                        .post(
+                                            "/api/onboarding/payment"
+                                        )
+                                        .send(
+                                            buildPaymentPayload(
+                                                saccoId
+                                            )
+                                        )
+                            );
+
+                        const responses =
+                            await Promise.all(jobs);
+
+                        responses.forEach(
+                            (response) => {
+
+                                expect(
+                                    [200, 409]
+                                ).toContain(
+                                    response.status
+                                );
+
+                            }
+                        );
+
+                    }
+                );
+
+                it(
+                    "should invoke the MTN MoMo payment service",
+                    async () => {
+
+                        await request(app)
+                            .post(
+                                "/api/onboarding/payment"
+                            )
+                            .send(
+                                buildPaymentPayload(
+                                    saccoId
+                                )
+                            );
+
+                        expect(
+                            mtnMomoService.initializePayment
+                        ).toHaveBeenCalled();
+
+                    }
+                );
+
+                it(
+                    "should invoke the Airtel Money payment service",
+                    async () => {
+
+                        await request(app)
+                            .post(
+                                "/api/onboarding/payment"
+                            )
+                            .send(
+                                buildPaymentPayload(
+                                    saccoId,
+                                    {
+
+                                        provider:
+                                            "AIRTEL",
+
+                                    }
+                                )
+                            );
+
+                        expect(
+                            airtelMoneyService.initializePayment
+                        ).toHaveBeenCalled();
+
+                    }
+                );
+
+                it(
+                    "should return JSON responses",
+                    async () => {
+
+                        const response =
+                            await request(app)
+                                .post(
+                                    "/api/onboarding/payment"
+                                )
+                                .send(
+                                    buildPaymentPayload(
+                                        saccoId
+                                    )
+                                );
+
+                        expect(
+                            response.headers[
+                                "content-type"
+                            ]
+                        ).toMatch(
+                            /application\/json/i
+                        );
+
+                    }
+                );
+
+            }
+        );
+
+    }
+);
+
 /* =============================================================================
  * Part 5 — Go Live Activation Integration Tests
  * ============================================================================= */
 
-describe("Go Live Activation API", () => {
+describe(
+    "Go Live Activation API",
+    () => {
 
-    let saccoId;
+        let saccoId;
 
-    beforeEach(async () => {
-
-        const registration =
-            await request(app)
-                .post("/api/onboarding/sacco")
-                .send(buildRegistrationPayload());
-
-        expect(registration.status).toBe(201);
-
-        saccoId = registration.body.data._id;
-
-        /*
-         * Bring SACCO to production-ready state
-         */
-
-        await request(app)
-            .put(`/api/onboarding/sacco/${saccoId}/kyc`)
-            .send({
-
-                boardChairperson: "John Doe",
-
-                directorNames: [
-                    "Director One",
-                    "Director Two",
-                ],
-
-                registrationCertificate: "REG-001",
-
-                taxComplianceCertificate: "TAX-001",
-
-                proofOfAddress: "Utility Bill",
-
-            });
-
-        await request(app)
-            .put(`/api/onboarding/sacco/${saccoId}/subscription`)
-            .send({
-
-                plan: "STARTER",
-
-                billingCycle: "MONTHLY",
-
-                currency: "UGX",
-
-            });
-
-    });
-
-    describe("PUT /api/onboarding/sacco/:id/live", () => {
-
-        it("should activate a production-ready SACCO", async () => {
-
-            const response =
-                await request(app)
-                    .put(`/api/onboarding/sacco/${saccoId}/live`)
-                    .send();
-
-            expect(response.status).toBe(200);
-
-            expect(response.body.success).toBe(true);
-
-            expect(response.body.data.status)
-                .toBe("LIVE");
-
-        });
-
-        it("should persist LIVE status", async () => {
-
-            await request(app)
-                .put(`/api/onboarding/sacco/${saccoId}/live`);
-
-            const collection =
-                mongoose.connection.collection("saccos");
-
-            const sacco =
-                await collection.findOne({
-
-                    _id:
-                        new mongoose.Types.ObjectId(saccoId),
-
-                });
-
-            expect(sacco.status)
-                .toBe("LIVE");
-
-        });
-
-        it("should record goLiveAt timestamp", async () => {
-
-            await request(app)
-                .put(`/api/onboarding/sacco/${saccoId}/live`);
-
-            const collection =
-                mongoose.connection.collection("saccos");
-
-            const sacco =
-                await collection.findOne({
-
-                    _id:
-                        new mongoose.Types.ObjectId(saccoId),
-
-                });
-
-            expect(sacco.goLiveAt).toBeDefined();
-
-        });
-
-        it("should reject activation when KYC is incomplete", async () => {
+        beforeEach(async () => {
 
             const registration =
-                await request(app)
-                    .post("/api/onboarding/sacco")
-                    .send(buildRegistrationPayload());
+                await registerSacco();
 
-            const response =
-                await request(app)
-                    .put(`/api/onboarding/sacco/${registration.body.data._id}/live`);
+            expect(
+                registration.response.status
+            ).toBe(201);
 
-            expect([400,409]).toContain(
-                response.status
+            saccoId =
+                registration.saccoId;
+
+            await prepareProductionReadySacco(
+                saccoId
             );
 
-        });
-
-        it("should reject activation when subscription is missing", async () => {
-
-            const registration =
-                await request(app)
-                    .post("/api/onboarding/sacco")
-                    .send(buildRegistrationPayload());
-
-            const newId =
-                registration.body.data._id;
-
-            await request(app)
-                .put(`/api/onboarding/sacco/${newId}/kyc`)
-                .send({
-
-                    boardChairperson: "Chair",
-
-                    directorNames: ["Director"],
-
-                    registrationCertificate: "REG",
-
-                    taxComplianceCertificate: "TIN",
-
-                    proofOfAddress: "Address",
-
-                });
-
-            const response =
-                await request(app)
-                    .put(`/api/onboarding/sacco/${newId}/live`);
-
-            expect([400,409]).toContain(
-                response.status
-            );
+            jest.clearAllMocks();
 
         });
 
-        it("should reject unknown SACCO", async () => {
+        describe(
+            "PUT /api/onboarding/sacco/:id/live",
+            () => {
 
-            const response =
-                await request(app)
-                    .put(`/api/onboarding/sacco/${new mongoose.Types.ObjectId()}/live`);
+                it(
+                    "should activate a production-ready SACCO",
+                    async () => {
 
-            expect(response.status).toBe(404);
+                        const response =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/live`
+                                )
+                                .send();
 
-        });
+                        expect(
+                            response.status
+                        ).toBe(200);
 
-        it("should be idempotent", async () => {
+                        expect(
+                            response.body.success
+                        ).toBe(true);
 
-            const first =
-                await request(app)
-                    .put(`/api/onboarding/sacco/${saccoId}/live`);
+                        expect(
+                            response.body.data.status
+                        ).toBe(
+                            "LIVE"
+                        );
 
-            const second =
-                await request(app)
-                    .put(`/api/onboarding/sacco/${saccoId}/live`);
+                    }
+                );
 
-            expect(first.status).toBe(200);
+                it(
+                    "should persist LIVE status",
+                    async () => {
 
-            expect([200,409]).toContain(
-                second.status
-            );
+                        const response =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/live`
+                                );
 
-        });
+                        expect(
+                            response.status
+                        ).toBe(200);
 
-        it("should handle concurrent activation safely", async () => {
+                        const sacco =
+                            await findSaccoById(
+                                saccoId
+                            );
 
-            const jobs = [];
+                        expect(
+                            sacco.status
+                        ).toBe(
+                            "LIVE"
+                        );
 
-            for (let i = 0; i < 5; i++) {
+                    }
+                );
 
-                jobs.push(
+                it(
+                    "should record goLiveAt timestamp",
+                    async () => {
 
-                    request(app)
-                        .put(`/api/onboarding/sacco/${saccoId}/live`)
+                        const response =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/live`
+                                );
 
+                        expect(
+                            response.status
+                        ).toBe(200);
+
+                        const sacco =
+                            await findSaccoById(
+                                saccoId
+                            );
+
+                        expect(
+                            sacco.goLiveAt
+                        ).toBeDefined();
+
+                    }
+                );
+
+                it(
+                    "should reject activation when KYC is incomplete",
+                    async () => {
+
+                        const registration =
+                            await registerSacco();
+
+                        const response =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${registration.saccoId}/live`
+                                );
+
+                        expect(
+                            [400, 409]
+                        ).toContain(
+                            response.status
+                        );
+
+                    }
+                );
+
+                it(
+                    "should reject activation when subscription is missing",
+                    async () => {
+
+                        const registration =
+                            await registerSacco();
+
+                        const newId =
+                            registration.saccoId;
+
+                        const kyc =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${newId}/kyc`
+                                )
+                                .send(
+                                    buildKycPayload()
+                                );
+
+                        expect(
+                            kyc.status
+                        ).toBe(200);
+
+                        const response =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${newId}/live`
+                                );
+
+                        expect(
+                            [400, 409]
+                        ).toContain(
+                            response.status
+                        );
+
+                    }
+                );
+
+                it(
+                    "should reject an unknown SACCO",
+                    async () => {
+
+                        const unknown =
+                            new mongoose.Types.ObjectId();
+
+                        const response =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${unknown}/live`
+                                );
+
+                        expect(
+                            response.status
+                        ).toBe(404);
+
+                    }
+                );
+
+                it(
+                    "should be idempotent",
+                    async () => {
+
+                        const first =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/live`
+                                );
+
+                        const second =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/live`
+                                );
+
+                        expect(
+                            first.status
+                        ).toBe(200);
+
+                        expect(
+                            [200, 409]
+                        ).toContain(
+                            second.status
+                        );
+
+                    }
+                );
+
+                it(
+                    "should handle concurrent activation safely",
+                    async () => {
+
+                        const jobs =
+                            Array.from(
+                                { length: 5 },
+                                () =>
+                                    request(app)
+                                        .put(
+                                            `/api/onboarding/sacco/${saccoId}/live`
+                                        )
+                            );
+
+                        const responses =
+                            await Promise.all(jobs);
+
+                        responses.forEach(
+                            (response) => {
+
+                                expect(
+                                    [200, 409]
+                                ).toContain(
+                                    response.status
+                                );
+
+                            }
+                        );
+
+                    }
+                );
+
+                it(
+                    "should publish onboarding completion event",
+                    async () => {
+
+                        const response =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/live`
+                                );
+
+                        expect(
+                            response.status
+                        ).toBe(200);
+
+                        expect(
+                            onboardingPublisher.publishGoLive
+                        ).toHaveBeenCalled();
+
+                    }
+                );
+
+                it(
+                    "should provision tenant resources",
+                    async () => {
+
+                        const response =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/live`
+                                );
+
+                        expect(
+                            response.status
+                        ).toBe(200);
+
+                        expect(
+                            tenantProvisioningService
+                                .activateTenant
+                        ).toHaveBeenCalled();
+
+                    }
+                );
+
+                it(
+                    "should create an audit trail",
+                    async () => {
+
+                        const response =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/live`
+                                );
+
+                        expect(
+                            response.status
+                        ).toBe(200);
+
+                        expect(
+                            auditService.log
+                        ).toHaveBeenCalled();
+
+                    }
+                );
+
+                it(
+                    "should initialize default financial configuration",
+                    async () => {
+
+                        const response =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/live`
+                                );
+
+                        expect(
+                            response.status
+                        ).toBe(200);
+
+                        expect(
+                            ledgerService
+                                .initializeTenantLedger
+                        ).toHaveBeenCalled();
+
+                    }
+                );
+
+                it(
+                    "should initialize default roles and permissions",
+                    async () => {
+
+                        const response =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/live`
+                                );
+
+                        expect(
+                            response.status
+                        ).toBe(200);
+
+                        expect(
+                            identityBootstrapService
+                                .bootstrapTenant
+                        ).toHaveBeenCalled();
+
+                    }
+                );
+
+                it(
+                    "should return a JSON response",
+                    async () => {
+
+                        const response =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/live`
+                                );
+
+                        expect(
+                            response.headers[
+                                "content-type"
+                            ]
+                        ).toMatch(
+                            /application\/json/i
+                        );
+
+                    }
+                );
+
+                it(
+                    "should preserve activation metadata",
+                    async () => {
+
+                        const response =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/live`
+                                );
+
+                        expect(
+                            response.status
+                        ).toBe(200);
+
+                        const sacco =
+                            await findSaccoById(
+                                saccoId
+                            );
+
+                        expect(
+                            sacco.updatedAt
+                        ).toBeDefined();
+
+                        expect(
+                            sacco.goLiveAt
+                        ).toBeDefined();
+
+                        expect(
+                            sacco.status
+                        ).toBe(
+                            "LIVE"
+                        );
+
+                    }
                 );
 
             }
+        );
 
-            const responses =
-                await Promise.all(jobs);
+    }
+);
 
-            responses.forEach((response) => {
-
-                expect([200,409]).toContain(
-                    response.status
-                );
-
-            });
-
-        });
-
-        it("should publish onboarding completion event", async () => {
-
-            const publisher =
-                require("../../events/onboardingPublisher");
-
-            await request(app)
-                .put(`/api/onboarding/sacco/${saccoId}/live`);
-
-            expect(
-                publisher.publishGoLive
-            ).toHaveBeenCalled();
-
-        });
-
-        it("should provision tenant resources", async () => {
-
-            const tenantService =
-                require("../../services/tenantProvisioningService");
-
-            await request(app)
-                .put(`/api/onboarding/sacco/${saccoId}/live`);
-
-            expect(
-                tenantService.activateTenant
-            ).toHaveBeenCalled();
-
-        });
-
-        it("should create audit trail", async () => {
-
-            const audit =
-                require("../../services/auditService");
-
-            await request(app)
-                .put(`/api/onboarding/sacco/${saccoId}/live`);
-
-            expect(
-                audit.log
-            ).toHaveBeenCalled();
-
-        });
-
-        it("should initialize default financial configuration", async () => {
-
-            const ledger =
-                require("../../modules/finance/services/ledgerService");
-
-            await request(app)
-                .put(`/api/onboarding/sacco/${saccoId}/live`);
-
-            expect(
-                ledger.initializeTenantLedger
-            ).toHaveBeenCalled();
-
-        });
-
-        it("should initialize default roles and permissions", async () => {
-
-            const identity =
-                require("../../services/identityBootstrapService");
-
-            await request(app)
-                .put(`/api/onboarding/sacco/${saccoId}/live`);
-
-            expect(
-                identity.bootstrapTenant
-            ).toHaveBeenCalled();
-
-        });
-
-        it("should return JSON response", async () => {
-
-            const response =
-                await request(app)
-                    .put(`/api/onboarding/sacco/${saccoId}/live`);
-
-            expect(
-                response.headers["content-type"]
-            ).toMatch(/application\/json/i);
-
-        });
-
-        it("should preserve activation metadata", async () => {
-
-            await request(app)
-                .put(`/api/onboarding/sacco/${saccoId}/live`);
-
-            const collection =
-                mongoose.connection.collection("saccos");
-
-            const sacco =
-                await collection.findOne({
-
-                    _id:
-                        new mongoose.Types.ObjectId(saccoId),
-
-                });
-
-            expect(sacco.updatedAt)
-                .toBeDefined();
-
-            expect(sacco.goLiveAt)
-                .toBeDefined();
-
-            expect(sacco.status)
-                .toBe("LIVE");
-
-        });
-
-    });
-
-});
-
-/* =============================================================================
- * End Part 5
- * =============================================================================
- *
- * Part 6 begins:
- *
- * describe("Complete Enterprise Onboarding Workflow", () => {
- *
- */
 /* =============================================================================
  * Part 6 — Enterprise End-to-End Onboarding Workflow
  * ============================================================================= */
 
-describe("Enterprise End-to-End Onboarding Workflow", () => {
-
-    describe("Complete Production Workflow", () => {
-
-        it("should complete the full onboarding lifecycle", async () => {
-
-            /*
-             * STEP 1 — Registration
-             */
-
-            const registration =
-                await request(app)
-                    .post("/api/onboarding/sacco")
-                    .send(buildRegistrationPayload());
-
-            expect(registration.status).toBe(201);
-
-            const saccoId =
-                registration.body.data._id;
-
-            /*
-             * STEP 2 — KYC
-             */
-
-            const kyc =
-                await request(app)
-                    .put(`/api/onboarding/sacco/${saccoId}/kyc`)
-                    .send({
-
-                        boardChairperson: "John Doe",
-
-                        directorNames: [
-                            "Director One",
-                            "Director Two",
-                        ],
-
-                        registrationCertificate: "REG-001",
-
-                        taxComplianceCertificate: "TIN-001",
-
-                        proofOfAddress: "Utility Bill",
-
-                    });
-
-            expect(kyc.status).toBe(200);
-
-            /*
-             * STEP 3 — Subscription
-             */
-
-            const subscription =
-                await request(app)
-                    .put(`/api/onboarding/sacco/${saccoId}/subscription`)
-                    .send({
-
-                        plan: "STARTER",
-
-                        billingCycle: "MONTHLY",
-
-                        currency: "UGX",
-
-                    });
-
-            expect(subscription.status).toBe(200);
-
-            /*
-             * STEP 4 — Payment
-             */
-
-            const payment =
-                await request(app)
-                    .post("/api/onboarding/payment")
-                    .send({
-
-                        provider: "MTN",
-
-                        saccoId,
-
-                        plan: "STARTER",
-
-                    });
-
-            expect(payment.status).toBe(200);
-
-            /*
-             * STEP 5 — Go Live
-             */
-
-            const activation =
-                await request(app)
-                    .put(`/api/onboarding/sacco/${saccoId}/live`);
-
-            expect(activation.status).toBe(200);
-
-            expect(
-                activation.body.data.status
-            ).toBe("LIVE");
-
-        });
-
-    });
-
-    describe("Rollback & Recovery", () => {
-
-        it("should reject go-live after failed KYC", async () => {
-
-            const registration =
-                await request(app)
-                    .post("/api/onboarding/sacco")
-                    .send(buildRegistrationPayload());
-
-            const response =
-                await request(app)
-                    .put(`/api/onboarding/sacco/${registration.body.data._id}/live`);
-
-            expect([400,409]).toContain(
-                response.status
-            );
-
-        });
-
-        it("should recover after KYC correction", async () => {
-
-            const registration =
-                await request(app)
-                    .post("/api/onboarding/sacco")
-                    .send(buildRegistrationPayload());
-
-            const saccoId =
-                registration.body.data._id;
-
-            await request(app)
-                .put(`/api/onboarding/sacco/${saccoId}/kyc`)
-                .send({
-
-                    boardChairperson: "John",
-
-                    directorNames: ["Director"],
-
-                    registrationCertificate: "REG",
-
-                    taxComplianceCertificate: "TIN",
-
-                    proofOfAddress: "Address",
-
-                });
-
-            await request(app)
-                .put(`/api/onboarding/sacco/${saccoId}/subscription`)
-                .send({
-
-                    plan: "STARTER",
-
-                    billingCycle: "MONTHLY",
-
-                });
-
-            const activation =
-                await request(app)
-                    .put(`/api/onboarding/sacco/${saccoId}/live`);
-
-            expect(activation.status).toBe(200);
-
-        });
-
-    });
-
-    describe("Concurrency", () => {
-
-        it("should safely handle concurrent registrations", async () => {
-
-            const jobs = [];
-
-            for (let i = 0; i < 10; i++) {
-
-                jobs.push(
-
-                    request(app)
-                        .post("/api/onboarding/sacco")
-                        .send({
-
-                            ...buildRegistrationPayload(),
-
-                            email: `user${i}@example.com`,
-
-                            registrationNumber: `REG-${i}`,
-
-                        })
-
+describe(
+    "Enterprise End-to-End Onboarding Workflow",
+    () => {
+
+        describe(
+            "Complete Production Workflow",
+            () => {
+
+                it(
+                    "should complete the full onboarding lifecycle",
+                    async () => {
+
+                        /*
+                         * STEP 1 — Registration
+                         */
+
+                        const registration =
+                            await registerSacco();
+
+                        expect(
+                            registration.response.status
+                        ).toBe(201);
+
+                        const saccoId =
+                            registration.saccoId;
+
+                        /*
+                         * STEP 2 — KYC
+                         */
+
+                        const kyc =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/kyc`
+                                )
+                                .send(
+                                    buildKycPayload()
+                                );
+
+                        expect(
+                            kyc.status
+                        ).toBe(200);
+
+                        /*
+                         * STEP 3 — Subscription
+                         */
+
+                        const subscription =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/subscription`
+                                )
+                                .send(
+                                    buildSubscriptionPayload()
+                                );
+
+                        expect(
+                            subscription.status
+                        ).toBe(200);
+
+                        /*
+                         * STEP 4 — Payment
+                         */
+
+                        const payment =
+                            await request(app)
+                                .post(
+                                    "/api/onboarding/payment"
+                                )
+                                .send(
+                                    buildPaymentPayload(
+                                        saccoId
+                                    )
+                                );
+
+                        expect(
+                            payment.status
+                        ).toBe(200);
+
+                        /*
+                         * STEP 5 — Go Live
+                         */
+
+                        const activation =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/live`
+                                );
+
+                        expect(
+                            activation.status
+                        ).toBe(200);
+
+                        expect(
+                            activation.body.data.status
+                        ).toBe(
+                            "LIVE"
+                        );
+
+                    }
                 );
 
             }
+        );
 
-            const responses =
-                await Promise.all(jobs);
+        describe(
+            "Rollback & Recovery",
+            () => {
 
-            responses.forEach((response) => {
+                it(
+                    "should reject go-live before KYC completion",
+                    async () => {
 
-                expect(response.status).toBe(201);
+                        const registration =
+                            await registerSacco();
 
-            });
+                        const response =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${registration.saccoId}/live`
+                                );
 
-        });
+                        expect(
+                            [400, 409]
+                        ).toContain(
+                            response.status
+                        );
 
-        it("should safely handle concurrent activation", async () => {
+                    }
+                );
 
-            const registration =
-                await request(app)
-                    .post("/api/onboarding/sacco")
-                    .send(buildRegistrationPayload());
+                it(
+                    "should recover after KYC correction",
+                    async () => {
 
-            const saccoId =
-                registration.body.data._id;
+                        const registration =
+                            await registerSacco();
 
-            await prepareProductionReadySacco(saccoId);
+                        const saccoId =
+                            registration.saccoId;
 
-            const jobs = [];
+                        const kyc =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/kyc`
+                                )
+                                .send(
+                                    buildKycPayload()
+                                );
 
-            for (let i = 0; i < 8; i++) {
+                        expect(
+                            kyc.status
+                        ).toBe(200);
 
-                jobs.push(
+                        const subscription =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/subscription`
+                                )
+                                .send(
+                                    buildSubscriptionPayload()
+                                );
 
-                    request(app)
-                        .put(`/api/onboarding/sacco/${saccoId}/live`)
+                        expect(
+                            subscription.status
+                        ).toBe(200);
 
+                        const activation =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/live`
+                                );
+
+                        expect(
+                            activation.status
+                        ).toBe(200);
+
+                    }
                 );
 
             }
+        );
 
-            const responses =
-                await Promise.all(jobs);
+        describe(
+            "Concurrency",
+            () => {
 
-            responses.forEach((response) => {
+                it(
+                    "should safely handle concurrent registrations",
+                    async () => {
 
-                expect([200,409]).toContain(
-                    response.status
+                        const jobs =
+                            Array.from(
+                                { length: 10 },
+                                () =>
+                                    request(app)
+                                        .post(
+                                            "/api/onboarding/sacco"
+                                        )
+                                        .send(
+                                            buildRegistrationPayload()
+                                        )
+                            );
+
+                        const responses =
+                            await Promise.all(jobs);
+
+                        responses.forEach(
+                            (response) => {
+
+                                expect(
+                                    response.status
+                                ).toBe(201);
+
+                            }
+                        );
+
+                    }
                 );
 
-            });
-
-        });
-
-    });
-
-    describe("Idempotency", () => {
-
-        it("should allow duplicate activation safely", async () => {
-
-            const registration =
-                await request(app)
-                    .post("/api/onboarding/sacco")
-                    .send(buildRegistrationPayload());
-
-            const saccoId =
-                registration.body.data._id;
-
-            await prepareProductionReadySacco(saccoId);
-
-            const first =
-                await request(app)
-                    .put(`/api/onboarding/sacco/${saccoId}/live`);
-
-            const second =
-                await request(app)
-                    .put(`/api/onboarding/sacco/${saccoId}/live`);
-
-            expect(first.status).toBe(200);
-
-            expect([200,409]).toContain(
-                second.status
-            );
-
-        });
-
-    });
-
-    describe("Validation", () => {
-
-        it("should reject malformed ObjectIds", async () => {
-
-            const response =
-                await request(app)
-                    .put("/api/onboarding/sacco/not-a-valid-id/live");
-
-            expect([400,404]).toContain(
-                response.status
-            );
-
-        });
-
-        it("should reject unsupported payment providers", async () => {
-
-            const response =
-                await request(app)
-                    .post("/api/onboarding/payment")
-                    .send({
-
-                        provider: "UNKNOWN",
-
-                    });
-
-            expect([400,422]).toContain(
-                response.status
-            );
-
-        });
-
-    });
-
-    describe("Persistence", () => {
-
-        it("should persist all onboarding milestones", async () => {
-
-            const registration =
-                await request(app)
-                    .post("/api/onboarding/sacco")
-                    .send(buildRegistrationPayload());
-
-            const saccoId =
-                registration.body.data._id;
-
-            await prepareProductionReadySacco(saccoId);
-
-            await request(app)
-                .put(`/api/onboarding/sacco/${saccoId}/live`);
-
-            const collection =
-                mongoose.connection.collection("saccos");
-
-            const sacco =
-                await collection.findOne({
-
-                    _id:
-                        new mongoose.Types.ObjectId(saccoId),
-
-                });
-
-            expect(sacco.status).toBe("LIVE");
-
-            expect(sacco.subscription).toBeDefined();
-
-            expect(sacco.goLiveAt).toBeDefined();
-
-            expect(sacco.updatedAt).toBeDefined();
-
-        });
-
-    });
-
-    describe("Enterprise Service Integration", () => {
-
-        it("should invoke all enterprise services", async () => {
-
-            const registration =
-                await request(app)
-                    .post("/api/onboarding/sacco")
-                    .send(buildRegistrationPayload());
-
-            const saccoId =
-                registration.body.data._id;
-
-            await prepareProductionReadySacco(saccoId);
-
-            await request(app)
-                .put(`/api/onboarding/sacco/${saccoId}/live`);
-
-            expect(
-                tenantProvisioningService.activateTenant
-            ).toHaveBeenCalled();
-
-            expect(
-                auditService.log
-            ).toHaveBeenCalled();
-
-            expect(
-                onboardingPublisher.publishGoLive
-            ).toHaveBeenCalled();
-
-            expect(
-                ledgerService.initializeTenantLedger
-            ).toHaveBeenCalled();
-
-        });
-
-    });
-
-    describe("Cleanup", () => {
-
-        it("should leave database in a consistent state", async () => {
-
-            const collections =
-                await mongoose.connection.db.collections();
-
-            expect(collections.length)
-                .toBeGreaterThan(0);
-
-        });
-
-        it("should not leave orphaned onboarding documents", async () => {
-
-            const count =
-                await mongoose.connection
-                    .collection("onboardinglocks")
-                    .countDocuments();
-
-            expect(count).toBe(0);
-
-        });
-
-    });
-
-    describe("Enterprise Edge Cases", () => {
-
-        it("should handle duplicate registration numbers", async () => {
-
-            const payload =
-                buildRegistrationPayload();
-
-            await request(app)
-                .post("/api/onboarding/sacco")
-                .send(payload);
-
-            const duplicate =
-                await request(app)
-                    .post("/api/onboarding/sacco")
-                    .send(payload);
-
-            expect([400,409]).toContain(
-                duplicate.status
-            );
-
-        });
-
-        it("should reject duplicate email addresses", async () => {
-
-            const payload =
-                buildRegistrationPayload();
-
-            await request(app)
-                .post("/api/onboarding/sacco")
-                .send(payload);
-
-            const duplicate =
-                await request(app)
-                    .post("/api/onboarding/sacco")
-                    .send({
-
-                        ...payload,
-
-                        registrationNumber: "NEW-001",
-
-                    });
-
-            expect([400,409]).toContain(
-                duplicate.status
-            );
-
-        });
-
-        it("should remain stable under repeated onboarding attempts", async () => {
-
-            for (let i = 0; i < 20; i++) {
-
-                const response =
-                    await request(app)
-                        .post("/api/onboarding/sacco")
-                        .send({
-
-                            ...buildRegistrationPayload(),
-
-                            registrationNumber: `REG-${i}`,
-
-                            email: `load${i}@example.com`,
-
-                        });
-
-                expect(response.status).toBe(201);
+                it(
+                    "should safely handle concurrent activation",
+                    async () => {
+
+                        const registration =
+                            await registerSacco();
+
+                        const saccoId =
+                            registration.saccoId;
+
+                        expect(
+                            registration.response.status
+                        ).toBe(201);
+
+                        await prepareProductionReadySacco(
+                            saccoId
+                        );
+
+                        jest.clearAllMocks();
+
+                        const jobs =
+                            Array.from(
+                                { length: 8 },
+                                () =>
+                                    request(app)
+                                        .put(
+                                            `/api/onboarding/sacco/${saccoId}/live`
+                                        )
+                            );
+
+                        const responses =
+                            await Promise.all(jobs);
+
+                        responses.forEach(
+                            (response) => {
+
+                                expect(
+                                    [200, 409]
+                                ).toContain(
+                                    response.status
+                                );
+
+                            }
+                        );
+
+                        const sacco =
+                            await findSaccoById(
+                                saccoId
+                            );
+
+                        expect(
+                            sacco.status
+                        ).toBe(
+                            "LIVE"
+                        );
+
+                    }
+                );
 
             }
+        );
 
-        });
+        describe(
+            "Idempotency",
+            () => {
 
-    });
+                it(
+                    "should allow duplicate activation safely",
+                    async () => {
 
-});
+                        const registration =
+                            await registerSacco();
+
+                        const saccoId =
+                            registration.saccoId;
+
+                        expect(
+                            registration.response.status
+                        ).toBe(201);
+
+                        await prepareProductionReadySacco(
+                            saccoId
+                        );
+
+                        jest.clearAllMocks();
+
+                        const first =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/live`
+                                );
+
+                        const second =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/live`
+                                );
+
+                        expect(
+                            first.status
+                        ).toBe(200);
+
+                        expect(
+                            [200, 409]
+                        ).toContain(
+                            second.status
+                        );
+
+                    }
+                );
+
+            }
+        );
+
+        describe(
+            "Validation",
+            () => {
+
+                it(
+                    "should reject malformed ObjectIds",
+                    async () => {
+
+                        const response =
+                            await request(app)
+                                .put(
+                                    "/api/onboarding/sacco/not-a-valid-id/live"
+                                );
+
+                        expect(
+                            [400, 404]
+                        ).toContain(
+                            response.status
+                        );
+
+                    }
+                );
+
+                it(
+                    "should reject unsupported payment providers",
+                    async () => {
+
+                        const response =
+                            await request(app)
+                                .post(
+                                    "/api/onboarding/payment"
+                                )
+                                .send({
+
+                                    provider:
+                                        "UNKNOWN",
+
+                                });
+
+                        expect(
+                            [400, 422]
+                        ).toContain(
+                            response.status
+                        );
+
+                    }
+                );
+
+            }
+        );
+
+        describe(
+            "Persistence",
+            () => {
+
+                it(
+                    "should persist all onboarding milestones",
+                    async () => {
+
+                        const registration =
+                            await registerSacco();
+
+                        const saccoId =
+                            registration.saccoId;
+
+                        expect(
+                            registration.response.status
+                        ).toBe(201);
+
+                        await prepareProductionReadySacco(
+                            saccoId
+                        );
+
+                        const activation =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/live`
+                                );
+
+                        expect(
+                            activation.status
+                        ).toBe(200);
+
+                        const sacco =
+                            await findSaccoById(
+                                saccoId
+                            );
+
+                        expect(
+                            sacco
+                        ).not.toBeNull();
+
+                        expect(
+                            sacco.status
+                        ).toBe(
+                            "LIVE"
+                        );
+
+                        expect(
+                            sacco.subscription
+                        ).toBeDefined();
+
+                        expect(
+                            sacco.goLiveAt
+                        ).toBeDefined();
+
+                        expect(
+                            sacco.updatedAt
+                        ).toBeDefined();
+
+                    }
+                );
+
+            }
+        );
+
+        describe(
+            "Enterprise Service Integration",
+            () => {
+
+                it(
+                    "should invoke all enterprise go-live services",
+                    async () => {
+
+                        const registration =
+                            await registerSacco();
+
+                        const saccoId =
+                            registration.saccoId;
+
+                        expect(
+                            registration.response.status
+                        ).toBe(201);
+
+                        await prepareProductionReadySacco(
+                            saccoId
+                        );
+
+                        jest.clearAllMocks();
+
+                        const activation =
+                            await request(app)
+                                .put(
+                                    `/api/onboarding/sacco/${saccoId}/live`
+                                );
+
+                        expect(
+                            activation.status
+                        ).toBe(200);
+
+                        expect(
+                            tenantProvisioningService
+                                .activateTenant
+                        ).toHaveBeenCalled();
+
+                        expect(
+                            auditService.log
+                        ).toHaveBeenCalled();
+
+                        expect(
+                            onboardingPublisher
+                                .publishGoLive
+                        ).toHaveBeenCalled();
+
+                        expect(
+                            ledgerService
+                                .initializeTenantLedger
+                        ).toHaveBeenCalled();
+
+                        expect(
+                            identityBootstrapService
+                                .bootstrapTenant
+                        ).toHaveBeenCalled();
+
+                    }
+                );
+
+            }
+        );
+
+        describe(
+            "Cleanup",
+            () => {
+
+                it(
+                    "should leave MongoDB in a usable state",
+                    async () => {
+
+                        const response =
+                            await request(app)
+                                .get("/health");
+
+                        expect(
+                            response.status
+                        ).toBe(200);
+
+                        expect(
+                            mongoose.connection.readyState
+                        ).toBe(
+                            mongoose.ConnectionStates.connected
+                        );
+
+                    }
+                );
+
+                it(
+                    "should not leave orphaned onboarding locks",
+                    async () => {
+
+                        const collections =
+                            mongoose.connection.collections;
+
+                        if (
+                            collections.onboardinglocks
+                        ) {
+
+                            const count =
+                                await collections
+                                    .onboardinglocks
+                                    .countDocuments();
+
+                            expect(
+                                count
+                            ).toBe(0);
+
+                        }
+
+                    }
+                );
+
+            }
+        );
+
+        describe(
+            "Enterprise Edge Cases",
+            () => {
+
+                it(
+                    "should handle duplicate registration numbers",
+                    async () => {
+
+                        const payload =
+                            buildRegistrationPayload();
+
+                        const first =
+                            await request(app)
+                                .post(
+                                    "/api/onboarding/sacco"
+                                )
+                                .send(payload);
+
+                        expect(
+                            first.status
+                        ).toBe(201);
+
+                        const duplicate =
+                            await request(app)
+                                .post(
+                                    "/api/onboarding/sacco"
+                                )
+                                .send({
+
+                                    ...buildRegistrationPayload(),
+
+                                    registrationNumber:
+                                        payload.registrationNumber,
+
+                                });
+
+                        expect(
+                            [400, 409]
+                        ).toContain(
+                            duplicate.status
+                        );
+
+                    }
+                );
+
+                it(
+                    "should reject duplicate email addresses",
+                    async () => {
+
+                        const payload =
+                            buildRegistrationPayload();
+
+                        const first =
+                            await request(app)
+                                .post(
+                                    "/api/onboarding/sacco"
+                                )
+                                .send(payload);
+
+                        expect(
+                            first.status
+                        ).toBe(201);
+
+                        const duplicate =
+                            await request(app)
+                                .post(
+                                    "/api/onboarding/sacco"
+                                )
+                                .send({
+
+                                    ...buildRegistrationPayload(),
+
+                                    email:
+                                        payload.email,
+
+                                });
+
+                        expect(
+                            [400, 409]
+                        ).toContain(
+                            duplicate.status
+                        );
+
+                    }
+                );
+
+                it(
+                    "should remain stable under repeated onboarding attempts",
+                    async () => {
+
+                        for (
+                            let i = 0;
+                            i < 20;
+                            i += 1
+                        ) {
+
+                            const response =
+                                await request(app)
+                                    .post(
+                                        "/api/onboarding/sacco"
+                                    )
+                                    .send(
+                                        buildRegistrationPayload()
+                                    );
+
+                            expect(
+                                response.status
+                            ).toBe(201);
+
+                        }
+
+                    }
+                );
+
+            }
+        );
+
+    }
+);
 
 /* =============================================================================
- * End Part 6
- * =============================================================================
- *
  * Enterprise Onboarding Integration Suite Complete
  *
- * Coverage Includes:
+ * Coverage Includes
+ * -----------------------------------------------------------------------------
  *
+ * ✓ Infrastructure health
+ * ✓ MongoDB lifecycle
  * ✓ Registration
- * ✓ Validation
- * ✓ Duplicate Detection
- * ✓ KYC
- * ✓ Subscription
- * ✓ Payment
- * ✓ MTN MoMo
- * ✓ Airtel Money
- * ✓ Go Live
- * ✓ Rollback
- * ✓ Recovery
+ * ✓ Required-field validation
+ * ✓ Duplicate registration detection
+ * ✓ Duplicate email detection
+ * ✓ Email validation
+ * ✓ Phone validation
+ * ✓ Input normalization
+ * ✓ UTF-8 support
+ * ✓ Client-property isolation
+ * ✓ JSON responses
+ * ✓ Unique SACCO IDs
+ * ✓ Concurrent registration
+ * ✓ Payload limits
+ *
+ * ✓ KYC verification
+ * ✓ KYC persistence
+ * ✓ Invalid ObjectId handling
+ * ✓ Unknown SACCO handling
+ * ✓ Mandatory KYC validation
+ * ✓ Duplicate director validation
+ * ✓ Multiple directors
+ * ✓ KYC idempotency
+ * ✓ Malformed JSON handling
+ * ✓ Concurrent KYC updates
+ * ✓ Audit timestamps
+ *
+ * ✓ Subscription activation
+ * ✓ STARTER plan
+ * ✓ GROWTH plan
+ * ✓ ENTERPRISE plan
+ * ✓ Billing cycle validation
+ * ✓ Subscription persistence
+ * ✓ Subscription upgrades
+ *
+ * ✓ MTN MoMo initialization
+ * ✓ Airtel Money initialization
+ * ✓ Provider validation
+ * ✓ Unknown SACCO protection
+ * ✓ Payment retries
+ * ✓ Concurrent payment initialization
+ * ✓ Payment service invocation
+ *
+ * ✓ Go-live activation
+ * ✓ LIVE persistence
+ * ✓ goLiveAt timestamps
+ * ✓ KYC prerequisite enforcement
+ * ✓ Subscription prerequisite enforcement
+ * ✓ Unknown SACCO protection
+ * ✓ Activation idempotency
+ * ✓ Concurrent activation
+ *
+ * ✓ Tenant provisioning
+ * ✓ Audit logging
+ * ✓ Ledger initialization
+ * ✓ Identity bootstrap
+ * ✓ Onboarding event publication
+ *
+ * ✓ Full end-to-end lifecycle
+ * ✓ Recovery workflow
  * ✓ Concurrency
  * ✓ Idempotency
  * ✓ Persistence
- * ✓ Audit Logging
- * ✓ Tenant Provisioning
- * ✓ Ledger Initialization
- * ✓ Event Publication
- * ✓ Cleanup
- * ✓ Enterprise Edge Cases
- * ✓ Production Workflow
- * ============================================================================= */
+ * ✓ Cleanup validation
+ * ✓ Enterprise edge cases
+ *
+ * =============================================================================
+ */

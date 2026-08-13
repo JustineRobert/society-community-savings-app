@@ -22,12 +22,15 @@
  *   - Tenant isolation
  *   - Deterministic scoring
  *   - Score integrity hashing
+ *   - Input fingerprinting
+ *   - Idempotent score generation
  *   - Risk profile persistence
  *   - Audit hooks
+ *   - Optional transaction/session propagation
  *
  * Design Principles:
  *
- *   - Deterministic
+ *   - Deterministic scoring
  *   - Tenant isolated
  *   - Fail closed on critical risk signals
  *   - No mutation of applicant or loan data
@@ -40,19 +43,22 @@
  *
  *   scoreApplicant(applicant, loanData, riskFlags)
  *
- * ============================================================================
- */
+ * Optional advanced API:
+ *
+ *   scoreApplicant(applicant, loanData, riskFlags, options)
+ *
+ * ============================================================================ */
 
 const crypto = require('crypto');
 
 const LoanRiskProfile = require('../../models/LoanRiskProfile');
 
 /**
- * Optional logger resolution.
- *
- * The service remains usable when the application's logger has not yet
- * been wired into the module.
+ * ============================================================================
+ * Optional Logger Resolution
+ * ============================================================================
  */
+
 let logger = console;
 
 try {
@@ -63,17 +69,20 @@ try {
         logger = applicationLogger;
     }
 } catch (error) {
-    // Logger is intentionally optional.
+    // Logger intentionally remains optional.
 }
 
 /**
  * ============================================================================
- * CONSTANTS
+ * Constants
  * ============================================================================
  */
 
 const SCORE_MIN = 300;
 const SCORE_MAX = 850;
+
+const SCORE_RANGE =
+    SCORE_MAX - SCORE_MIN;
 
 const RISK_LEVEL = Object.freeze({
     LOW: 'LOW',
@@ -109,32 +118,58 @@ const DEFAULT_CONFIG = Object.freeze({
     }),
 
     limits: Object.freeze({
-        MAX_DTI: 1.0,
-        MAX_UTILIZATION: 1.0,
+        MAX_DTI: 1,
+        MAX_UTILIZATION: 1,
         MAX_ACCOUNT_AGE_MONTHS: 60
+    }),
+
+    persistence: Object.freeze({
+        enabled: true,
+        failClosed: true
+    }),
+
+    audit: Object.freeze({
+        required: false
     })
 });
 
+const HARD_BLOCK_FLAGS = Object.freeze([
+    'sanctions',
+    'fraud',
+    'complianceBlock',
+    'identityMismatch',
+    'deceased'
+]);
+
 /**
  * ============================================================================
- * CUSTOM ERRORS
+ * Custom Errors
  * ============================================================================
  */
 
 class LoanCreditScoringError extends Error {
-    constructor(message, details = {}, options = {}) {
+
+    constructor(
+        message,
+        details = {},
+        options = {}
+    ) {
         super(message);
 
-        this.name = 'LoanCreditScoringError';
+        this.name =
+            'LoanCreditScoringError';
 
         this.code =
             options.code ||
+            details.code ||
             'LOAN_CREDIT_SCORING_ERROR';
 
-        this.details = details;
+        this.details =
+            details;
 
         if (options.cause) {
-            this.cause = options.cause;
+            this.cause =
+                options.cause;
         }
 
         Error.captureStackTrace?.(
@@ -146,7 +181,7 @@ class LoanCreditScoringError extends Error {
 
 /**
  * ============================================================================
- * SERVICE
+ * Service
  * ============================================================================
  */
 
@@ -154,37 +189,57 @@ class LoanCreditScoringService {
 
     constructor(options = {}) {
 
-        this.config = this.buildConfig(
-            options.config || {}
-        );
+        this.config =
+            this.buildConfig(
+                options.config || {}
+            );
 
         this.auditService =
             options.auditService || null;
 
+        this.riskProfileModel =
+            options.riskProfileModel ||
+            LoanRiskProfile;
     }
 
     /**
      * =========================================================================
-     * MAIN ENTRYPOINT
+     * Main Entrypoint
      * =========================================================================
      *
-     * Backward compatible signature:
+     * Backward-compatible signature:
      *
      *   scoreApplicant(applicant, loanData, riskFlags)
+     *
+     * Advanced:
+     *
+     *   scoreApplicant(
+     *       applicant,
+     *       loanData,
+     *       riskFlags,
+     *       {
+     *           correlationId,
+     *           idempotencyKey,
+     *           session
+     *       }
+     *   )
      *
      * @param {Object} applicant
      * @param {Object} loanData
      * @param {Object} riskFlags
+     * @param {Object} options
      *
      * @returns {Promise<Object>}
      */
     async scoreApplicant(
         applicant,
         loanData,
-        riskFlags = {}
+        riskFlags = {},
+        options = {}
     ) {
 
-        const startedAt = Date.now();
+        const startedAt =
+            Date.now();
 
         try {
 
@@ -200,6 +255,10 @@ class LoanCreditScoringService {
                 riskFlags
             );
 
+            this.validateOptions(
+                options
+            );
+
             const tenantId =
                 this.resolveTenantId(
                     applicant,
@@ -213,20 +272,33 @@ class LoanCreditScoringService {
                     applicant.applicantId
                 );
 
-            const scoreId =
-                this.generateScoreId(
-                    tenantId,
-                    applicantId,
-                    loanData
-                );
-
-            /**
-             * Normalize all scoring inputs before calculating anything.
-             */
             const normalized =
                 this.normalizeScoringInputs(
                     loanData,
                     riskFlags
+                );
+
+            /**
+             * Deterministic fingerprint of the scoring inputs.
+             *
+             * This makes repeated scoring requests traceable and allows
+             * callers to correlate identical evaluations.
+             */
+            const inputFingerprint =
+                this.generateInputFingerprint({
+                    tenantId,
+                    applicantId,
+                    normalized,
+                    scoringVersion:
+                        this.getScoringVersion()
+                });
+
+            const scoreId =
+                this.generateScoreId(
+                    tenantId,
+                    applicantId,
+                    loanData,
+                    inputFingerprint
                 );
 
             /**
@@ -246,12 +318,12 @@ class LoanCreditScoringService {
                 );
 
             /**
-             * Apply risk controls after the base score has been calculated.
+             * Apply hard risk controls.
              */
             const controls =
                 this.evaluateRiskControls(
                     normalized,
-                    riskFlags,
+                    normalized.riskFlags,
                     creditScore
                 );
 
@@ -280,20 +352,24 @@ class LoanCreditScoringService {
                     controls
                 );
 
+            const timestamp =
+                new Date();
+
             const scoreIntegrity =
                 this.generateScoreIntegrityHash({
                     scoreId,
                     tenantId,
                     applicantId,
-                    creditScore: finalScore,
+                    creditScore:
+                        finalScore,
                     riskLevel,
                     decision,
                     breakdown,
-                    controls
+                    controls,
+                    inputFingerprint,
+                    scoringVersion:
+                        this.getScoringVersion()
                 });
-
-            const timestamp =
-                new Date();
 
             const result = {
                 scoreId,
@@ -305,6 +381,9 @@ class LoanCreditScoringService {
                 creditScore:
                     finalScore,
 
+                baseScore:
+                    creditScore,
+
                 riskLevel,
 
                 decision,
@@ -315,7 +394,22 @@ class LoanCreditScoringService {
 
                 recommendations,
 
+                inputFingerprint,
+
                 scoreIntegrity,
+
+                correlationId:
+                    this.normalizeIdentifier(
+                        options.correlationId ||
+                        loanData.correlationId ||
+                        applicant.correlationId
+                    ),
+
+                idempotencyKey:
+                    this.normalizeIdentifier(
+                        options.idempotencyKey ||
+                        loanData.idempotencyKey
+                    ),
 
                 scoringVersion:
                     this.getScoringVersion(),
@@ -328,22 +422,32 @@ class LoanCreditScoringService {
             };
 
             /**
-             * Persist the latest risk profile.
+             * Persist latest risk profile.
              */
             await this.persistRiskProfile({
                 applicantId,
                 tenantId,
                 scoreId,
-                creditScore: finalScore,
+                creditScore:
+                    finalScore,
+                baseScore:
+                    creditScore,
                 riskLevel,
                 decision,
                 loanData,
                 breakdown,
                 controls,
                 recommendations,
+                inputFingerprint,
                 scoreIntegrity,
+                correlationId:
+                    result.correlationId,
+                idempotencyKey:
+                    result.idempotencyKey,
                 scoringVersion:
-                    this.getScoringVersion()
+                    this.getScoringVersion(),
+                session:
+                    options.session || null
             });
 
             /**
@@ -351,6 +455,7 @@ class LoanCreditScoringService {
              */
             await this.auditScore({
                 ...result,
+
                 auditType:
                     'LOAN_CREDIT_SCORE_CALCULATED'
             });
@@ -362,14 +467,18 @@ class LoanCreditScoringService {
                     scoreId,
                     tenantId,
                     applicantId,
-                    creditScore: finalScore,
+                    creditScore:
+                        finalScore,
                     riskLevel,
-                    decision
+                    decision,
+                    inputFingerprint
                 }
             );
 
             return Object.freeze(
-                result
+                this.deepFreeze(
+                    result
+                )
             );
 
         } catch (error) {
@@ -381,6 +490,7 @@ class LoanCreditScoringService {
                     applicantId:
                         applicant?._id ||
                         applicant?.id ||
+                        applicant?.applicantId ||
                         null,
 
                     tenantId:
@@ -397,7 +507,8 @@ class LoanCreditScoringService {
             );
 
             if (
-                error instanceof LoanCreditScoringError
+                error instanceof
+                LoanCreditScoringError
             ) {
                 throw error;
             }
@@ -420,13 +531,13 @@ class LoanCreditScoringService {
 
     /**
      * =========================================================================
-     * CONFIGURATION
+     * Configuration
      * =========================================================================
      */
 
-    buildConfig(customConfig) {
+    buildConfig(customConfig = {}) {
 
-        return {
+        const config = {
             weights: {
                 ...DEFAULT_CONFIG.weights,
                 ...(customConfig.weights || {})
@@ -440,26 +551,218 @@ class LoanCreditScoringService {
             limits: {
                 ...DEFAULT_CONFIG.limits,
                 ...(customConfig.limits || {})
+            },
+
+            persistence: {
+                ...DEFAULT_CONFIG.persistence,
+                ...(customConfig.persistence || {})
+            },
+
+            audit: {
+                ...DEFAULT_CONFIG.audit,
+                ...(customConfig.audit || {})
             }
         };
+
+        this.validateConfiguration(
+            config
+        );
+
+        return config;
+    }
+
+    validateConfiguration(config) {
+
+        const weights =
+            config.weights;
+
+        const requiredWeights = [
+            'PAYMENT_HISTORY',
+            'DEBT_TO_INCOME',
+            'LOAN_UTILIZATION',
+            'ACCOUNT_AGE',
+            'FRAUD_SANCTIONS'
+        ];
+
+        let totalWeight = 0;
+
+        for (
+            const key of requiredWeights
+        ) {
+
+            const value =
+                Number(weights[key]);
+
+            if (
+                !Number.isFinite(value) ||
+                value < 0
+            ) {
+                throw new LoanCreditScoringError(
+                    `Invalid scoring weight: ${key}`,
+                    {
+                        key,
+                        value:
+                            weights[key]
+                    },
+                    {
+                        code:
+                            'INVALID_SCORING_CONFIGURATION'
+                    }
+                );
+            }
+
+            totalWeight +=
+                value;
+        }
+
+        if (
+            Math.abs(
+                totalWeight - 100
+            ) > Number.EPSILON
+        ) {
+            throw new LoanCreditScoringError(
+                'Scoring weights must total exactly 100',
+                {
+                    totalWeight
+                },
+                {
+                    code:
+                        'INVALID_SCORING_CONFIGURATION'
+                }
+            );
+        }
+
+        const thresholds =
+            config.thresholds;
+
+        const orderedThresholds = [
+            thresholds.EXCELLENT,
+            thresholds.GOOD,
+            thresholds.FAIR,
+            thresholds.POOR,
+            thresholds.VERY_POOR
+        ].map(Number);
+
+        for (
+            const threshold of orderedThresholds
+        ) {
+
+            if (
+                !Number.isFinite(
+                    threshold
+                )
+            ) {
+                throw new LoanCreditScoringError(
+                    'Invalid scoring threshold',
+                    {
+                        threshold
+                    },
+                    {
+                        code:
+                            'INVALID_SCORING_CONFIGURATION'
+                    }
+                );
+            }
+        }
+
+        if (
+            thresholds.EXCELLENT <
+            thresholds.GOOD ||
+
+            thresholds.GOOD <
+            thresholds.FAIR ||
+
+            thresholds.FAIR <
+            thresholds.POOR ||
+
+            thresholds.POOR <
+            thresholds.VERY_POOR
+        ) {
+            throw new LoanCreditScoringError(
+                'Scoring thresholds must be ordered from highest to lowest',
+                {
+                    thresholds
+                },
+                {
+                    code:
+                        'INVALID_SCORING_CONFIGURATION'
+                }
+            );
+        }
+
+        if (
+            thresholds.VERY_POOR <
+            SCORE_MIN ||
+
+            thresholds.EXCELLENT >
+            SCORE_MAX
+        ) {
+            throw new LoanCreditScoringError(
+                'Scoring thresholds must fall within the supported score range',
+                {
+                    thresholds,
+                    SCORE_MIN,
+                    SCORE_MAX
+                },
+                {
+                    code:
+                        'INVALID_SCORING_CONFIGURATION'
+                }
+            );
+        }
+
+        const limits =
+            config.limits;
+
+        [
+            'MAX_DTI',
+            'MAX_UTILIZATION',
+            'MAX_ACCOUNT_AGE_MONTHS'
+        ].forEach(key => {
+
+            const value =
+                Number(limits[key]);
+
+            if (
+                !Number.isFinite(value) ||
+                value <= 0
+            ) {
+                throw new LoanCreditScoringError(
+                    `Invalid scoring limit: ${key}`,
+                    {
+                        key,
+                        value:
+                            limits[key]
+                    },
+                    {
+                        code:
+                            'INVALID_SCORING_CONFIGURATION'
+                        }
+                );
+            }
+        });
     }
 
     getScoringVersion() {
-        return '2026.1';
+        return '2026.2';
     }
 
     /**
      * =========================================================================
-     * VALIDATION
+     * Validation
      * =========================================================================
      */
 
     validateApplicant(applicant) {
 
-        if (!applicant || typeof applicant !== 'object') {
-
+        if (
+            !applicant ||
+            typeof applicant !== 'object' ||
+            Array.isArray(applicant)
+        ) {
             throw new LoanCreditScoringError(
                 'Applicant data required',
+                {},
                 {
                     code:
                         'MISSING_APPLICANT'
@@ -473,9 +776,9 @@ class LoanCreditScoringService {
             applicant.applicantId;
 
         if (!applicantId) {
-
             throw new LoanCreditScoringError(
                 'Applicant identifier required',
+                {},
                 {
                     code:
                         'MISSING_APPLICANT_ID'
@@ -483,10 +786,14 @@ class LoanCreditScoringService {
             );
         }
 
-        if (!applicant.tenantId) {
-
+        if (
+            !this.normalizeIdentifier(
+                applicant.tenantId
+            )
+        ) {
             throw new LoanCreditScoringError(
                 'Applicant tenant context required',
+                {},
                 {
                     code:
                         'MISSING_TENANT_ID'
@@ -499,11 +806,12 @@ class LoanCreditScoringService {
 
         if (
             !loanData ||
-            typeof loanData !== 'object'
+            typeof loanData !== 'object' ||
+            Array.isArray(loanData)
         ) {
-
             throw new LoanCreditScoringError(
                 'Loan data required',
+                {},
                 {
                     code:
                         'MISSING_LOAN_DATA'
@@ -525,24 +833,35 @@ class LoanCreditScoringService {
             const field of numericFields
         ) {
 
+            const value =
+                loanData[field];
+
             if (
-                loanData[field] !== undefined &&
-                loanData[field] !== null &&
-                !Number.isFinite(
-                    Number(loanData[field])
-                )
+                value !== undefined &&
+                value !== null
             ) {
 
-                throw new LoanCreditScoringError(
-                    `Invalid numeric loan field: ${field}`,
-                    {
-                        field,
-                        value:
-                            loanData[field],
-                        code:
-                            'INVALID_SCORING_INPUT'
-                    }
-                );
+                const numericValue =
+                    Number(value);
+
+                if (
+                    !Number.isFinite(
+                        numericValue
+                    ) ||
+                    numericValue < 0
+                ) {
+                    throw new LoanCreditScoringError(
+                        `Invalid numeric loan field: ${field}`,
+                        {
+                            field,
+                            value
+                        },
+                        {
+                            code:
+                                'INVALID_SCORING_INPUT'
+                        }
+                    );
+                }
             }
         }
     }
@@ -551,11 +870,12 @@ class LoanCreditScoringService {
 
         if (
             !riskFlags ||
-            typeof riskFlags !== 'object'
+            typeof riskFlags !== 'object' ||
+            Array.isArray(riskFlags)
         ) {
-
             throw new LoanCreditScoringError(
                 'Risk flags must be an object',
+                {},
                 {
                     code:
                         'INVALID_RISK_FLAGS'
@@ -564,9 +884,27 @@ class LoanCreditScoringService {
         }
     }
 
+    validateOptions(options) {
+
+        if (
+            !options ||
+            typeof options !== 'object' ||
+            Array.isArray(options)
+        ) {
+            throw new LoanCreditScoringError(
+                'Scoring options must be an object',
+                {},
+                {
+                    code:
+                        'INVALID_SCORING_OPTIONS'
+                }
+            );
+        }
+    }
+
     /**
      * =========================================================================
-     * TENANT RESOLUTION
+     * Tenant Resolution
      * =========================================================================
      */
 
@@ -588,14 +926,16 @@ class LoanCreditScoringService {
         if (
             applicantTenant &&
             loanTenant &&
-            applicantTenant !== loanTenant
+            applicantTenant !==
+            loanTenant
         ) {
-
             throw new LoanCreditScoringError(
                 'Applicant and loan tenant mismatch',
                 {
                     applicantTenant,
-                    loanTenant,
+                    loanTenant
+                },
+                {
                     code:
                         'TENANT_CONTEXT_MISMATCH'
                 }
@@ -607,9 +947,9 @@ class LoanCreditScoringService {
             loanTenant;
 
         if (!tenantId) {
-
             throw new LoanCreditScoringError(
                 'Tenant identifier required',
+                {},
                 {
                     code:
                         'MISSING_TENANT_ID'
@@ -622,7 +962,7 @@ class LoanCreditScoringService {
 
     /**
      * =========================================================================
-     * INPUT NORMALIZATION
+     * Input Normalization
      * =========================================================================
      */
 
@@ -680,29 +1020,100 @@ class LoanCreditScoringService {
 
             paymentHistoryRate:
                 totalPayments > 0
-                    ? onTimePayments / totalPayments
+                    ? this.normalizeRatio(
+                        onTimePayments,
+                        totalPayments
+                    )
                     : 0,
 
             dti:
                 income > 0
-                    ? debt / income
+                    ? this.normalizeRatio(
+                        debt,
+                        income
+                    )
                     : 1,
 
             utilization:
                 loanLimit > 0
-                    ? currentLoans / loanLimit
+                    ? this.normalizeRatio(
+                        currentLoans,
+                        loanLimit
+                    )
                     : 1,
 
-            riskFlags
+            riskFlags:
+                this.normalizeRiskFlags(
+                    riskFlags
+                )
         };
+    }
+
+    normalizeRiskFlags(
+        riskFlags = {}
+    ) {
+
+        const normalized = {};
+
+        Object.keys(
+            riskFlags
+        ).forEach(key => {
+
+            normalized[key] =
+                this.normalizeBoolean(
+                    riskFlags[key]
+                );
+        });
+
+        return Object.freeze(
+            normalized
+        );
+    }
+
+    normalizeBoolean(value) {
+
+        if (
+            value === true ||
+            value === 1
+        ) {
+            return true;
+        }
+
+        if (
+            typeof value === 'string'
+        ) {
+            const normalized =
+                value
+                    .trim()
+                    .toLowerCase();
+
+            return [
+                'true',
+                '1',
+                'yes',
+                'y'
+            ].includes(normalized);
+        }
+
+        return false;
     }
 
     nonNegativeNumber(value) {
 
-        const number =
-            Number(value || 0);
+        if (
+            value === undefined ||
+            value === null ||
+            value === ''
+        ) {
+            return 0;
+        }
 
-        if (!Number.isFinite(number)) {
+        const number =
+            Number(value);
+
+        if (
+            !Number.isFinite(number)
+        ) {
             return 0;
         }
 
@@ -712,19 +1123,34 @@ class LoanCreditScoringService {
         );
     }
 
+    normalizeRatio(
+        numerator,
+        denominator
+    ) {
+
+        if (
+            denominator <= 0
+        ) {
+            return 0;
+        }
+
+        const ratio =
+            numerator /
+            denominator;
+
+        return this.roundPrecision(
+            ratio,
+            12
+        );
+    }
+
     /**
      * =========================================================================
-     * SCORE BREAKDOWN
+     * Score Breakdown
      * =========================================================================
-     *
-     * Each component is normalized to its configured weight.
-     *
-     * The total contribution therefore equals the configured scoring weight.
      */
 
-    calculateScoreBreakdown(
-        data
-    ) {
+    calculateScoreBreakdown(data) {
 
         const weights =
             this.config.weights;
@@ -754,62 +1180,55 @@ class LoanCreditScoringService {
                 data
             );
 
-        return {
-            PAYMENT_HISTORY: {
+        return Object.freeze({
+            PAYMENT_HISTORY: Object.freeze({
                 weight:
                     weights.PAYMENT_HISTORY,
                 factor:
                     paymentHistory.factor,
                 contribution:
                     paymentHistory.contribution
-            },
+            }),
 
-            DEBT_TO_INCOME: {
+            DEBT_TO_INCOME: Object.freeze({
                 weight:
                     weights.DEBT_TO_INCOME,
                 factor:
                     debtToIncome.factor,
                 contribution:
                     debtToIncome.contribution
-            },
+            }),
 
-            LOAN_UTILIZATION: {
+            LOAN_UTILIZATION: Object.freeze({
                 weight:
                     weights.LOAN_UTILIZATION,
                 factor:
                     utilization.factor,
                 contribution:
                     utilization.contribution
-            },
+            }),
 
-            ACCOUNT_AGE: {
+            ACCOUNT_AGE: Object.freeze({
                 weight:
                     weights.ACCOUNT_AGE,
                 factor:
                     accountAge.factor,
                 contribution:
                     accountAge.contribution
-            },
+            }),
 
-            FRAUD_SANCTIONS: {
+            FRAUD_SANCTIONS: Object.freeze({
                 weight:
                     weights.FRAUD_SANCTIONS,
                 factor:
                     fraudSanctions.factor,
                 contribution:
                     fraudSanctions.contribution
-            }
-        };
+            })
+        });
     }
 
-    /**
-     * Payment history:
-     *
-     * 100% on-time = full component score.
-     */
-    calculatePaymentHistoryScore(
-        data
-    ) {
+    calculatePaymentHistoryScore(data) {
 
         const factor =
             this.clamp(
@@ -823,32 +1242,27 @@ class LoanCreditScoringService {
             contribution:
                 this.roundScore(
                     factor *
-                    this.config.weights.PAYMENT_HISTORY
+                    this.config.weights
+                        .PAYMENT_HISTORY
                 )
         };
     }
 
-    /**
-     * DTI:
-     *
-     * 0% DTI = full score.
-     * 100%+ DTI = zero score.
-     */
-    calculateDebtToIncomeScore(
-        data
-    ) {
+    calculateDebtToIncomeScore(data) {
 
-        const dti =
-            Math.min(
-                data.dti,
-                this.config.limits.MAX_DTI
+        const normalizedDti =
+            this.clamp(
+                data.dti /
+                this.config.limits
+                    .MAX_DTI,
+                0,
+                1
             );
 
         const factor =
-            this.clamp(
-                1 - dti,
-                0,
-                1
+            this.roundPrecision(
+                1 - normalizedDti,
+                12
             );
 
         return {
@@ -856,32 +1270,27 @@ class LoanCreditScoringService {
             contribution:
                 this.roundScore(
                     factor *
-                    this.config.weights.DEBT_TO_INCOME
+                    this.config.weights
+                        .DEBT_TO_INCOME
                 )
         };
     }
 
-    /**
-     * Utilization:
-     *
-     * 0% utilization = full score.
-     * 100%+ utilization = zero score.
-     */
-    calculateUtilizationScore(
-        data
-    ) {
+    calculateUtilizationScore(data) {
 
-        const utilization =
-            Math.min(
-                data.utilization,
-                this.config.limits.MAX_UTILIZATION
+        const normalizedUtilization =
+            this.clamp(
+                data.utilization /
+                this.config.limits
+                    .MAX_UTILIZATION,
+                0,
+                1
             );
 
         const factor =
-            this.clamp(
-                1 - utilization,
-                0,
-                1
+            this.roundPrecision(
+                1 - normalizedUtilization,
+                12
             );
 
         return {
@@ -889,54 +1298,46 @@ class LoanCreditScoringService {
             contribution:
                 this.roundScore(
                     factor *
-                    this.config.weights.LOAN_UTILIZATION
+                    this.config.weights
+                        .LOAN_UTILIZATION
                 )
         };
     }
 
-    /**
-     * Account age:
-     *
-     * 60 months or more = full score.
-     */
-    calculateAccountAgeScore(
-        data
-    ) {
+    calculateAccountAgeScore(data) {
 
         const factor =
             this.clamp(
                 data.accountAgeMonths /
-                this.config.limits.MAX_ACCOUNT_AGE_MONTHS,
+                this.config.limits
+                    .MAX_ACCOUNT_AGE_MONTHS,
                 0,
                 1
             );
 
         return {
-            factor,
+            factor:
+                this.roundPrecision(
+                    factor,
+                    12
+                ),
+
             contribution:
                 this.roundScore(
                     factor *
-                    this.config.weights.ACCOUNT_AGE
+                    this.config.weights
+                        .ACCOUNT_AGE
                 )
         };
     }
 
-    /**
-     * Fraud / sanctions component.
-     *
-     * Normal state contributes the full component.
-     * A positive fraud/sanctions signal contributes zero.
-     *
-     * Critical controls are handled separately by evaluateRiskControls().
-     */
-    calculateFraudSanctionsScore(
-        data
-    ) {
+    calculateFraudSanctionsScore(data) {
 
         const flagged =
             Boolean(
                 data.riskFlags.fraud ||
-                data.riskFlags.sanctions
+                data.riskFlags.sanctions ||
+                data.riskFlags.complianceBlock
             );
 
         const factor =
@@ -947,20 +1348,19 @@ class LoanCreditScoringService {
             contribution:
                 this.roundScore(
                     factor *
-                    this.config.weights.FRAUD_SANCTIONS
+                    this.config.weights
+                        .FRAUD_SANCTIONS
                 )
         };
     }
 
     /**
      * =========================================================================
-     * AGGREGATE SCORE
+     * Aggregate Score
      * =========================================================================
      */
 
-    calculateWeightedScore(
-        breakdown
-    ) {
+    calculateWeightedScore(breakdown) {
 
         let contributionTotal = 0;
 
@@ -976,22 +1376,26 @@ class LoanCreditScoringService {
         });
 
         /**
-         * The original implementation starts at 300 and adds normalized
-         * weighted points multiplied by 10.
+         * Weighted contribution is normalized to 0-100.
          *
-         * We preserve the 300-850 scale while making the mathematics explicit.
+         * Score range:
          *
-         * Maximum component contribution = 100.
-         * Therefore:
-         *
-         *   300 + (100 * 5.5) = 850
+         *   300 + (contribution / 100 × 550)
          */
+        const normalizedContribution =
+            this.clamp(
+                contributionTotal,
+                0,
+                100
+            );
+
         const score =
             SCORE_MIN +
             (
-                contributionTotal *
-                ((SCORE_MAX - SCORE_MIN) / 100)
-            );
+                normalizedContribution /
+                100
+            ) *
+            SCORE_RANGE;
 
         return this.clamp(
             Math.round(score),
@@ -1002,7 +1406,7 @@ class LoanCreditScoringService {
 
     /**
      * =========================================================================
-     * RISK CONTROLS
+     * Risk Controls
      * =========================================================================
      */
 
@@ -1014,102 +1418,70 @@ class LoanCreditScoringService {
 
         const reasons = [];
 
-        let scoreOverride = null;
+        let scoreOverride =
+            null;
 
-        const sanctions =
-            Boolean(
-                riskFlags.sanctions
+        const normalizedFlags =
+            this.normalizeRiskFlags(
+                riskFlags ||
+                data.riskFlags ||
+                {}
             );
 
-        const confirmedFraud =
-            Boolean(
-                riskFlags.fraud
-            );
+        const flagReasonMap = {
+            sanctions:
+                'SANCTIONS_MATCH',
 
-        const complianceBlock =
-            Boolean(
-                riskFlags.complianceBlock
-            );
+            fraud:
+                'FRAUD_FLAG',
 
-        const identityMismatch =
-            Boolean(
-                riskFlags.identityMismatch
-            );
+            complianceBlock:
+                'COMPLIANCE_BLOCK',
 
-        const deceased =
-            Boolean(
-                riskFlags.deceased
-            );
+            identityMismatch:
+                'IDENTITY_MISMATCH',
 
-        if (sanctions) {
-
-            reasons.push(
-                'SANCTIONS_MATCH'
-            );
-        }
-
-        if (confirmedFraud) {
-
-            reasons.push(
-                'FRAUD_FLAG'
-            );
-        }
-
-        if (complianceBlock) {
-
-            reasons.push(
-                'COMPLIANCE_BLOCK'
-            );
-        }
-
-        if (identityMismatch) {
-
-            reasons.push(
-                'IDENTITY_MISMATCH'
-            );
-        }
-
-        if (deceased) {
-
-            reasons.push(
+            deceased:
                 'DECEASED_IDENTITY_FLAG'
-            );
-        }
+        };
 
-        /**
-         * Critical compliance conditions are fail-closed.
-         *
-         * The score is retained for audit/explainability, but the decision
-         * cannot become APPROVE.
-         */
+        HARD_BLOCK_FLAGS.forEach(flag => {
+
+            if (
+                normalizedFlags[flag]
+            ) {
+                reasons.push(
+                    flagReasonMap[flag]
+                );
+            }
+        });
+
         if (
-            sanctions ||
-            confirmedFraud ||
-            complianceBlock ||
-            identityMismatch ||
-            deceased
+            reasons.length > 0
         ) {
-
             scoreOverride =
                 SCORE_MIN;
         }
 
-        return {
+        return Object.freeze({
             hardBlock:
                 reasons.length > 0,
 
-            reasons,
+            reasons:
+                Object.freeze(reasons),
 
             scoreOverride,
 
             originalScore:
-                calculatedScore
-        };
+                calculatedScore,
+
+            normalizedFlags
+        });
     }
 
     /**
      * =========================================================================
-     * RISK CLASSIFICATION
+     * Risk Classification
      * =========================================================================
      */
 
@@ -1126,28 +1498,32 @@ class LoanCreditScoringService {
 
         if (
             score >=
-            this.config.thresholds.EXCELLENT
+            this.config.thresholds
+                .EXCELLENT
         ) {
             return RISK_LEVEL.LOW;
         }
 
         if (
             score >=
-            this.config.thresholds.GOOD
+            this.config.thresholds
+                .GOOD
         ) {
             return RISK_LEVEL.MEDIUM;
         }
 
         if (
             score >=
-            this.config.thresholds.FAIR
+            this.config.thresholds
+                .FAIR
         ) {
             return RISK_LEVEL.HIGH;
         }
 
         if (
             score >=
-            this.config.thresholds.POOR
+            this.config.thresholds
+                .POOR
         ) {
             return RISK_LEVEL.CRITICAL;
         }
@@ -1157,7 +1533,7 @@ class LoanCreditScoringService {
 
     /**
      * =========================================================================
-     * DECISION ENGINE
+     * Decision Engine
      * =========================================================================
      */
 
@@ -1197,7 +1573,7 @@ class LoanCreditScoringService {
 
     /**
      * =========================================================================
-     * RECOMMENDATIONS
+     * Recommendations
      * =========================================================================
      */
 
@@ -1208,13 +1584,13 @@ class LoanCreditScoringService {
     ) {
 
         if (
-            controls.hardBlock
+            controls.hardBlock ||
+            decision === DECISION.BLOCK
         ) {
-
             return [
                 'Do not approve the loan',
-                'Escalate application to compliance/risk team',
-                'Resolve identified risk controls before reconsideration'
+                'Escalate application to compliance and risk teams',
+                'Resolve identified blocking conditions before reconsideration'
             ];
         }
 
@@ -1271,20 +1647,30 @@ class LoanCreditScoringService {
 
     /**
      * =========================================================================
-     * PERSISTENCE
+     * Persistence
      * =========================================================================
      */
 
     async persistRiskProfile(data) {
 
+        if (
+            !this.config.persistence.enabled
+        ) {
+            return null;
+        }
+
         try {
 
-            /**
-             * Tenant ID is deliberately part of the lookup.
-             *
-             * This prevents a profile belonging to another tenant from being
-             * updated accidentally when applicant identifiers overlap.
-             */
+            if (
+                !this.riskProfileModel ||
+                typeof this.riskProfileModel
+                    .updateOne !== 'function'
+            ) {
+                throw new Error(
+                    'LoanRiskProfile model is unavailable'
+                );
+            }
+
             const filter = {
                 tenantId:
                     data.tenantId,
@@ -1292,6 +1678,70 @@ class LoanCreditScoringService {
                 applicantId:
                     data.applicantId
             };
+
+            /**
+             * Persist a controlled scoring snapshot.
+             *
+             * Avoid storing arbitrary raw objects where possible.
+             */
+            const scoringSnapshot = {
+                loanId:
+                    this.normalizeIdentifier(
+                        data.loanData.loanId ||
+                        data.loanData.applicationId ||
+                        null
+                    ),
+
+                reference:
+                    this.normalizeIdentifier(
+                        data.loanData.reference ||
+                        null
+                    ),
+
+                requestedAmount:
+                    this.safeOptionalNumber(
+                        data.loanData.amount ||
+                        data.loanData.requestedAmount
+                    ),
+
+                debt:
+                    this.safeOptionalNumber(
+                        data.loanData.debt
+                    ),
+
+                income:
+                    this.safeOptionalNumber(
+                        data.loanData.income
+                    ),
+
+                currentLoans:
+                    this.safeOptionalNumber(
+                        data.loanData.currentLoans
+                    ),
+
+                loanLimit:
+                    this.safeOptionalNumber(
+                        data.loanData.loanLimit
+                    ),
+
+                accountAgeMonths:
+                    this.safeOptionalNumber(
+                        data.loanData.accountAgeMonths
+                    ),
+
+                totalPayments:
+                    this.safeOptionalNumber(
+                        data.loanData.totalPayments
+                    ),
+
+                onTimePayments:
+                    this.safeOptionalNumber(
+                        data.loanData.onTimePayments
+                    )
+            };
+
+            const now =
+                new Date();
 
             const update = {
                 $set: {
@@ -1304,6 +1754,9 @@ class LoanCreditScoringService {
                     creditScore:
                         data.creditScore,
 
+                    baseScore:
+                        data.baseScore,
+
                     riskLevel:
                         data.riskLevel,
 
@@ -1311,7 +1764,7 @@ class LoanCreditScoringService {
                         data.decision,
 
                     loanData:
-                        data.loanData,
+                        scoringSnapshot,
 
                     breakdown:
                         data.breakdown,
@@ -1325,33 +1778,89 @@ class LoanCreditScoringService {
                     scoreId:
                         data.scoreId,
 
+                    inputFingerprint:
+                        data.inputFingerprint,
+
                     scoreIntegrity:
                         data.scoreIntegrity,
+
+                    correlationId:
+                        data.correlationId ||
+                        null,
+
+                    idempotencyKey:
+                        data.idempotencyKey ||
+                        null,
 
                     scoringVersion:
                         data.scoringVersion,
 
                     scoredAt:
-                        new Date(),
+                        now,
 
                     updatedAt:
-                        new Date()
+                        now
+                },
+
+                $setOnInsert: {
+                    createdAt:
+                        now
                 }
             };
 
-            await LoanRiskProfile.updateOne(
-                filter,
-                update,
-                {
-                    upsert: true,
-                    runValidators: true
-                }
-            );
+            const options = {
+                upsert: true,
+                runValidators: true,
+                setDefaultsOnInsert: true
+            };
+
+            if (
+                data.session
+            ) {
+                options.session =
+                    data.session;
+            }
+
+            return await this.riskProfileModel
+                .updateOne(
+                    filter,
+                    update,
+                    options
+                );
 
         } catch (error) {
 
-            throw new LoanCreditScoringError(
-                'Failed to persist loan risk profile',
+            const wrappedError =
+                new LoanCreditScoringError(
+                    'Failed to persist loan risk profile',
+                    {
+                        tenantId:
+                            data.tenantId,
+
+                        applicantId:
+                            data.applicantId,
+
+                        originalError:
+                            error.message
+                    },
+                    {
+                        code:
+                            'RISK_PROFILE_PERSISTENCE_FAILED',
+                        cause:
+                            error
+                    }
+                );
+
+            if (
+                this.config.persistence
+                    .failClosed
+            ) {
+                throw wrappedError;
+            }
+
+            this.safeLog(
+                'error',
+                '[LoanCreditScoringService] Risk profile persistence failed',
                 {
                     tenantId:
                         data.tenantId,
@@ -1359,36 +1868,56 @@ class LoanCreditScoringService {
                     applicantId:
                         data.applicantId,
 
-                    originalError:
+                    error:
                         error.message
-                },
-                {
-                    code:
-                        'RISK_PROFILE_PERSISTENCE_FAILED',
-                    cause:
-                        error
                 }
             );
+
+            return null;
         }
     }
 
     /**
      * =========================================================================
-     * AUDIT
+     * Audit
      * =========================================================================
      */
 
-    async auditScore(
-        data
-    ) {
+    async auditScore(data) {
 
         if (
             !this.auditService
         ) {
+
+            if (
+                this.config.audit.required
+            ) {
+                throw new LoanCreditScoringError(
+                    'Audit service is required but unavailable',
+                    {
+                        scoreId:
+                            data.scoreId
+                    },
+                    {
+                        code:
+                            'AUDIT_SERVICE_UNAVAILABLE'
+                    }
+                );
+            }
+
             return;
         }
 
         try {
+
+            if (
+                typeof this.auditService.log !==
+                'function'
+            ) {
+                throw new Error(
+                    'Audit service does not implement log()'
+                );
+            }
 
             await this.auditService.log({
                 tenantId:
@@ -1409,9 +1938,20 @@ class LoanCreditScoringService {
                 entityId:
                     data.scoreId,
 
+                correlationId:
+                    data.correlationId ||
+                    null,
+
+                idempotencyKey:
+                    data.idempotencyKey ||
+                    null,
+
                 data: {
                     creditScore:
                         data.creditScore,
+
+                    baseScore:
+                        data.baseScore,
 
                     riskLevel:
                         data.riskLevel,
@@ -1421,6 +1961,9 @@ class LoanCreditScoringService {
 
                     controls:
                         data.controls,
+
+                    inputFingerprint:
+                        data.inputFingerprint,
 
                     scoreIntegrity:
                         data.scoreIntegrity,
@@ -1432,13 +1975,6 @@ class LoanCreditScoringService {
 
         } catch (error) {
 
-            /**
-             * Audit failures are deliberately logged but do not silently
-             * mutate the credit decision.
-             *
-             * Organizations requiring strict audit availability can inject
-             * an audit service that throws and change this policy centrally.
-             */
             this.safeLog(
                 'error',
                 '[LoanCreditScoringService] Audit logging failed',
@@ -1453,34 +1989,59 @@ class LoanCreditScoringService {
                         error.message
                 }
             );
+
+            if (
+                this.config.audit.required
+            ) {
+                throw new LoanCreditScoringError(
+                    'Loan credit scoring audit failed',
+                    {
+                        scoreId:
+                            data.scoreId,
+
+                        tenantId:
+                            data.tenantId,
+
+                        originalError:
+                            error.message
+                    },
+                    {
+                        code:
+                            'CREDIT_SCORING_AUDIT_FAILED',
+                        cause:
+                            error
+                    }
+                );
+            }
         }
     }
 
     /**
      * =========================================================================
-     * SCORE IDENTIFIER
+     * Score Identifier
      * =========================================================================
+     *
+     * Deterministic score identifier.
+     *
+     * Identical scoring inputs under the same scoring version produce the same
+     * score identity.
      */
-
     generateScoreId(
         tenantId,
         applicantId,
-        loanData
+        loanData,
+        inputFingerprint
     ) {
 
         const loanReference =
-            loanData.loanId ||
-            loanData.applicationId ||
-            loanData.reference ||
-            crypto.randomUUID();
+            this.normalizeIdentifier(
+                loanData.loanId ||
+                loanData.applicationId ||
+                loanData.reference ||
+                'NO_LOAN_REFERENCE'
+            );
 
-        const entropy =
-            crypto.randomBytes(
-                8
-            ).toString('hex');
-
-        return (
-            'SCORE-' +
+        const digest =
             crypto
                 .createHash('sha256')
                 .update(
@@ -1488,23 +2049,41 @@ class LoanCreditScoringService {
                         tenantId,
                         applicantId,
                         loanReference,
-                        entropy
+                        inputFingerprint,
+                        this.getScoringVersion()
                     ].join('|')
                 )
                 .digest('hex')
-                .substring(0, 24)
-        );
+                .substring(0, 32);
+
+        return `SCORE-${digest}`;
     }
 
     /**
      * =========================================================================
-     * SCORE INTEGRITY
+     * Input Fingerprint
      * =========================================================================
      */
 
-    generateScoreIntegrityHash(
-        payload
-    ) {
+    generateInputFingerprint(payload) {
+
+        return crypto
+            .createHash('sha256')
+            .update(
+                this.stableSerialize(
+                    payload
+                )
+            )
+            .digest('hex');
+    }
+
+    /**
+     * =========================================================================
+     * Score Integrity
+     * =========================================================================
+     */
+
+    generateScoreIntegrityHash(payload) {
 
         const canonical =
             this.stableSerialize(
@@ -1518,37 +2097,76 @@ class LoanCreditScoringService {
     }
 
     /**
-     * Deterministic object serialization.
+     * =========================================================================
+     * Deterministic Serialization
+     * =========================================================================
      */
+
     stableSerialize(value) {
 
         if (
-            value === null ||
+            value === null
+        ) {
+            return 'null';
+        }
+
+        if (
             value === undefined
         ) {
-            return String(value);
+            return '"__undefined__"';
+        }
+
+        if (
+            value instanceof Date
+        ) {
+            return JSON.stringify(
+                value.toISOString()
+            );
+        }
+
+        if (
+            typeof value === 'number'
+        ) {
+
+            if (
+                !Number.isFinite(value)
+            ) {
+                return JSON.stringify(
+                    String(value)
+                );
+            }
+
+            return JSON.stringify(
+                value
+            );
         }
 
         if (
             typeof value !== 'object'
         ) {
-            return JSON.stringify(value);
+            return JSON.stringify(
+                value
+            );
         }
 
         if (
             Array.isArray(value)
         ) {
-
-            return '[' +
+            return (
+                '[' +
                 value
                     .map(item =>
-                        this.stableSerialize(item)
+                        this.stableSerialize(
+                            item
+                        )
                     )
                     .join(',') +
-                ']';
+                ']'
+            );
         }
 
-        return '{' +
+        return (
+            '{' +
             Object.keys(value)
                 .sort()
                 .map(key =>
@@ -1559,18 +2177,17 @@ class LoanCreditScoringService {
                     )
                 )
                 .join(',') +
-            '}';
+            '}'
+        );
     }
 
     /**
      * =========================================================================
-     * UTILITY FUNCTIONS
+     * Utility Functions
      * =========================================================================
      */
 
-    normalizeIdentifier(
-        value
-    ) {
+    normalizeIdentifier(value) {
 
         if (
             value === null ||
@@ -1579,14 +2196,18 @@ class LoanCreditScoringService {
             return null;
         }
 
-        if (
+        const normalized =
             typeof value === 'object' &&
-            typeof value.toString === 'function'
-        ) {
-            return value.toString();
-        }
+            typeof value.toString ===
+                'function'
+                ? value.toString()
+                : String(value);
 
-        return String(value).trim();
+        const trimmed =
+            normalized.trim();
+
+        return trimmed ||
+            null;
     }
 
     clamp(
@@ -1613,13 +2234,87 @@ class LoanCreditScoringService {
         );
     }
 
-    roundScore(
-        value
+    roundScore(value) {
+
+        return (
+            Math.round(
+                (
+                    Number(value) +
+                    Number.EPSILON
+                ) *
+                100
+            ) /
+            100
+        );
+    }
+
+    roundPrecision(
+        value,
+        precision = 12
     ) {
 
-        return Math.round(
-            Number(value) * 100
-        ) / 100;
+        const factor =
+            10 ** precision;
+
+        return (
+            Math.round(
+                (
+                    Number(value) +
+                    Number.EPSILON
+                ) *
+                factor
+            ) /
+            factor
+        );
+    }
+
+    safeOptionalNumber(value) {
+
+        if (
+            value === undefined ||
+            value === null ||
+            value === ''
+        ) {
+            return null;
+        }
+
+        const number =
+            Number(value);
+
+        return Number.isFinite(number)
+            ? number
+            : null;
+    }
+
+    deepFreeze(object) {
+
+        if (
+            !object ||
+            typeof object !== 'object' ||
+            Object.isFrozen(object)
+        ) {
+            return object;
+        }
+
+        Object.freeze(object);
+
+        Object.keys(object)
+            .forEach(key => {
+
+                const value =
+                    object[key];
+
+                if (
+                    value &&
+                    typeof value === 'object'
+                ) {
+                    this.deepFreeze(
+                        value
+                    );
+                }
+            });
+
+        return object;
     }
 
     safeLog(
@@ -1632,28 +2327,27 @@ class LoanCreditScoringService {
 
             if (
                 logger &&
-                typeof logger[level] === 'function'
+                typeof logger[level] ===
+                'function'
             ) {
-
                 logger[level](
                     message,
                     metadata
                 );
-
             }
 
         } catch (error) {
-            // Logging must never break financial/risk workflows.
+            // Logging must never break credit/risk workflows.
         }
     }
 }
 
 /**
  * ============================================================================
- * SINGLETON EXPORT
+ * Singleton Export
  * ============================================================================
  *
- * Preserves the existing import contract:
+ * Preserves existing import contract:
  *
  *   const loanCreditScoringService =
  *       require('./LoanCreditScoringService');
@@ -1665,8 +2359,9 @@ module.exports =
     new LoanCreditScoringService();
 
 /**
- * Optional named exports for testing and advanced dependency injection.
+ * Optional named exports for testing and dependency injection.
  */
+
 module.exports.LoanCreditScoringService =
     LoanCreditScoringService;
 
@@ -1678,3 +2373,12 @@ module.exports.RISK_LEVEL =
 
 module.exports.DECISION =
     DECISION;
+
+module.exports.DEFAULT_CONFIG =
+    DEFAULT_CONFIG;
+
+module.exports.SCORE_MIN =
+    SCORE_MIN;
+
+module.exports.SCORE_MAX =
+    SCORE_MAX;

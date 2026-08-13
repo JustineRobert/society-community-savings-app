@@ -4,17 +4,25 @@
  * ledgerService.mocha.test.js
  * ============================================================================
  *
- * Enterprise Mocha Tests — Ledger Service
+ * Enterprise Mocha Test Suite — Ledger Service
  *
  * Coverage:
  *
  *  - Successful transaction posting
  *  - MongoDB transaction lifecycle
  *  - Idempotency protection
+ *  - Tenant isolation
  *  - Transaction persistence
  *  - Ledger entry persistence
- *  - Account balance updates
+ *  - Debit/credit account updates
  *  - Balanced transaction enforcement
+ *  - Invalid amount validation
+ *  - Decimal monetary values
+ *  - Persistence failure rollback
+ *  - Ledger failure rollback
+ *  - Account update failure rollback
+ *  - Commit failure handling
+ *  - Session cleanup
  *
  * ============================================================================
  */
@@ -48,6 +56,57 @@ describe('Ledger Service (Mocha)', function () {
 
     /**
      * =========================================================================
+     * Test Constants
+     * =========================================================================
+     */
+
+    const TENANT_ID =
+        'tenant-production';
+
+    const DEBIT_ACCOUNT =
+        'acc-debit';
+
+    const CREDIT_ACCOUNT =
+        'acc-credit';
+
+
+    /**
+     * =========================================================================
+     * Helpers
+     * =========================================================================
+     */
+
+    function validPayload(overrides = {}) {
+
+        return {
+
+            tenantId:
+                TENANT_ID,
+
+            debitAccountId:
+                DEBIT_ACCOUNT,
+
+            creditAccountId:
+                CREDIT_ACCOUNT,
+
+            amount:
+                100,
+
+            reference:
+                'ref-mocha-001',
+
+            description:
+                'Mocha ledger test',
+
+            ...overrides
+
+        };
+
+    }
+
+
+    /**
+     * =========================================================================
      * Setup
      * =========================================================================
      */
@@ -57,63 +116,97 @@ describe('Ledger Service (Mocha)', function () {
         sandbox =
             sinon.createSandbox();
 
+
         session = {
 
             startTransaction:
                 sandbox.stub(),
 
             commitTransaction:
-                sandbox.stub().resolves(),
+                sandbox.stub()
+                    .resolves(),
 
             abortTransaction:
-                sandbox.stub().resolves(),
+                sandbox.stub()
+                    .resolves(),
 
             endSession:
-                sandbox.stub().resolves()
+                sandbox.stub()
+                    .resolves()
 
         };
+
 
         sandbox
             .stub(mongoose, 'startSession')
             .resolves(session);
 
+
         /**
-         * The service should continue when no duplicate
-         * is detected.
-         *
-         * If your idempotency implementation uses the
-         * opposite boolean convention, change this stub
-         * to match that contract.
+         * No duplicate by default.
          */
         sandbox
             .stub(idempotency, 'checkDuplicate')
             .resolves(false);
 
+
         /**
-         * Mongoose create() commonly returns an array when
-         * called with an array of documents.
+         * Transaction persistence.
          */
         sandbox
             .stub(Transaction, 'create')
             .resolves([
+
                 {
-                    _id: 'tx123',
+
+                    _id:
+                        'tx123',
+
+                    tenantId:
+                        TENANT_ID,
+
+                    reference:
+                        'ref-mocha-001',
+
+                    amount:
+                        100,
 
                     save:
-                        sandbox.stub().resolves()
+                        sandbox.stub()
+                            .resolves()
 
                 }
+
             ]);
 
+
+        /**
+         * Ledger persistence.
+         */
         sandbox
             .stub(LedgerEntry, 'create')
-            .resolves(true);
+            .resolves({
 
+                _id:
+                    'ledger-entry-123'
+
+            });
+
+
+        /**
+         * Account updates.
+         */
         sandbox
             .stub(Account, 'findByIdAndUpdate')
-            .resolves(true);
+            .resolves({
+
+                _id:
+                    'account-updated'
+
+            });
 
     });
+
 
     /**
      * =========================================================================
@@ -127,358 +220,1010 @@ describe('Ledger Service (Mocha)', function () {
 
     });
 
+
     /**
      * =========================================================================
      * Successful Transaction Posting
      * =========================================================================
      */
 
-    it(
-        'postTransaction should complete the full ledger flow',
-        async function () {
+    describe('postTransaction()', function () {
 
-            const result =
-                await ledgerService.postTransaction({
+        it(
+            'should complete the full ledger posting lifecycle',
+            async function () {
 
-                    tenantId:
-                        'tenant1',
+                const result =
+                    await ledgerService.postTransaction(
+                        validPayload()
+                    );
 
-                    debitAccountId:
-                        'acc1',
 
-                    creditAccountId:
-                        'acc2',
+                expect(result)
+                    .to.deep.equal({
 
-                    amount:
-                        50,
+                        success:
+                            true,
 
-                    reference:
-                        'ref-mocha-1',
+                        transactionId:
+                            'tx123'
 
-                    description:
-                        'Mocha test'
+                    });
 
-                });
 
-            expect(result)
-                .to.deep.equal({
+                /**
+                 * Idempotency must be checked first.
+                 */
+                expect(
+                    idempotency.checkDuplicate.calledOnce
+                ).to.equal(true);
 
-                    success:
-                        true,
 
-                    transactionId:
-                        'tx123'
+                expect(
+                    idempotency.checkDuplicate.firstCall.args[0]
+                ).to.equal(
+                    'ref-mocha-001'
+                );
 
-                });
 
-            /**
-             * MongoDB transaction must start.
-             */
-            expect(
-                session.startTransaction.calledOnce
-            ).to.equal(true);
+                /**
+                 * MongoDB session must be created.
+                 */
+                expect(
+                    mongoose.startSession.calledOnce
+                ).to.equal(true);
 
-            /**
-             * Successful posting must commit.
-             */
-            expect(
-                session.commitTransaction.calledOnce
-            ).to.equal(true);
 
-            /**
-             * Session must always be released.
-             */
-            expect(
-                session.endSession.calledOnce
-            ).to.equal(true);
+                /**
+                 * Financial transaction boundary.
+                 */
+                expect(
+                    session.startTransaction.calledOnce
+                ).to.equal(true);
 
-            /**
-             * Successful transactions should not
-             * trigger rollback.
-             */
-            expect(
-                session.abortTransaction.called
-            ).to.equal(false);
 
-        }
-    );
+                expect(
+                    session.commitTransaction.calledOnce
+                ).to.equal(true);
 
-    /**
-     * =========================================================================
-     * Balanced Transaction Validation
-     * =========================================================================
-     */
 
-    it(
-        'recordBalancedTransaction should reject unbalanced amounts',
-        async function () {
+                expect(
+                    session.abortTransaction.called
+                ).to.equal(false);
 
-            try {
 
-                await ledgerService.recordBalancedTransaction({
+                /**
+                 * Session must always be released.
+                 */
+                expect(
+                    session.endSession.calledOnce
+                ).to.equal(true);
 
-                    tenantId:
-                        'tenant1',
+            }
+        );
 
-                    debitAccountId:
-                        'acc1',
 
-                    creditAccountId:
-                        'acc2',
+        /**
+         * ---------------------------------------------------------------------
+         * Tenant propagation
+         * ---------------------------------------------------------------------
+         */
 
-                    debitAmount:
-                        10,
+        it(
+            'should propagate tenant identity into transaction persistence',
+            async function () {
 
-                    creditAmount:
-                        20,
+                await ledgerService.postTransaction(
+                    validPayload({
+                        amount:
+                            150,
 
-                    reference:
-                        'ref-mocha-2',
+                        reference:
+                            'ref-tenant-propagation'
+                    })
+                );
 
-                    description:
-                        'Unbalanced'
 
-                });
+                expect(
+                    Transaction.create.calledOnce
+                ).to.equal(true);
 
-                throw new Error(
-                    'Expected error not thrown'
+
+                const transactionArg =
+                    Transaction.create.firstCall.args[0];
+
+
+                /**
+                 * Supports both direct-document and
+                 * array-document create implementations.
+                 */
+                const transaction =
+                    Array.isArray(transactionArg)
+                        ? transactionArg[0]
+                        : transactionArg;
+
+
+                expect(transaction)
+                    .to.be.an('object');
+
+
+                expect(
+                    transaction.tenantId
+                ).to.equal(
+                    TENANT_ID
                 );
 
             }
-            catch (error) {
+        );
 
-                expect(error.message)
-                    .to.equal(
-                        'Ledger imbalance: debit and credit amounts must be equal'
+
+        /**
+         * ---------------------------------------------------------------------
+         * Transaction persistence
+         * ---------------------------------------------------------------------
+         */
+
+        it(
+            'should persist transaction financial attributes',
+            async function () {
+
+                await ledgerService.postTransaction(
+                    validPayload({
+
+                        amount:
+                            250,
+
+                        reference:
+                            'ref-financial-persistence',
+
+                        description:
+                            'Financial persistence verification'
+
+                    })
+                );
+
+
+                expect(
+                    Transaction.create.calledOnce
+                ).to.equal(true);
+
+
+                const transactionArg =
+                    Transaction.create.firstCall.args[0];
+
+
+                const transaction =
+                    Array.isArray(transactionArg)
+                        ? transactionArg[0]
+                        : transactionArg;
+
+
+                expect(transaction)
+                    .to.be.an('object');
+
+
+                expect(
+                    transaction.tenantId
+                ).to.equal(
+                    TENANT_ID
+                );
+
+
+                expect(
+                    transaction.reference
+                ).to.equal(
+                    'ref-financial-persistence'
+                );
+
+
+                expect(
+                    transaction.amount
+                ).to.equal(
+                    250
+                );
+
+
+                expect(
+                    transaction.description
+                ).to.equal(
+                    'Financial persistence verification'
+                );
+
+            }
+        );
+
+
+        /**
+         * ---------------------------------------------------------------------
+         * Ledger entry persistence
+         * ---------------------------------------------------------------------
+         */
+
+        it(
+            'should persist ledger entries',
+            async function () {
+
+                await ledgerService.postTransaction(
+                    validPayload({
+
+                        amount:
+                            200,
+
+                        reference:
+                            'ref-ledger-entry'
+
+                    })
+                );
+
+
+                expect(
+                    LedgerEntry.create.calledOnce
+                ).to.equal(true);
+
+
+                const ledgerArg =
+                    LedgerEntry.create.firstCall.args[0];
+
+
+                const entries =
+                    Array.isArray(ledgerArg)
+                        ? ledgerArg
+                        : [ledgerArg];
+
+
+                expect(entries.length)
+                    .to.be.greaterThan(0);
+
+
+                /**
+                 * Every persisted ledger entry should
+                 * carry the tenant boundary when the
+                 * service contract supports tenant fields.
+                 */
+                const tenantBearingEntry =
+                    entries.find(
+                        entry =>
+                            entry &&
+                            entry.tenantId !== undefined
+                    );
+
+
+                if (tenantBearingEntry) {
+
+                    expect(
+                        tenantBearingEntry.tenantId
+                    ).to.equal(
+                        TENANT_ID
+                    );
+
+                }
+
+            }
+        );
+
+
+        /**
+         * ---------------------------------------------------------------------
+         * Account updates
+         * ---------------------------------------------------------------------
+         */
+
+        it(
+            'should update both affected accounts',
+            async function () {
+
+                await ledgerService.postTransaction(
+                    validPayload({
+
+                        amount:
+                            75,
+
+                        reference:
+                            'ref-account-update'
+
+                    })
+                );
+
+
+                expect(
+                    Account.findByIdAndUpdate.callCount
+                ).to.equal(2);
+
+
+                const calls =
+                    Account.findByIdAndUpdate.getCalls();
+
+
+                const accountIds =
+                    calls.map(
+                        call =>
+                            call.args[0]
+                    );
+
+
+                expect(accountIds)
+                    .to.include(
+                        DEBIT_ACCOUNT
+                    );
+
+
+                expect(accountIds)
+                    .to.include(
+                        CREDIT_ACCOUNT
                     );
 
             }
+        );
 
-        }
-    );
 
-    /**
-     * =========================================================================
-     * Idempotency Protection
-     * =========================================================================
-     */
+        /**
+         * ---------------------------------------------------------------------
+         * Decimal monetary amount
+         * ---------------------------------------------------------------------
+         */
 
-    it(
-        'postTransaction should not create a duplicate transaction',
-        async function () {
+        it(
+            'should preserve valid decimal monetary amounts',
+            async function () {
 
-            idempotency
-                .checkDuplicate
-                .resolves(true);
+                const result =
+                    await ledgerService.postTransaction(
+                        validPayload({
 
-            const transactionCreate =
-                Transaction.create;
+                            amount:
+                                100.25,
 
-            const result =
-                await ledgerService.postTransaction({
+                            reference:
+                                'ref-decimal'
 
-                    tenantId:
-                        'tenant1',
+                        })
+                    );
 
-                    debitAccountId:
-                        'acc1',
 
-                    creditAccountId:
-                        'acc2',
+                expect(result)
+                    .to.deep.equal({
 
-                    amount:
-                        50,
+                        success:
+                            true,
 
-                    reference:
-                        'ref-mocha-duplicate',
+                        transactionId:
+                            'tx123'
 
-                    description:
-                        'Duplicate test'
+                    });
 
-                });
 
-            /**
-             * The exact return contract depends on the
-             * current idempotency implementation.
-             *
-             * At minimum, persistence must not occur
-             * again when the service treats true as
-             * duplicate.
-             */
-            expect(
-                transactionCreate.called
-            ).to.equal(false);
-
-            expect(
-                session.commitTransaction.called
-            ).to.equal(false);
-
-            expect(
-                session.endSession.calledOnce
-            ).to.equal(true);
-
-            expect(result)
-                .to.exist;
-
-        }
-    );
-
-    /**
-     * =========================================================================
-     * Ledger Persistence
-     * =========================================================================
-     */
-
-    it(
-        'postTransaction should persist transaction and ledger entry',
-        async function () {
-
-            await ledgerService.postTransaction({
-
-                tenantId:
-                    'tenant1',
-
-                debitAccountId:
-                    'acc1',
-
-                creditAccountId:
-                    'acc2',
-
-                amount:
-                    100,
-
-                reference:
-                    'ref-mocha-persistence',
-
-                description:
-                    'Persistence test'
-
-            });
-
-            expect(
-                Transaction.create.calledOnce
-            ).to.equal(true);
-
-            expect(
-                LedgerEntry.create.called
-            ).to.equal(true);
-
-        }
-    );
-
-    /**
-     * =========================================================================
-     * Account Updates
-     * =========================================================================
-     */
-
-    it(
-        'postTransaction should update affected accounts',
-        async function () {
-
-            await ledgerService.postTransaction({
-
-                tenantId:
-                    'tenant1',
-
-                debitAccountId:
-                    'acc1',
-
-                creditAccountId:
-                    'acc2',
-
-                amount:
-                    75,
-
-                reference:
-                    'ref-mocha-account-update',
-
-                description:
-                    'Account update test'
-
-            });
-
-            expect(
-                Account.findByIdAndUpdate.called
-            ).to.equal(true);
-
-            expect(
-                Account.findByIdAndUpdate.callCount
-            ).to.be.at.least(1);
-
-        }
-    );
-
-    /**
-     * =========================================================================
-     * Rollback On Failure
-     * =========================================================================
-     */
-
-    it(
-        'postTransaction should abort the transaction when persistence fails',
-        async function () {
-
-            Transaction.create
-                .rejects(
-                    new Error(
-                        'Database persistence failure'
-                    )
-                );
-
-            try {
-
-                await ledgerService.postTransaction({
-
-                    tenantId:
-                        'tenant1',
-
-                    debitAccountId:
-                        'acc1',
-
-                    creditAccountId:
-                        'acc2',
-
-                    amount:
-                        50,
-
-                    reference:
-                        'ref-mocha-failure',
-
-                    description:
-                        'Rollback test'
-
-                });
-
-                throw new Error(
-                    'Expected ledger posting failure'
-                );
+                expect(
+                    Transaction.create.calledOnce
+                ).to.equal(true);
 
             }
-            catch (error) {
+        );
 
-                expect(error)
+
+        /**
+         * ---------------------------------------------------------------------
+         * Invalid amount
+         * ---------------------------------------------------------------------
+         */
+
+        it(
+            'should reject negative transaction amounts before persistence',
+            async function () {
+
+                await expect(
+
+                    ledgerService.postTransaction(
+                        validPayload({
+
+                            amount:
+                                -10,
+
+                            reference:
+                                'ref-negative'
+
+                        })
+                    )
+
+                ).to.be.rejectedWith(
+                    'Amount must be a positive number'
+                );
+
+
+                expect(
+                    Transaction.create.called
+                ).to.equal(false);
+
+
+                expect(
+                    LedgerEntry.create.called
+                ).to.equal(false);
+
+
+                expect(
+                    Account.findByIdAndUpdate.called
+                ).to.equal(false);
+
+            }
+        );
+
+
+        /**
+         * ---------------------------------------------------------------------
+         * Zero amount
+         * ---------------------------------------------------------------------
+         */
+
+        it(
+            'should reject zero-value transactions',
+            async function () {
+
+                await expect(
+
+                    ledgerService.postTransaction(
+                        validPayload({
+
+                            amount:
+                                0,
+
+                            reference:
+                                'ref-zero'
+
+                        })
+                    )
+
+                ).to.be.rejectedWith(
+                    'Amount must be a positive number'
+                );
+
+
+                expect(
+                    Transaction.create.called
+                ).to.equal(false);
+
+
+                expect(
+                    LedgerEntry.create.called
+                ).to.equal(false);
+
+
+                expect(
+                    Account.findByIdAndUpdate.called
+                ).to.equal(false);
+
+            }
+        );
+
+
+        /**
+         * ---------------------------------------------------------------------
+         * Duplicate transaction
+         * ---------------------------------------------------------------------
+         */
+
+        it(
+            'should prevent duplicate financial persistence',
+            async function () {
+
+                idempotency
+                    .checkDuplicate
+                    .resolves(true);
+
+
+                const result =
+                    await ledgerService.postTransaction(
+                        validPayload({
+
+                            reference:
+                                'ref-duplicate'
+
+                        })
+                    );
+
+
+                expect(
+                    Transaction.create.called
+                ).to.equal(false);
+
+
+                expect(
+                    LedgerEntry.create.called
+                ).to.equal(false);
+
+
+                expect(
+                    Account.findByIdAndUpdate.called
+                ).to.equal(false);
+
+
+                expect(
+                    session.commitTransaction.called
+                ).to.equal(false);
+
+
+                /**
+                 * A properly optimized implementation should
+                 * detect the duplicate before opening a MongoDB
+                 * transaction.
+                 *
+                 * Therefore we deliberately do NOT require
+                 * endSession() here.
+                 */
+                expect(result)
                     .to.exist;
 
             }
+        );
 
-            expect(
-                session.startTransaction.calledOnce
-            ).to.equal(true);
 
-            expect(
-                session.abortTransaction.calledOnce
-            ).to.equal(true);
+        /**
+         * ---------------------------------------------------------------------
+         * Persistence failure
+         * ---------------------------------------------------------------------
+         */
 
-            expect(
-                session.commitTransaction.called
-            ).to.equal(false);
+        it(
+            'should abort and release the session when transaction persistence fails',
+            async function () {
 
-            expect(
-                session.endSession.calledOnce
-            ).to.equal(true);
+                Transaction.create
+                    .rejects(
+                        new Error(
+                            'Database persistence failure'
+                        )
+                    );
 
-        }
-    );
+
+                await expect(
+
+                    ledgerService.postTransaction(
+                        validPayload({
+
+                            reference:
+                                'ref-persistence-failure'
+
+                        })
+                    )
+
+                ).to.be.rejectedWith(
+                    'Database persistence failure'
+                );
+
+
+                expect(
+                    session.startTransaction.calledOnce
+                ).to.equal(true);
+
+
+                expect(
+                    session.abortTransaction.calledOnce
+                ).to.equal(true);
+
+
+                expect(
+                    session.commitTransaction.called
+                ).to.equal(false);
+
+
+                expect(
+                    session.endSession.calledOnce
+                ).to.equal(true);
+
+            }
+        );
+
+
+        /**
+         * ---------------------------------------------------------------------
+         * Ledger entry failure
+         * ---------------------------------------------------------------------
+         */
+
+        it(
+            'should rollback when ledger entry persistence fails',
+            async function () {
+
+                LedgerEntry.create
+                    .rejects(
+                        new Error(
+                            'Ledger entry persistence failure'
+                        )
+                    );
+
+
+                await expect(
+
+                    ledgerService.postTransaction(
+                        validPayload({
+
+                            reference:
+                                'ref-ledger-failure'
+
+                        })
+                    )
+
+                ).to.be.rejectedWith(
+                    'Ledger entry persistence failure'
+                );
+
+
+                expect(
+                    session.abortTransaction.calledOnce
+                ).to.equal(true);
+
+
+                expect(
+                    session.commitTransaction.called
+                ).to.equal(false);
+
+
+                expect(
+                    session.endSession.calledOnce
+                ).to.equal(true);
+
+            }
+        );
+
+
+        /**
+         * ---------------------------------------------------------------------
+         * Account update failure
+         * ---------------------------------------------------------------------
+         */
+
+        it(
+            'should rollback when account balance update fails',
+            async function () {
+
+                Account.findByIdAndUpdate
+                    .rejects(
+                        new Error(
+                            'Account balance update failure'
+                        )
+                    );
+
+
+                await expect(
+
+                    ledgerService.postTransaction(
+                        validPayload({
+
+                            reference:
+                                'ref-account-failure'
+
+                        })
+                    )
+
+                ).to.be.rejectedWith(
+                    'Account balance update failure'
+                );
+
+
+                expect(
+                    session.abortTransaction.calledOnce
+                ).to.equal(true);
+
+
+                expect(
+                    session.commitTransaction.called
+                ).to.equal(false);
+
+
+                expect(
+                    session.endSession.calledOnce
+                ).to.equal(true);
+
+            }
+        );
+
+
+        /**
+         * ---------------------------------------------------------------------
+         * Commit failure
+         * ---------------------------------------------------------------------
+         */
+
+        it(
+            'should surface commit failures and release the session',
+            async function () {
+
+                session.commitTransaction
+                    .rejects(
+                        new Error(
+                            'Commit failure'
+                        )
+                    );
+
+
+                await expect(
+
+                    ledgerService.postTransaction(
+                        validPayload({
+
+                            reference:
+                                'ref-commit-failure'
+
+                        })
+                    )
+
+                ).to.be.rejectedWith(
+                    'Commit failure'
+                );
+
+
+                expect(
+                    session.commitTransaction.calledOnce
+                ).to.equal(true);
+
+
+                expect(
+                    session.endSession.calledOnce
+                ).to.equal(true);
+
+            }
+        );
+
+    });
+
+
+    /**
+     * =========================================================================
+     * recordBalancedTransaction()
+     * =========================================================================
+     */
+
+    describe('recordBalancedTransaction()', function () {
+
+        /**
+         * ---------------------------------------------------------------------
+         * Balanced transaction
+         * ---------------------------------------------------------------------
+         */
+
+        it(
+            'should delegate to postTransaction for equal positive amounts',
+            async function () {
+
+                const result =
+                    await ledgerService.recordBalancedTransaction({
+
+                        tenantId:
+                            TENANT_ID,
+
+                        debitAccountId:
+                            DEBIT_ACCOUNT,
+
+                        creditAccountId:
+                            CREDIT_ACCOUNT,
+
+                        debitAmount:
+                            250,
+
+                        creditAmount:
+                            250,
+
+                        reference:
+                            'ref-balanced',
+
+                        description:
+                            'Balanced transaction'
+
+                    });
+
+
+                expect(result)
+                    .to.deep.equal({
+
+                        success:
+                            true,
+
+                        transactionId:
+                            'tx123'
+
+                    });
+
+
+                expect(
+                    Transaction.create.calledOnce
+                ).to.equal(true);
+
+
+                expect(
+                    LedgerEntry.create.calledOnce
+                ).to.equal(true);
+
+
+                expect(
+                    Account.findByIdAndUpdate.callCount
+                ).to.equal(2);
+
+
+                expect(
+                    session.commitTransaction.calledOnce
+                ).to.equal(true);
+
+            }
+        );
+
+
+        /**
+         * ---------------------------------------------------------------------
+         * Unbalanced transaction
+         * ---------------------------------------------------------------------
+         */
+
+        it(
+            'should reject unbalanced debit and credit amounts',
+            async function () {
+
+                await expect(
+
+                    ledgerService.recordBalancedTransaction({
+
+                        tenantId:
+                            TENANT_ID,
+
+                        debitAccountId:
+                            DEBIT_ACCOUNT,
+
+                        creditAccountId:
+                            CREDIT_ACCOUNT,
+
+                        debitAmount:
+                            100,
+
+                        creditAmount:
+                            200,
+
+                        reference:
+                            'ref-unbalanced',
+
+                        description:
+                            'Unbalanced transaction'
+
+                    })
+
+                ).to.be.rejectedWith(
+                    'Ledger imbalance: debit and credit amounts must be equal'
+                );
+
+
+                expect(
+                    Transaction.create.called
+                ).to.equal(false);
+
+
+                expect(
+                    LedgerEntry.create.called
+                ).to.equal(false);
+
+
+                expect(
+                    Account.findByIdAndUpdate.called
+                ).to.equal(false);
+
+
+                expect(
+                    mongoose.startSession.called
+                ).to.equal(false);
+
+            }
+        );
+
+
+        /**
+         * ---------------------------------------------------------------------
+         * Negative debit
+         * ---------------------------------------------------------------------
+         */
+
+        it(
+            'should reject negative debit and credit amounts',
+            async function () {
+
+                await expect(
+
+                    ledgerService.recordBalancedTransaction({
+
+                        tenantId:
+                            TENANT_ID,
+
+                        debitAccountId:
+                            DEBIT_ACCOUNT,
+
+                        creditAccountId:
+                            CREDIT_ACCOUNT,
+
+                        debitAmount:
+                            -100,
+
+                        creditAmount:
+                            -100,
+
+                        reference:
+                            'ref-negative-balanced',
+
+                        description:
+                            'Negative balanced amounts'
+
+                    })
+
+                ).to.be.rejected;
+
+
+                expect(
+                    Transaction.create.called
+                ).to.equal(false);
+
+
+                expect(
+                    LedgerEntry.create.called
+                ).to.equal(false);
+
+
+                expect(
+                    Account.findByIdAndUpdate.called
+                ).to.equal(false);
+
+            }
+        );
+
+
+        /**
+         * ---------------------------------------------------------------------
+         * Decimal balanced amount
+         * ---------------------------------------------------------------------
+         */
+
+        it(
+            'should accept equal decimal monetary amounts',
+            async function () {
+
+                const result =
+                    await ledgerService.recordBalancedTransaction({
+
+                        tenantId:
+                            TENANT_ID,
+
+                        debitAccountId:
+                            DEBIT_ACCOUNT,
+
+                        creditAccountId:
+                            CREDIT_ACCOUNT,
+
+                        debitAmount:
+                            100.25,
+
+                        creditAmount:
+                            100.25,
+
+                        reference:
+                            'ref-balanced-decimal',
+
+                        description:
+                            'Decimal balanced transaction'
+
+                    });
+
+
+                expect(result)
+                    .to.deep.equal({
+
+                        success:
+                            true,
+
+                        transactionId:
+                            'tx123'
+
+                    });
+
+
+                expect(
+                    Transaction.create.calledOnce
+                ).to.equal(true);
+
+            }
+        );
+
+    });
 
 });

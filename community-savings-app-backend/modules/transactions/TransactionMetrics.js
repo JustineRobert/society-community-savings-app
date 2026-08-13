@@ -6,79 +6,425 @@
  * Enterprise Transaction Metrics Engine
  * ============================================================================
  *
- * Observability layer for distributed financial transactions.
+ * File:
+ *   backend/modules/transactions/TransactionMetrics.js
  *
- * Features
- * --------
- * ✓ Transaction counters
- * ✓ Latency measurement
- * ✓ State transition metrics
- * ✓ Retry metrics
- * ✓ Timeout metrics
- * ✓ Recovery metrics
- * ✓ Failure classification
- * ✓ Tenant dimensions
- * ✓ Provider dimensions
- * ✓ Prometheus compatible format
- * ✓ OpenTelemetry integration
- * ✓ Runtime snapshots
+ * Purpose
+ * -------
+ * Central observability layer for distributed financial transactions.
+ *
+ * Responsibilities
+ * ----------------
+ * • Transaction counters
+ * • Transaction gauges
+ * • Histogram measurements
+ * • State transition metrics
+ * • Retry / timeout metrics
+ * • Recovery metrics
+ * • Lock metrics
+ * • Idempotency metrics
+ * • Outbox metrics
+ * • Failure classification
+ * • Tenant/provider/operation dimensions
+ * • Prometheus adapter integration
+ * • OpenTelemetry adapter hooks
+ * • Runtime snapshots
+ * • Health diagnostics
+ *
+ * Design Principles
+ * -----------------
+ * • Best-effort observability
+ * • Metrics failures never break financial workflows
+ * • Bounded metric cardinality
+ * • Stable metric names
+ * • Explicit label allow-list
+ * • No secrets in labels
+ * • No unbounded dynamic metric names
+ * • In-memory statistics remain available for diagnostics/tests
+ *
+ * IMPORTANT
+ * ---------
+ * High-cardinality identifiers such as:
+ *
+ * • transactionId
+ * • requestId
+ * • correlationId
+ * • eventId
+ * • idempotencyKey
+ *
+ * MUST NOT be Prometheus labels.
  *
  * ============================================================================
  */
 
+const crypto = require('crypto');
+
+
+/**
+ * ============================================================================
+ * Constants
+ * ============================================================================
+ */
+
+const DEFAULT_SERVICE_NAME =
+    'transaction-service';
+
+
+const DEFAULT_HISTOGRAM_BUCKETS =
+    Object.freeze([
+
+        5,
+        10,
+        25,
+        50,
+        100,
+        250,
+        500,
+        1000,
+        2500,
+        5000,
+        10000,
+        30000,
+        60000
+
+    ]);
+
+
+const DEFAULT_LABELS =
+    Object.freeze({
+
+        tenantId:
+            'unknown',
+
+        provider:
+            'internal',
+
+        operation:
+            'unknown',
+
+        status:
+            'unknown',
+
+        outcome:
+            'unknown',
+
+        errorCode:
+            'none',
+
+        errorCategory:
+            'none'
+
+    });
+
+
+/**
+ * Only low-cardinality labels should be exposed to Prometheus/OpenTelemetry.
+ */
+const LABEL_KEYS =
+    Object.freeze([
+
+        'tenantId',
+
+        'provider',
+
+        'operation',
+
+        'status',
+
+        'outcome',
+
+        'errorCode',
+
+        'errorCategory'
+
+    ]);
+
+
+/**
+ * ============================================================================
+ * Metric Names
+ * ============================================================================
+ */
+
+const METRICS = Object.freeze({
+
+    TRANSACTIONS_STARTED:
+        'transactions_started_total',
+
+    TRANSACTIONS_COMPLETED:
+        'transactions_completed_total',
+
+    TRANSACTIONS_FAILED:
+        'transactions_failed_total',
+
+    TRANSACTIONS_ROLLED_BACK:
+        'transactions_rolled_back_total',
+
+    TRANSACTIONS_TIMEOUT:
+        'transactions_timeout_total',
+
+    TRANSACTIONS_RETRY:
+        'transactions_retry_total',
+
+    TRANSACTIONS_RECOVERED:
+        'transactions_recovered_total',
+
+    TRANSACTIONS_LOCK_WAIT:
+        'transactions_lock_wait_total',
+
+    TRANSACTIONS_AUDIT_EVENTS:
+        'transactions_audit_events_total',
+
+    TRANSACTIONS_ACTIVE:
+        'transactions_active',
+
+    TRANSACTION_DURATION:
+        'transaction_duration_ms',
+
+    TRANSACTION_OPERATION_DURATION:
+        'transaction_operation_duration_ms',
+
+    TRANSACTION_STATE_TRANSITIONS:
+        'transaction_state_transitions_total',
+
+    TRANSACTION_ERRORS:
+        'transaction_errors_total',
+
+    TRANSACTION_FAILURES:
+        'transaction_failures_total',
+
+    LOCK_ACQUIRED:
+        'transaction_lock_acquired_total',
+
+    LOCK_RELEASED:
+        'transaction_lock_released_total',
+
+    LOCK_TIMEOUT:
+        'transaction_lock_timeout_total',
+
+    LOCK_RENEWED:
+        'transaction_lock_renewed_total',
+
+    LOCK_LEASE_LOST:
+        'transaction_lock_lease_lost_total',
+
+    IDEMPOTENCY_RESERVED:
+        'transaction_idempotency_reserved_total',
+
+    IDEMPOTENCY_DUPLICATE:
+        'transaction_idempotency_duplicate_total',
+
+    IDEMPOTENCY_CONFLICT:
+        'transaction_idempotency_conflict_total',
+
+    IDEMPOTENCY_COMPLETED:
+        'transaction_idempotency_completed_total',
+
+    OUTBOX_CLAIMED:
+        'transaction_outbox_claimed_total',
+
+    OUTBOX_PUBLISHED:
+        'transaction_outbox_published_total',
+
+    OUTBOX_FAILED:
+        'transaction_outbox_publish_failure_total',
+
+    OUTBOX_RETRY:
+        'transaction_outbox_retry_total',
+
+    OUTBOX_DEAD_LETTERED:
+        'transaction_outbox_dead_lettered_total',
+
+    OUTBOX_HEARTBEAT:
+        'transaction_outbox_heartbeat_total',
+
+    OUTBOX_LEASE_LOST:
+        'transaction_outbox_lease_lost_total',
+
+    RECOVERY_STARTED:
+        'transaction_recovery_started_total',
+
+    RECOVERY_COMPLETED:
+        'transaction_recovery_completed_total',
+
+    RECOVERY_FAILED:
+        'transaction_recovery_failed_total',
+
+    RECOVERY_DURATION:
+        'transaction_recovery_duration_ms'
+
+});
+
+
+/**
+ * ============================================================================
+ * Utility Functions
+ * ============================================================================
+ */
+
+function stableStringify(
+    value
+) {
+
+    if (
+        value === null ||
+        value === undefined
+    ) {
+
+        return String(
+            value
+        );
+
+    }
+
+    if (
+        Array.isArray(value)
+    ) {
+
+        return `[${value.map(
+            stableStringify
+        ).join(',')}]`;
+
+    }
+
+    if (
+        typeof value !== 'object'
+    ) {
+
+        return JSON.stringify(
+            value
+        );
+
+    }
+
+    return `{${Object.keys(value)
+        .sort()
+        .map(
+            key =>
+                `${JSON.stringify(key)}:${stableStringify(
+                    value[key]
+                )}`
+        )
+        .join(',')}}`;
+
+}
+
+
+function normalizeNumber(
+    value,
+    fallback = 0
+) {
+
+    const numeric =
+        Number(
+            value
+        );
+
+
+    return Number.isFinite(
+        numeric
+    )
+        ? numeric
+        : fallback;
+
+}
+
+
+/**
+ * ============================================================================
+ * Transaction Metrics
+ * ============================================================================
+ */
 
 class TransactionMetrics {
 
-
-    constructor(options = {}) {
-
+    constructor(
+        options = {}
+    ) {
 
         this.logger =
-            options.logger || console;
-
+            options.logger ||
+            console;
 
 
         this.prometheus =
-            options.prometheus || null;
-
+            options.prometheus ||
+            null;
 
 
         this.tracer =
-            options.tracer || null;
+            options.tracer ||
+            null;
 
+
+        this.openTelemetry =
+            options.openTelemetry ||
+            null;
 
 
         this.serviceName =
-
             options.serviceName ||
+            DEFAULT_SERVICE_NAME;
 
-            'transaction-service';
 
+        this.environment =
+            options.environment ||
+            process.env.NODE_ENV ||
+            'development';
+
+
+        this.instanceId =
+            options.instanceId ||
+            crypto.randomUUID();
+
+
+        this.histogramBuckets =
+            Object.freeze(
+                (
+                    options.histogramBuckets ||
+                    DEFAULT_HISTOGRAM_BUCKETS
+                )
+                    .map(
+                        value =>
+                            Number(
+                                value
+                            )
+                    )
+                    .filter(
+                        Number.isFinite
+                    )
+                    .sort(
+                        (a, b) =>
+                            a - b
+                    )
+            );
 
 
         this.metrics = {
 
+            counters:
+                {},
 
-            counters: {},
+            gauges:
+                {},
 
-
-            gauges: {},
-
-
-            histograms: {}
+            histograms:
+                {}
 
         };
 
 
+        this.activeTransactions =
+            new Map();
 
-        this.activeTransactions = new Map();
+
+        this.recoveryTimers =
+            new Map();
 
 
         this.initialiseDefaults();
 
-
     }
-
 
 
     /**
@@ -87,78 +433,98 @@ class TransactionMetrics {
      * =========================================================================
      */
 
-
     initialiseDefaults() {
 
+        [
 
-        const counters = [
+            METRICS.TRANSACTIONS_STARTED,
 
+            METRICS.TRANSACTIONS_COMPLETED,
 
-            'transactions_started_total',
+            METRICS.TRANSACTIONS_FAILED,
 
+            METRICS.TRANSACTIONS_ROLLED_BACK,
 
-            'transactions_completed_total',
+            METRICS.TRANSACTIONS_TIMEOUT,
 
+            METRICS.TRANSACTIONS_RETRY,
 
-            'transactions_failed_total',
+            METRICS.TRANSACTIONS_RECOVERED,
 
+            METRICS.TRANSACTIONS_LOCK_WAIT,
 
-            'transactions_rolled_back_total',
+            METRICS.TRANSACTIONS_AUDIT_EVENTS,
 
+            METRICS.TRANSACTIONS_ERRORS,
 
-            'transactions_timeout_total',
+            METRICS.TRANSACTIONS_FAILURES,
 
+            METRICS.LOCK_ACQUIRED,
 
-            'transactions_retry_total',
+            METRICS.LOCK_RELEASED,
 
+            METRICS.LOCK_TIMEOUT,
 
-            'transactions_recovered_total',
+            METRICS.LOCK_RENEWED,
 
+            METRICS.LOCK_LEASE_LOST,
 
-            'transactions_lock_wait_total',
+            METRICS.IDEMPOTENCY_RESERVED,
 
+            METRICS.IDEMPOTENCY_DUPLICATE,
 
-            'transactions_audit_events_total'
+            METRICS.IDEMPOTENCY_CONFLICT,
 
+            METRICS.IDEMPOTENCY_COMPLETED,
 
-        ];
+            METRICS.OUTBOX_CLAIMED,
 
+            METRICS.OUTBOX_PUBLISHED,
 
+            METRICS.OUTBOX_FAILED,
 
-        counters.forEach(name => {
+            METRICS.OUTBOX_RETRY,
 
+            METRICS.OUTBOX_DEAD_LETTERED,
 
-            this.createCounter(name);
+            METRICS.OUTBOX_HEARTBEAT,
 
+            METRICS.OUTBOX_LEASE_LOST,
 
-        });
+            METRICS.RECOVERY_STARTED,
 
+            METRICS.RECOVERY_COMPLETED,
+
+            METRICS.RECOVERY_FAILED
+
+        ].forEach(
+            name =>
+                this.createCounter(
+                    name
+                )
+        );
 
 
         this.createGauge(
-
-            'transactions_active'
-
-        );
-
-
-
-        this.createHistogram(
-
-            'transaction_duration_ms'
-
+            METRICS.TRANSACTIONS_ACTIVE
         );
 
 
         this.createHistogram(
-
-            'transaction_operation_duration_ms'
-
+            METRICS.TRANSACTION_DURATION
         );
 
+
+        this.createHistogram(
+            METRICS.TRANSACTION_OPERATION_DURATION
+        );
+
+
+        this.createHistogram(
+            METRICS.RECOVERY_DURATION
+        );
 
     }
-
 
 
     /**
@@ -167,55 +533,98 @@ class TransactionMetrics {
      * =========================================================================
      */
 
+    createCounter(
+        name
+    ) {
 
-    createCounter(name) {
+        const metricName =
+            this.normalizeMetricName(
+                name
+            );
 
 
-        if (!this.metrics.counters[name]) {
+        if (
+            !this.metrics.counters[metricName]
+        ) {
 
+            this.metrics.counters[metricName] = {
 
-            this.metrics.counters[name] = {
+                value:
+                    0,
 
-                value: 0
+                series:
+                    {}
 
             };
 
         }
 
 
+        return metricName;
+
     }
 
 
+    increment(
+        name,
+        labels = {},
+        amount = 1
+    ) {
 
-    increment(name, labels = {}) {
+        const metricName =
+            this.createCounter(
+                name
+            );
 
 
-        if (!this.metrics.counters[name]) {
+        const increment =
+            normalizeNumber(
+                amount,
+                1
+            );
 
 
-            this.createCounter(name);
+        const normalizedLabels =
+            this.labels(
+                labels
+            );
 
-        }
+
+        const key =
+            this.labelKey(
+                normalizedLabels
+            );
 
 
+        const counter =
+            this.metrics.counters[
+                metricName
+            ];
 
-        this.metrics.counters[name].value++;
 
+        counter.value +=
+            increment;
+
+
+        counter.series[key] =
+            (
+                counter.series[key] ||
+                0
+            ) +
+            increment;
 
 
         this.exportMetric(
-
-            name,
-
+            metricName,
             'counter',
-
-            labels
-
+            normalizedLabels,
+            increment
         );
 
 
-    }
+        return counter.value;
 
+    }
 
 
     /**
@@ -224,92 +633,146 @@ class TransactionMetrics {
      * =========================================================================
      */
 
+    createGauge(
+        name
+    ) {
 
-    createGauge(name) {
+        const metricName =
+            this.normalizeMetricName(
+                name
+            );
 
 
-        if (!this.metrics.gauges[name]) {
+        if (
+            !this.metrics.gauges[metricName]
+        ) {
 
+            this.metrics.gauges[metricName] = {
 
-            this.metrics.gauges[name] = {
-
-                value: 0
+                value:
+                    0
 
             };
 
-
         }
 
+
+        return metricName;
 
     }
 
 
+    setGauge(
+        name,
+        value,
+        labels = {}
+    ) {
 
-    setGauge(name, value) {
+        const metricName =
+            this.createGauge(
+                name
+            );
 
 
-        if (!this.metrics.gauges[name]) {
+        const normalizedValue =
+            normalizeNumber(
+                value
+            );
 
 
-            this.createGauge(name);
+        const normalizedLabels =
+            this.labels(
+                labels
+            );
 
-        }
 
-
-
-        this.metrics.gauges[name].value = value;
-
+        this.metrics.gauges[
+            metricName
+        ].value =
+            normalizedValue;
 
 
         this.exportMetric(
-
-            name,
-
-            'gauge'
-
+            metricName,
+            'gauge',
+            normalizedLabels,
+            normalizedValue
         );
 
 
+        return normalizedValue;
+
     }
 
 
+    incrementGauge(
+        name,
+        amount = 1,
+        labels = {}
+    ) {
 
-    incrementGauge(name) {
+        const metricName =
+            this.createGauge(
+                name
+            );
 
 
-        if (!this.metrics.gauges[name]) {
+        const gauge =
+            this.metrics.gauges[
+                metricName
+            ];
 
 
-            this.createGauge(name);
+        gauge.value +=
+            normalizeNumber(
+                amount,
+                1
+            );
+
+
+        if (
+            gauge.value < 0
+        ) {
+
+            gauge.value =
+                0;
 
         }
 
 
-
-        this.metrics.gauges[name].value++;
-
-
-    }
-
-
-
-    decrementGauge(name) {
-
-
-        if (!this.metrics.gauges[name]) {
+        this.exportMetric(
+            metricName,
+            'gauge',
+            this.labels(
+                labels
+            ),
+            gauge.value
+        );
 
 
-            this.createGauge(name);
-
-        }
-
-
-
-        this.metrics.gauges[name].value--;
-
+        return gauge.value;
 
     }
 
+
+    decrementGauge(
+        name,
+        amount = 1,
+        labels = {}
+    ) {
+
+        return this.incrementGauge(
+            name,
+            -Math.abs(
+                normalizeNumber(
+                    amount,
+                    1
+                )
+            ),
+            labels
+        );
+
+    }
 
 
     /**
@@ -318,110 +781,262 @@ class TransactionMetrics {
      * =========================================================================
      */
 
+    createHistogram(
+        name
+    ) {
 
-    createHistogram(name) {
-
-
-        if (!this.metrics.histograms[name]) {
-
-
-            this.metrics.histograms[name] = {
-
-
-                count: 0,
+        const metricName =
+            this.normalizeMetricName(
+                name
+            );
 
 
-                total: 0,
+        if (
+            !this.metrics.histograms[metricName]
+        ) {
+
+            this.metrics.histograms[
+                metricName
+            ] = {
+
+                count:
+                    0,
+
+                total:
+                    0,
+
+                min:
+                    null,
+
+                max:
+                    null,
+
+                buckets:
+                    this.histogramBuckets.map(
+                        upperBound => ({
+
+                            upperBound,
+
+                            count:
+                                0
+
+                        })
+                    ),
+
+                series:
+                    {}
+
+            };
+
+        }
 
 
-                min: null,
+        return metricName;
+
+    }
 
 
-                max: null
+    observe(
+        name,
+        value,
+        labels = {}
+    ) {
 
+        const metricName =
+            this.createHistogram(
+                name
+            );
+
+
+        const numericValue =
+            normalizeNumber(
+                value,
+                0
+            );
+
+
+        const normalizedLabels =
+            this.labels(
+                labels
+            );
+
+
+        const key =
+            this.labelKey(
+                normalizedLabels
+            );
+
+
+        const histogram =
+            this.metrics.histograms[
+                metricName
+            ];
+
+
+        histogram.count +=
+            1;
+
+
+        histogram.total +=
+            numericValue;
+
+
+        histogram.min =
+            histogram.min === null
+
+                ? numericValue
+
+                : Math.min(
+                    histogram.min,
+                    numericValue
+                );
+
+
+        histogram.max =
+            histogram.max === null
+
+                ? numericValue
+
+                : Math.max(
+                    histogram.max,
+                    numericValue
+                );
+
+
+        let series =
+            histogram.series[key];
+
+
+        if (
+            !series
+        ) {
+
+            series = {
+
+                count:
+                    0,
+
+                total:
+                    0,
+
+                min:
+                    null,
+
+                max:
+                    null,
+
+                buckets:
+                    this.histogramBuckets.map(
+                        upperBound => ({
+
+                            upperBound,
+
+                            count:
+                                0
+
+                        })
+                    )
 
             };
 
 
-        }
-
-
-    }
-
-
-
-    observe(name, value, labels = {}) {
-
-
-        if (!this.metrics.histograms[name]) {
-
-
-            this.createHistogram(name);
-
+            histogram.series[key] =
+                series;
 
         }
 
 
+        series.count++;
+        series.total +=
+            numericValue;
 
-        const histogram =
+        series.min =
+            series.min === null
 
-            this.metrics.histograms[name];
-
-
-
-        histogram.count++;
-
-
-
-        histogram.total += value;
-
-
-
-        histogram.min =
-
-            histogram.min === null
-
-                ? value
+                ? numericValue
 
                 : Math.min(
-
-                    histogram.min,
-
-                    value
-
+                    series.min,
+                    numericValue
                 );
 
+        series.max =
+            series.max === null
 
-
-        histogram.max =
-
-            histogram.max === null
-
-                ? value
+                ? numericValue
 
                 : Math.max(
-
-                    histogram.max,
-
-                    value
-
+                    series.max,
+                    numericValue
                 );
 
+
+        for (
+            const bucket
+            of histogram.buckets
+        ) {
+
+            if (
+                numericValue <=
+                bucket.upperBound
+            ) {
+
+                bucket.count++;
+
+            }
+
+        }
+
+
+        for (
+            const bucket
+            of series.buckets
+        ) {
+
+            if (
+                numericValue <=
+                bucket.upperBound
+            ) {
+
+                bucket.count++;
+
+            }
+
+        }
 
 
         this.exportMetric(
-
-            name,
-
+            metricName,
             'histogram',
-
-            labels
-
+            normalizedLabels,
+            numericValue
         );
 
 
+        return numericValue;
+
     }
 
+
+    /**
+     * =========================================================================
+     * Alias
+     * =========================================================================
+     */
+
+    histogram(
+        name,
+        value,
+        labels = {}
+    ) {
+
+        return this.observe(
+            name,
+            value,
+            labels
+        );
+
+    }
 
 
     /**
@@ -430,277 +1045,987 @@ class TransactionMetrics {
      * =========================================================================
      */
 
+    transactionStarted(
+        context = {}
+    ) {
 
-    transactionStarted(context = {}) {
-
-
-        const id =
-
+        const transactionId =
             context.transactionId;
 
 
+        if (
+            transactionId
+        ) {
 
-        this.activeTransactions.set(
+            this.activeTransactions.set(
 
-            id,
+                this.activityKey(
+                    context
+                ),
+
+                {
+
+                    transactionId,
+
+                    tenantId:
+                        context.tenantId ||
+                        'unknown',
+
+                    startedAt:
+                        Date.now()
+
+                }
+
+            );
+
+        }
+
+
+        this.increment(
+
+            METRICS.TRANSACTIONS_STARTED,
+
+            this.labels(
+                context
+            )
+
+        );
+
+
+        this.incrementGauge(
+
+            METRICS.TRANSACTIONS_ACTIVE,
+
+            1
+
+        );
+
+
+        return true;
+
+    }
+
+
+    transactionCompleted(
+        context = {}
+    ) {
+
+        this.increment(
+
+            METRICS.TRANSACTIONS_COMPLETED,
+
+            this.labels(
+                {
+                    ...context,
+                    outcome:
+                        'success',
+                    status:
+                        'COMPLETED'
+                }
+            )
+
+        );
+
+
+        this.finishDuration(
+            context
+        );
+
+
+        return true;
+
+    }
+
+
+    transactionFailed(
+        context = {}
+    ) {
+
+        const errorLabels =
+            this.errorLabels(
+                context.error
+            );
+
+
+        this.increment(
+
+            METRICS.TRANSACTIONS_FAILED,
+
+            this.labels({
+
+                ...context,
+
+                ...errorLabels,
+
+                outcome:
+                    'failure',
+
+                status:
+                    'FAILED'
+
+            })
+
+        );
+
+
+        this.increment(
+
+            METRICS.TRANSACTIONS_FAILURES,
+
+            this.labels({
+
+                ...context,
+
+                ...errorLabels
+
+            })
+
+        );
+
+
+        this.finishDuration(
+            context
+        );
+
+
+        return true;
+
+    }
+
+
+    transactionRollback(
+        context = {}
+    ) {
+
+        this.increment(
+
+            METRICS.TRANSACTIONS_ROLLED_BACK,
+
+            this.labels({
+
+                ...context,
+
+                outcome:
+                    'rollback',
+
+                status:
+                    'ROLLED_BACK'
+
+            })
+
+        );
+
+
+        this.finishDuration(
+            context
+        );
+
+
+        return true;
+
+    }
+
+
+    transactionTimeout(
+        context = {}
+    ) {
+
+        this.increment(
+
+            METRICS.TRANSACTIONS_TIMEOUT,
+
+            this.labels({
+
+                ...context,
+
+                outcome:
+                    'timeout',
+
+                status:
+                    'TIMEOUT'
+
+            })
+
+        );
+
+
+        this.finishDuration(
+            context
+        );
+
+
+        return true;
+
+    }
+
+
+    transactionRetry(
+        context = {}
+    ) {
+
+        this.increment(
+
+            METRICS.TRANSACTIONS_RETRY,
+
+            this.labels({
+
+                ...context,
+
+                outcome:
+                    'retry'
+
+            })
+
+        );
+
+
+        return true;
+
+    }
+
+
+    transactionRecovered(
+        context = {}
+    ) {
+
+        this.increment(
+
+            METRICS.TRANSACTIONS_RECOVERED,
+
+            this.labels({
+
+                ...context,
+
+                outcome:
+                    'recovered',
+
+                status:
+                    'RECOVERED'
+
+            })
+
+        );
+
+
+        return true;
+
+    }
+
+
+    /**
+     * =========================================================================
+     * Duration
+     * =========================================================================
+     */
+
+    finishDuration(
+        context = {}
+    ) {
+
+        const key =
+            this.activityKey(
+                context
+            );
+
+
+        const active =
+            this.activeTransactions.get(
+                key
+            );
+
+
+        if (
+            !active
+        ) {
+
+            return null;
+
+        }
+
+
+        const duration =
+            Math.max(
+
+                0,
+
+                Date.now() -
+                active.startedAt
+
+            );
+
+
+        this.observe(
+
+            METRICS.TRANSACTION_DURATION,
+
+            duration,
+
+            this.labels(
+                context
+            )
+
+        );
+
+
+        this.activeTransactions.delete(
+            key
+        );
+
+
+        this.decrementGauge(
+            METRICS.TRANSACTIONS_ACTIVE
+        );
+
+
+        return duration;
+
+    }
+
+
+    /**
+     * =========================================================================
+     * Explicit Duration API
+     * =========================================================================
+     */
+
+    transactionDuration(
+        duration,
+        context = {}
+    ) {
+
+        return this.observe(
+
+            METRICS.TRANSACTION_DURATION,
+
+            duration,
+
+            this.labels(
+                context
+            )
+
+        );
+
+    }
+
+
+    /**
+     * =========================================================================
+     * State Transition
+     * =========================================================================
+     *
+     * Do NOT create:
+     *
+     * transaction_state_CREATED_to_PROCESSING_total
+     *
+     * as a Prometheus metric name.
+     *
+     * Use one bounded metric with labels instead.
+     */
+
+    stateTransition(
+        from,
+        to,
+        context = {}
+    ) {
+
+        this.increment(
+
+            METRICS.TRANSACTION_STATE_TRANSITIONS,
+
+            this.labels({
+
+                ...context,
+
+                status:
+                    `${from || 'UNKNOWN'}_TO_${to || 'UNKNOWN'}`
+
+            })
+
+        );
+
+
+        return true;
+
+    }
+
+
+    /**
+     * =========================================================================
+     * Operation Duration
+     * =========================================================================
+     */
+
+    operationDuration(
+        duration,
+        context = {}
+    ) {
+
+        return this.observe(
+
+            METRICS.TRANSACTION_OPERATION_DURATION,
+
+            duration,
+
+            this.labels(
+                context
+            )
+
+        );
+
+    }
+
+
+    /**
+     * =========================================================================
+     * Error Recording
+     * =========================================================================
+     */
+
+    recordError(
+        error,
+        context = {}
+    ) {
+
+        const errorLabels =
+            this.errorLabels(
+                error
+            );
+
+
+        return this.increment(
+
+            METRICS.TRANSACTIONS_ERRORS,
+
+            this.labels({
+
+                ...context,
+
+                ...errorLabels,
+
+                outcome:
+                    'error'
+
+            })
+
+        );
+
+    }
+
+
+    /**
+     * =========================================================================
+     * Lock Metrics
+     * =========================================================================
+     */
+
+    lockAcquired(
+        context = {}
+    ) {
+
+        return this.increment(
+
+            METRICS.LOCK_ACQUIRED,
+
+            this.labels(
+                context
+            )
+
+        );
+
+    }
+
+
+    lockReleased(
+        context = {}
+    ) {
+
+        return this.increment(
+
+            METRICS.LOCK_RELEASED,
+
+            this.labels(
+                context
+            )
+
+        );
+
+    }
+
+
+    lockTimeout(
+        context = {}
+    ) {
+
+        return this.increment(
+
+            METRICS.LOCK_TIMEOUT,
+
+            this.labels({
+
+                ...context,
+
+                outcome:
+                    'timeout'
+
+            })
+
+        );
+
+    }
+
+
+    lockRenewed(
+        context = {}
+    ) {
+
+        return this.increment(
+
+            METRICS.LOCK_RENEWED,
+
+            this.labels(
+                context
+            )
+
+        );
+
+    }
+
+
+    lockLeaseLost(
+        context = {}
+    ) {
+
+        return this.increment(
+
+            METRICS.LOCK_LEASE_LOST,
+
+            this.labels({
+
+                ...context,
+
+                outcome:
+                    'lease_lost'
+
+            })
+
+        );
+
+    }
+
+
+    lockWait(
+        context = {}
+    ) {
+
+        return this.increment(
+
+            METRICS.TRANSACTIONS_LOCK_WAIT,
+
+            this.labels(
+                context
+            )
+
+        );
+
+    }
+
+
+    /**
+     * =========================================================================
+     * Idempotency Metrics
+     * =========================================================================
+     */
+
+    idempotencyReserved(
+        context = {}
+    ) {
+
+        return this.increment(
+
+            METRICS.IDEMPOTENCY_RESERVED,
+
+            this.labels(
+                context
+            )
+
+        );
+
+    }
+
+
+    idempotencyDuplicate(
+        context = {}
+    ) {
+
+        return this.increment(
+
+            METRICS.IDEMPOTENCY_DUPLICATE,
+
+            this.labels({
+
+                ...context,
+
+                outcome:
+                    'duplicate'
+
+            })
+
+        );
+
+    }
+
+
+    idempotencyConflict(
+        context = {}
+    ) {
+
+        return this.increment(
+
+            METRICS.IDEMPOTENCY_CONFLICT,
+
+            this.labels({
+
+                ...context,
+
+                outcome:
+                    'conflict'
+
+            })
+
+        );
+
+    }
+
+
+    idempotencyCompleted(
+        context = {}
+    ) {
+
+        return this.increment(
+
+            METRICS.IDEMPOTENCY_COMPLETED,
+
+            this.labels(
+                context
+            )
+
+        );
+
+    }
+
+
+    /**
+     * =========================================================================
+     * Outbox Metrics
+     * =========================================================================
+     */
+
+    outboxClaimed(
+        context = {}
+    ) {
+
+        return this.increment(
+
+            METRICS.OUTBOX_CLAIMED,
+
+            this.labels(
+                context
+            )
+
+        );
+
+    }
+
+
+    outboxPublished(
+        context = {}
+    ) {
+
+        return this.increment(
+
+            METRICS.OUTBOX_PUBLISHED,
+
+            this.labels({
+
+                ...context,
+
+                outcome:
+                    'success'
+
+            })
+
+        );
+
+    }
+
+
+    outboxFailed(
+        context = {}
+    ) {
+
+        return this.increment(
+
+            METRICS.OUTBOX_FAILED,
+
+            this.labels({
+
+                ...context,
+
+                outcome:
+                    'failure'
+
+            })
+
+        );
+
+    }
+
+
+    outboxRetry(
+        context = {}
+    ) {
+
+        return this.increment(
+
+            METRICS.OUTBOX_RETRY,
+
+            this.labels({
+
+                ...context,
+
+                outcome:
+                    'retry'
+
+            })
+
+        );
+
+    }
+
+
+    outboxDeadLettered(
+        context = {}
+    ) {
+
+        return this.increment(
+
+            METRICS.OUTBOX_DEAD_LETTERED,
+
+            this.labels({
+
+                ...context,
+
+                outcome:
+                    'dead_letter'
+
+            })
+
+        );
+
+    }
+
+
+    outboxHeartbeat(
+        context = {}
+    ) {
+
+        return this.increment(
+
+            METRICS.OUTBOX_HEARTBEAT,
+
+            this.labels(
+                context
+            )
+
+        );
+
+    }
+
+
+    outboxLeaseLost(
+        context = {}
+    ) {
+
+        return this.increment(
+
+            METRICS.OUTBOX_LEASE_LOST,
+
+            this.labels({
+
+                ...context,
+
+                outcome:
+                    'lease_lost'
+
+            })
+
+        );
+
+    }
+
+
+    /**
+     * =========================================================================
+     * Recovery Metrics
+     * =========================================================================
+     */
+
+    recoveryStarted(
+        context = {}
+    ) {
+
+        this.increment(
+
+            METRICS.RECOVERY_STARTED,
+
+            this.labels(
+                context
+            )
+
+        );
+
+
+        this.recoveryTimers.set(
+
+            this.activityKey(
+                context
+            ),
 
             Date.now()
 
         );
 
 
-
-        this.increment(
-
-            'transactions_started_total',
-
-            this.labels(context)
-
-        );
-
-
-
-        this.incrementGauge(
-
-            'transactions_active'
-
-        );
-
+        return true;
 
     }
 
 
-
-    transactionCompleted(context = {}) {
-
+    recoveryCompleted(
+        context = {}
+    ) {
 
         this.increment(
 
-            'transactions_completed_total',
+            METRICS.RECOVERY_COMPLETED,
 
-            this.labels(context)
+            this.labels({
+
+                ...context,
+
+                outcome:
+                    'success'
+
+            })
 
         );
 
 
-
-        this.finishDuration(
-
-            context.transactionId,
-
+        this.finishRecoveryDuration(
             context
-
         );
 
+
+        return true;
 
     }
 
 
-
-    transactionFailed(context = {}) {
-
-
-        this.increment(
-
-            'transactions_failed_total',
-
-            this.labels(context)
-
-        );
-
-
-
-        this.finishDuration(
-
-            context.transactionId,
-
-            context
-
-        );
-
-
-    }
-
-
-
-    transactionRollback(context = {}) {
-
-
-        this.increment(
-
-            'transactions_rolled_back_total',
-
-            this.labels(context)
-
-        );
-
-
-    }
-
-
-
-    transactionTimeout(context = {}) {
-
-
-        this.increment(
-
-            'transactions_timeout_total',
-
-            this.labels(context)
-
-        );
-
-
-    }
-
-
-
-    transactionRetry(context = {}) {
-
-
-        this.increment(
-
-            'transactions_retry_total',
-
-            this.labels(context)
-
-        );
-
-
-    }
-
-
-
-    transactionRecovered(context = {}) {
-
-
-        this.increment(
-
-            'transactions_recovered_total',
-
-            this.labels(context)
-
-        );
-
-
-    }
-
-
-
-    /**
-     * =========================================================================
-     * Duration Tracking
-     * =========================================================================
-     */
-
-
-    finishDuration(transactionId, context) {
-
-
-        const started =
-
-            this.activeTransactions.get(
-
-                transactionId
-
+    recoveryFailed(
+        context = {}
+    ) {
+
+        const errorLabels =
+            this.errorLabels(
+                context.error
             );
 
 
+        this.increment(
 
-        if (!started) {
+            METRICS.RECOVERY_FAILED,
+
+            this.labels({
+
+                ...context,
+
+                ...errorLabels,
+
+                outcome:
+                    'failure'
+
+            })
+
+        );
 
 
-            return;
+        this.finishRecoveryDuration(
+            context
+        );
+
+
+        return true;
+
+    }
+
+
+    finishRecoveryDuration(
+        context = {}
+    ) {
+
+        const key =
+            this.activityKey(
+                context
+            );
+
+
+        const started =
+            this.recoveryTimers.get(
+                key
+            );
+
+
+        if (
+            !started
+        ) {
+
+            return null;
 
         }
 
 
-
         const duration =
+            Math.max(
 
-            Date.now() -
+                0,
 
-            started;
+                Date.now() -
+                started
 
-
-
-        this.observe(
-
-            'transaction_duration_ms',
-
-            duration,
-
-            this.labels(context)
-
-        );
-
-
-
-        this.activeTransactions.delete(
-
-            transactionId
-
-        );
-
-
-
-        this.decrementGauge(
-
-            'transactions_active'
-
-        );
-
-
-    }
-
-
-
-    /**
-     * =========================================================================
-     * State Metrics
-     * =========================================================================
-     */
-
-
-    stateTransition(from, to, context = {}) {
-
-
-        this.increment(
-
-            `transaction_state_${from}_to_${to}_total`,
-
-            this.labels(context)
-
-        );
-
-
-    }
-
-
-
-    /**
-     * =========================================================================
-     * Operation Timing
-     * =========================================================================
-     */
-
-
-    operationDuration(duration, context = {}) {
+            );
 
 
         this.observe(
 
-            'transaction_operation_duration_ms',
+            METRICS.RECOVERY_DURATION,
 
             duration,
 
-            this.labels(context)
+            this.labels(
+                context
+            )
 
         );
 
 
-    }
+        this.recoveryTimers.delete(
+            key
+        );
 
+
+        return duration;
+
+    }
 
 
     /**
@@ -709,68 +2034,445 @@ class TransactionMetrics {
      * =========================================================================
      */
 
+    labels(
+        context = {}
+    ) {
 
-    labels(context = {}) {
-
-
-        return {
-
-
-            tenantId:
-
-                context.tenantId || 'unknown',
+        const output = {};
 
 
-            provider:
+        for (
+            const key
+            of LABEL_KEYS
+        ) {
 
-                context.provider || 'internal',
+            let value =
+                context[key];
 
 
-            operation:
+            if (
+                value ===
+                    undefined ||
+                value ===
+                    null ||
+                value ===
+                    ''
+            ) {
 
-                context.operation || 'unknown'
+                value =
+                    DEFAULT_LABELS[key];
+
+            }
 
 
-        };
+            output[key] =
+                this.normalizeLabel(
+                    key,
+                    value
+                );
 
+        }
+
+
+        return output;
 
     }
 
 
-
     /**
      * =========================================================================
-     * Export Hook
+     * Error Labels
      * =========================================================================
      */
 
+    errorLabels(
+        error
+    ) {
 
-    exportMetric(name, type, labels) {
+        if (
+            !error
+        ) {
+
+            return {
+
+                errorCode:
+                    'none',
+
+                errorCategory:
+                    'none'
+
+            };
+
+        }
+
+
+        return {
+
+            errorCode:
+                this.normalizeLabel(
+
+                    'errorCode',
+
+                    error.code ||
+                    'unknown'
+
+                ),
+
+            errorCategory:
+                this.normalizeLabel(
+
+                    'errorCategory',
+
+                    error.category ||
+                    error.name ||
+                    'unknown'
+
+                )
+
+        };
+
+    }
+
+
+    /**
+     * =========================================================================
+     * Label Sanitization
+     * =========================================================================
+     */
+
+    normalizeLabel(
+        key,
+        value
+    ) {
+
+        let normalized =
+            String(
+                value
+            )
+                .trim();
+
+
+        /**
+         * Protect against accidental high-cardinality identifiers.
+         *
+         * Do not put UUID-shaped transaction IDs into labels even if a caller
+         * accidentally supplies one under an accepted dimension.
+         */
+
+        if (
+            [
+                'tenantId'
+            ].includes(
+                key
+            )
+        ) {
+
+            normalized =
+                normalized.slice(
+                    0,
+                    128
+                );
+
+        }
 
 
         if (
-
-            this.prometheus?.record
-
+            [
+                'provider',
+                'operation',
+                'status',
+                'outcome',
+                'errorCode',
+                'errorCategory'
+            ].includes(
+                key
+            )
         ) {
 
+            normalized =
+                normalized
+                    .toLowerCase()
+                    .replace(
+                        /[^a-z0-9_.:-]/g,
+                        '_'
+                    )
+                    .slice(
+                        0,
+                        128
+                    );
 
-            this.prometheus.record({
+        }
+
+
+        return normalized ||
+            'unknown';
+
+    }
+
+
+    /**
+     * =========================================================================
+     * Label Key
+     * =========================================================================
+     */
+
+    labelKey(
+        labels
+    ) {
+
+        return stableStringify(
+            labels
+        );
+
+    }
+
+
+    /**
+     * =========================================================================
+     * Activity Key
+     * =========================================================================
+     */
+
+    activityKey(
+        context = {}
+    ) {
+
+        /**
+         * A transaction ID should be unique inside a tenant.
+         * Keep correlation ID as fallback for workflow instances that have not
+         * received a transaction ID yet.
+         */
+        return [
+
+            context.tenantId ||
+                'unknown',
+
+            context.transactionId ||
+                context.correlationId ||
+                context.requestId ||
+                crypto.randomUUID()
+
+        ].join(':');
+
+    }
+
+
+    /**
+     * =========================================================================
+     * Prometheus / External Export
+     * =========================================================================
+     */
+
+    exportMetric(
+        name,
+        type,
+        labels = {},
+        value = 1
+    ) {
+
+        try {
+
+            if (
+                this.prometheus?.record
+            ) {
+
+                this.prometheus.record({
+
+                    name,
+
+                    type,
+
+                    labels,
+
+                    value
+
+                });
+
+            }
+            else if (
+                this.prometheus?.increment &&
+                type ===
+                    'counter'
+            ) {
+
+                this.prometheus.increment(
+
+                    name,
+
+                    value,
+
+                    labels
+
+                );
+
+            }
+            else if (
+                this.prometheus?.set &&
+                type ===
+                    'gauge'
+            ) {
+
+                this.prometheus.set(
+
+                    name,
+
+                    value,
+
+                    labels
+
+                );
+
+            }
+            else if (
+                this.prometheus?.observe &&
+                type ===
+                    'histogram'
+            ) {
+
+                this.prometheus.observe(
+
+                    name,
+
+                    value,
+
+                    labels
+
+                );
+
+            }
+
+
+            /**
+             * Optional OpenTelemetry bridge.
+             */
+            this.exportOpenTelemetry(
 
                 name,
 
                 type,
 
-                labels
+                labels,
+
+                value
+
+            );
+
+        }
+        catch (error) {
+
+            this.logger?.warn?.({
+
+                message:
+                    'Transaction metrics export failed',
+
+                metric:
+                    name,
+
+                type,
+
+                error:
+                    error.message
 
             });
 
+            /**
+             * Metrics failure must never impact the transaction.
+             */
 
         }
 
-
     }
 
+
+    /**
+     * =========================================================================
+     * OpenTelemetry
+     * =========================================================================
+     */
+
+    exportOpenTelemetry(
+        name,
+        type,
+        labels,
+        value
+    ) {
+
+        try {
+
+            if (
+                !this.openTelemetry
+            ) {
+
+                return;
+
+            }
+
+
+            if (
+                typeof this.openTelemetry.record ===
+                'function'
+            ) {
+
+                this.openTelemetry.record({
+
+                    name,
+
+                    type,
+
+                    labels,
+
+                    value
+
+                });
+
+            }
+            else if (
+                typeof this.openTelemetry.increment ===
+                'function' &&
+                type ===
+                    'counter'
+            ) {
+
+                this.openTelemetry.increment(
+
+                    name,
+
+                    value,
+
+                    labels
+
+                );
+
+            }
+            else if (
+                typeof this.openTelemetry.observe ===
+                'function' &&
+                type ===
+                    'histogram'
+            ) {
+
+                this.openTelemetry.observe(
+
+                    name,
+
+                    value,
+
+                    labels
+
+                );
+
+            }
+
+        }
+        catch (_) {
+
+            /**
+             * OpenTelemetry must never affect transaction execution.
+             */
+
+        }
+
+    }
 
 
     /**
@@ -779,47 +2481,43 @@ class TransactionMetrics {
      * =========================================================================
      */
 
-
     snapshot() {
-
 
         return {
 
-
             service:
-
                 this.serviceName,
 
+            environment:
+                this.environment,
 
+            instanceId:
+                this.instanceId,
 
             timestamp:
-
                 new Date(),
 
-
+            activeTransactions:
+                this.activeTransactions.size,
 
             counters:
-
-                this.metrics.counters,
-
-
+                this.cloneMetrics(
+                    this.metrics.counters
+                ),
 
             gauges:
-
-                this.metrics.gauges,
-
-
+                this.cloneMetrics(
+                    this.metrics.gauges
+                ),
 
             histograms:
-
-                this.metrics.histograms
-
+                this.cloneMetrics(
+                    this.metrics.histograms
+                )
 
         };
 
-
     }
-
 
 
     /**
@@ -828,29 +2526,123 @@ class TransactionMetrics {
      * =========================================================================
      */
 
-
     health() {
-
 
         return {
 
-
             status:
-
                 'UP',
 
+            component:
+                'transaction-metrics',
 
+            service:
+                this.serviceName,
+
+            environment:
+                this.environment,
+
+            instanceId:
+                this.instanceId,
 
             activeTransactions:
+                this.activeTransactions.size,
 
-                this.activeTransactions.size
+            activeRecoveryTimers:
+                this.recoveryTimers.size,
 
+            metricCounts: {
+
+                counters:
+                    Object.keys(
+                        this.metrics.counters
+                    ).length,
+
+                gauges:
+                    Object.keys(
+                        this.metrics.gauges
+                    ).length,
+
+                histograms:
+                    Object.keys(
+                        this.metrics.histograms
+                    ).length
+
+            }
 
         };
 
+    }
+
+
+    /**
+     * =========================================================================
+     * Runtime Statistics
+     * =========================================================================
+     */
+
+    getStatistics() {
+
+        return {
+
+            service:
+                this.serviceName,
+
+            environment:
+                this.environment,
+
+            activeTransactions:
+                this.activeTransactions.size,
+
+            activeRecoveryTimers:
+                this.recoveryTimers.size,
+
+            counters:
+                Object.keys(
+                    this.metrics.counters
+                ).length,
+
+            gauges:
+                Object.keys(
+                    this.metrics.gauges
+                ).length,
+
+            histograms:
+                Object.keys(
+                    this.metrics.histograms
+                ).length
+
+        };
 
     }
 
+
+    /**
+     * =========================================================================
+     * Clone Metrics
+     * =========================================================================
+     */
+
+    cloneMetrics(
+        value
+    ) {
+
+        try {
+
+            return JSON.parse(
+                JSON.stringify(
+                    value
+                )
+            );
+
+        }
+        catch (_) {
+
+            return {};
+
+        }
+
+    }
 
 
     /**
@@ -859,31 +2651,95 @@ class TransactionMetrics {
      * =========================================================================
      */
 
-
     reset() {
-
 
         this.metrics = {
 
+            counters:
+                {},
 
-            counters: {},
+            gauges:
+                {},
 
-
-            gauges: {},
-
-
-            histograms: {}
+            histograms:
+                {}
 
         };
 
 
-        this.initialiseDefaults();
+        this.activeTransactions.clear();
 
+
+        this.recoveryTimers.clear();
+
+
+        this.initialiseDefaults();
 
     }
 
 
+    /**
+     * =========================================================================
+     * Shutdown
+     * =========================================================================
+     */
+
+    async shutdown() {
+
+        this.activeTransactions.clear();
+
+        this.recoveryTimers.clear();
+
+        return true;
+
+    }
+
+
+    /**
+     * =========================================================================
+     * Metric Name Normalization
+     * =========================================================================
+     */
+
+    normalizeMetricName(
+        name
+    ) {
+
+        return String(
+            name
+        )
+            .trim()
+            .replace(
+                /[^a-zA-Z0-9_:]/g,
+                '_'
+            );
+
+    }
+
 }
 
 
-module.exports = TransactionMetrics;
+/**
+ * ============================================================================
+ * Static API
+ * ============================================================================
+ */
+
+TransactionMetrics.Metrics =
+    METRICS;
+
+TransactionMetrics.LabelKeys =
+    LABEL_KEYS;
+
+TransactionMetrics.DefaultLabels =
+    DEFAULT_LABELS;
+
+
+/**
+ * ============================================================================
+ * Export
+ * ============================================================================
+ */
+
+module.exports =
+    TransactionMetrics;

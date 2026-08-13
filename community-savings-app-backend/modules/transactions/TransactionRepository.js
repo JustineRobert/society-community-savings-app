@@ -6,18 +6,50 @@
  * Enterprise Transaction Repository
  * ============================================================================
  *
+ * File:
+ * backend/modules/transactions/TransactionRepository.js
+ *
  * Responsibilities
- * ----------------
+ * ----------------------------------------------------------------------------
+ *
  * • Persist transactions
  * • Retrieve transactions
  * • Update transaction state
+ * • Atomic recovery claiming
+ * • Recovery lease management
+ * • Retry scheduling
+ * • Recovery attempts
+ * • Recovery history
+ * • Dead-letter state
  * • Idempotency lookups
  * • Correlation tracking
  * • Tenant isolation
  * • Optimistic concurrency
  * • Soft delete
  * • Audit metadata
+ * • Transaction lifecycle history
  *
+ * Design principles
+ * ----------------------------------------------------------------------------
+ *
+ * ✓ Tenant-aware by default
+ * ✓ Recovery operations are concurrency-safe
+ * ✓ State transitions use conditional updates
+ * ✓ Recovery leases expire automatically
+ * ✓ Repository remains Mongo/Mongoose friendly
+ * ✓ No financial balances are mutated here
+ * ✓ No direct ledger posting is performed here
+ * ✓ Repository failures never silently become success
+ *
+ * ============================================================================
+ */
+
+const crypto = require('crypto');
+
+
+/**
+ * ============================================================================
+ * Transaction Repository
  * ============================================================================
  */
 
@@ -26,17 +58,62 @@ class TransactionRepository {
     constructor(options = {}) {
 
         if (!options.model) {
-            throw new Error('TransactionRepository requires a transaction model.');
+
+            throw new Error(
+                'TransactionRepository requires a transaction model.'
+            );
+
         }
 
-        this.model = options.model;
 
-        this.logger = options.logger || console;
+        this.model =
+            options.model;
 
-        this.metrics = options.metrics;
 
-        this.tracer = options.tracer;
+        this.logger =
+            options.logger ||
+            console;
+
+
+        this.metrics =
+            options.metrics ||
+            null;
+
+
+        this.tracer =
+            options.tracer;
+
+
+        this.clock =
+            options.clock ||
+            (() => new Date());
+
+
+        this.tenantRequired =
+            options.tenantRequired !== false;
+
+
+        this.maxListLimit =
+            Math.min(
+                Number(options.maxListLimit) || 500,
+                1000
+            );
+
+
+        this.recoveryLeaseField =
+            options.recoveryLeaseField ||
+            'recoveryLeaseUntil';
+
+
+        this.recoveryOwnerField =
+            options.recoveryOwnerField ||
+            'recoveryOwner';
+
+
+        this.ensureRepositoryCompatibility();
+
     }
+
 
     /**
      * =========================================================================
@@ -47,33 +124,67 @@ class TransactionRepository {
     async create(transaction, options = {}) {
 
         const span =
-            this.tracer?.startSpan?.('transaction.repository.create');
+            this.tracer?.startSpan?.(
+                'transaction.repository.create'
+            );
+
 
         try {
 
-            const document = new this.model({
+            this.assertTenantContext(
+                transaction
+            );
 
-                ...transaction,
 
-                createdAt: transaction.createdAt || new Date(),
+            const now =
+                this.now();
 
-                updatedAt: new Date(),
 
-                version: transaction.version || 1,
+            const document =
+                new this.model({
 
-                isDeleted: false
+                    ...transaction,
 
-            });
+                    createdAt:
+                        transaction.createdAt ||
+                        now,
 
-            const saved = await document.save(options);
+                    updatedAt:
+                        now,
 
-            this.metrics?.increment?.(
+                    version:
+                        transaction.version ||
+                        1,
+
+                    isDeleted:
+                        false,
+
+                    history:
+                        Array.isArray(
+                            transaction.history
+                        )
+                            ? transaction.history
+                            : []
+
+                });
+
+
+            const saved =
+                await document.save(
+                    options
+                );
+
+
+            this.incrementMetric(
                 'transaction_repository_create_total'
             );
 
+
             return saved;
 
-        } finally {
+        }
+
+        finally {
 
             span?.end?.();
 
@@ -81,23 +192,44 @@ class TransactionRepository {
 
     }
 
+
     /**
      * =========================================================================
      * Find by Transaction ID
      * =========================================================================
      */
 
-    async findByTransactionId(transactionId, options = {}) {
+    async findByTransactionId(
+        transactionId,
+        options = {}
+    ) {
 
-        return this.model.findOne({
+        if (!transactionId) {
 
-            transactionId,
+            throw new TypeError(
+                'transactionId is required.'
+            );
 
-            isDeleted: { $ne: true }
+        }
 
-        }, null, options);
+
+        const filter =
+            this.buildTenantFilter(
+                {
+                    transactionId
+                },
+                options
+            );
+
+
+        return this.model.findOne(
+            filter,
+            null,
+            options
+        );
 
     }
+
 
     /**
      * =========================================================================
@@ -105,17 +237,28 @@ class TransactionRepository {
      * =========================================================================
      */
 
-    async findById(id, options = {}) {
+    async findById(
+        id,
+        options = {}
+    ) {
 
-        return this.model.findOne({
+        const filter =
+            this.buildTenantFilter(
+                {
+                    _id: id
+                },
+                options
+            );
 
-            _id: id,
 
-            isDeleted: { $ne: true }
-
-        }, null, options);
+        return this.model.findOne(
+            filter,
+            null,
+            options
+        );
 
     }
+
 
     /**
      * =========================================================================
@@ -123,19 +266,45 @@ class TransactionRepository {
      * =========================================================================
      */
 
-    async findByIdempotencyKey(idempotencyKey, tenantId) {
+    async findByIdempotencyKey(
+        idempotencyKey,
+        tenantId,
+        options = {}
+    ) {
+
+        if (!idempotencyKey) {
+
+            throw new TypeError(
+                'idempotencyKey is required.'
+            );
+
+        }
+
+
+        const effectiveTenantId =
+            tenantId ||
+            options.tenantId;
+
+
+        this.assertTenantId(
+            effectiveTenantId
+        );
+
 
         return this.model.findOne({
 
             idempotencyKey,
 
-            tenantId,
+            tenantId:
+                effectiveTenantId,
 
-            isDeleted: { $ne: true }
+            isDeleted:
+                { $ne: true }
 
-        });
+        }, null, options);
 
     }
+
 
     /**
      * =========================================================================
@@ -143,71 +312,1267 @@ class TransactionRepository {
      * =========================================================================
      */
 
-    async findByCorrelationId(correlationId) {
+    async findByCorrelationId(
+        correlationId,
+        options = {}
+    ) {
 
-        return this.model.find({
+        if (!correlationId) {
 
-            correlationId,
+            throw new TypeError(
+                'correlationId is required.'
+            );
 
-            isDeleted: { $ne: true }
+        }
 
-        }).sort({
 
-            createdAt: 1
+        return this.model.find(
+
+            this.buildTenantFilter(
+                {
+                    correlationId
+                },
+                options
+            )
+
+        ).sort({
+
+            createdAt:
+                1
 
         });
 
     }
 
+
     /**
      * =========================================================================
      * Update State
      * =========================================================================
+     *
+     * Supports:
+     *
+     * repository.updateState(
+     *     transactionId,
+     *     state,
+     *     metadata
+     * )
+     *
+     * Optional metadata:
+     *
+     * • tenantId
+     * • expectedState
+     * • expectedVersion
+     * • lastError
+     * • recoveryOwner
+     * • recoveryLeaseUntil
+     * • retryAttempts
+     * • retryAt
+     * • historyEvent
      */
 
-    async updateState(transactionId, state, metadata = {}) {
+    async updateState(
+        transactionId,
+        state,
+        metadata = {}
+    ) {
+
+        if (!transactionId) {
+
+            throw new TypeError(
+                'transactionId is required.'
+            );
+
+        }
+
+
+        if (!state) {
+
+            throw new TypeError(
+                'state is required.'
+            );
+
+        }
+
+
+        const now =
+            this.now();
+
+
+        const filter =
+            this.buildTenantFilter(
+                {
+                    transactionId
+                },
+                metadata
+            );
+
+
+        if (
+            metadata.expectedState
+        ) {
+
+            filter.state =
+                metadata.expectedState;
+
+        }
+
+
+        if (
+            Number.isInteger(
+                metadata.expectedVersion
+            )
+        ) {
+
+            filter.version =
+                metadata.expectedVersion;
+
+        }
+
 
         const update = {
 
-            state,
+            $set: {
 
-            updatedAt: new Date(),
+                state,
+
+                updatedAt:
+                    now
+
+            },
 
             $inc: {
 
-                version: 1
+                version:
+                    1
 
             }
 
         };
 
-        if (metadata.lastError) {
 
-            update.lastError = metadata.lastError;
+        if (
+            Object.prototype.hasOwnProperty.call(
+                metadata,
+                'lastError'
+            )
+        ) {
+
+            update.$set.lastError =
+                metadata.lastError;
 
         }
 
-        return this.model.findOneAndUpdate(
 
-            {
+        this.applyRecoveryMetadata(
+            update,
+            metadata
+        );
+
+
+        if (
+            metadata.historyEvent
+        ) {
+
+            update.$push = {
+
+                history:
+                    this.createHistoryEntry(
+                        metadata.historyEvent,
+                        metadata
+                    )
+
+            };
+
+        }
+
+
+        const updated =
+            await this.model.findOneAndUpdate(
+
+                filter,
+
+                update,
+
+                {
+
+                    new:
+                        true,
+
+                    runValidators:
+                        metadata.runValidators !== false
+
+                }
+
+            );
+
+
+        if (!updated) {
+
+            throw this.createConcurrencyError(
 
                 transactionId,
 
-                isDeleted: { $ne: true }
+                'Transaction state update failed or optimistic concurrency check failed.'
 
-            },
+            );
 
-            update,
+        }
+
+
+        this.incrementMetric(
+            'transaction_repository_state_update_total'
+        );
+
+
+        return updated;
+
+    }
+
+
+    /**
+     * =========================================================================
+     * Atomic Recovery Claim
+     * =========================================================================
+     *
+     * This is the most important addition for multi-instance recovery.
+     *
+     * A transaction may be claimed when:
+     *
+     * 1. It is still in the expected state.
+     * 2. It is not deleted.
+     * 3. It has no active recovery lease.
+     * 4. Its existing lease has expired.
+     *
+     * The database performs the ownership transition atomically.
+     */
+
+    async claimForRecovery(
+        transactionId,
+        options = {}
+    ) {
+
+        if (!transactionId) {
+
+            throw new TypeError(
+                'transactionId is required.'
+            );
+
+        }
+
+
+        const now =
+            this.now();
+
+
+        const leaseUntil =
+            options.leaseUntil ||
+            new Date(
+                now.getTime() +
+                120000
+            );
+
+
+        const owner =
+            options.owner ||
+            `recovery:${crypto.randomUUID()}`;
+
+
+        const filter =
+            this.buildTenantFilter(
+                {
+
+                    transactionId,
+
+                    isDeleted:
+                        { $ne: true }
+
+                },
+
+                options
+
+            );
+
+
+        if (
+            options.expectedState
+        ) {
+
+            filter.state =
+                options.expectedState;
+
+        }
+
+
+        /**
+         * Claim only if:
+         *
+         * • recovery lease does not exist
+         * OR
+         * • recovery lease has expired
+         */
+
+        filter.$or = [
 
             {
 
-                new: true
+                recoveryLeaseUntil:
+                    {
+                        $exists:
+                            false
+                    }
+
+            },
+
+            {
+
+                recoveryLeaseUntil:
+                    null
+
+            },
+
+            {
+
+                recoveryLeaseUntil:
+                    {
+                        $lte:
+                            now
+                    }
+
+            }
+
+        ];
+
+
+        const update = {
+
+            $set: {
+
+                state:
+                    'RECOVERING',
+
+                recoveryOwner:
+                    owner,
+
+                recoveryLeaseUntil:
+                    leaseUntil,
+
+                recoveryClaimedAt:
+                    now,
+
+                updatedAt:
+                    now
+
+            },
+
+            $inc: {
+
+                version:
+                    1,
+
+                recoveryAttempts:
+                    1
+
+            },
+
+            $push: {
+
+                history:
+                    this.createHistoryEntry(
+
+                        'RECOVERY_CLAIMED',
+
+                        {
+
+                            owner,
+
+                            leaseUntil,
+
+                            timestamp:
+                                now
+
+                        }
+
+                    )
+
+            }
+
+        };
+
+
+        const document =
+            await this.model.findOneAndUpdate(
+
+                filter,
+
+                update,
+
+                {
+
+                    new:
+                        true,
+
+                    runValidators:
+                        true
+
+                }
+
+            );
+
+
+        if (!document) {
+
+            this.incrementMetric(
+                'transaction_repository_recovery_claim_conflict_total'
+            );
+
+
+            return false;
+
+        }
+
+
+        this.incrementMetric(
+            'transaction_repository_recovery_claim_total'
+        );
+
+
+        return {
+
+            owner,
+
+            leaseUntil,
+
+            claimedAt:
+                now,
+
+            transaction:
+                document
+
+        };
+
+    }
+
+
+    /**
+     * =========================================================================
+     * Renew Recovery Lease
+     * =========================================================================
+     */
+
+    async renewRecoveryLease(
+        transactionId,
+        options = {}
+    ) {
+
+        const owner =
+            options.owner;
+
+
+        if (!owner) {
+
+            throw new TypeError(
+                'Recovery lease owner is required.'
+            );
+
+        }
+
+
+        const leaseUntil =
+            options.leaseUntil ||
+            new Date(
+
+                this.now().getTime() +
+                120000
+
+            );
+
+
+        const filter =
+            this.buildTenantFilter(
+                {
+
+                    transactionId,
+
+                    recoveryOwner:
+                        owner,
+
+                    isDeleted:
+                        { $ne: true }
+
+                },
+
+                options
+
+            );
+
+
+        const update = {
+
+            $set: {
+
+                recoveryLeaseUntil:
+                    leaseUntil,
+
+                updatedAt:
+                    this.now()
+
+            },
+
+            $inc: {
+
+                version:
+                    1
+
+            }
+
+        };
+
+
+        const updated =
+            await this.model.findOneAndUpdate(
+
+                filter,
+
+                update,
+
+                {
+
+                    new:
+                        true
+
+                }
+
+            );
+
+
+        if (!updated) {
+
+            throw this.createConcurrencyError(
+
+                transactionId,
+
+                'Recovery lease renewal failed.'
+
+            );
+
+        }
+
+
+        this.incrementMetric(
+            'transaction_repository_recovery_lease_renewal_total'
+        );
+
+
+        return updated;
+
+    }
+
+
+    /**
+     * =========================================================================
+     * Release Recovery Lease
+     * =========================================================================
+     */
+
+    async releaseRecoveryLease(
+        transactionId,
+        options = {}
+    ) {
+
+        const owner =
+            options.owner;
+
+
+        const filter =
+            this.buildTenantFilter(
+                {
+
+                    transactionId,
+
+                    isDeleted:
+                        { $ne: true }
+
+                },
+
+                options
+
+            );
+
+
+        if (owner) {
+
+            filter.recoveryOwner =
+                owner;
+
+        }
+
+
+        const now =
+            this.now();
+
+
+        const update = {
+
+            $set: {
+
+                recoveryOwner:
+                    null,
+
+                recoveryLeaseUntil:
+                    null,
+
+                recoveryReleasedAt:
+                    now,
+
+                updatedAt:
+                    now
+
+            },
+
+            $inc: {
+
+                version:
+                    1
+
+            },
+
+            $push: {
+
+                history:
+                    this.createHistoryEntry(
+
+                        'RECOVERY_LEASE_RELEASED',
+
+                        {
+
+                            owner:
+                                owner ||
+                                null,
+
+                            timestamp:
+                                now
+
+                        }
+
+                    )
+
+            }
+
+        };
+
+
+        const updated =
+            await this.model.findOneAndUpdate(
+
+                filter,
+
+                update,
+
+                {
+
+                    new:
+                        true
+
+                }
+
+            );
+
+
+        if (!updated) {
+
+            return null;
+
+        }
+
+
+        this.incrementMetric(
+            'transaction_repository_recovery_lease_release_total'
+        );
+
+
+        return updated;
+
+    }
+
+
+    /**
+     * =========================================================================
+     * Schedule Retry
+     * =========================================================================
+     */
+
+    async scheduleRetry(
+        transactionId,
+        metadata = {}
+    ) {
+
+        const now =
+            this.now();
+
+
+        const retryAt =
+            metadata.retryAt ||
+            new Date(
+
+                now.getTime() +
+                Number(
+                    metadata.retryDelayMs ||
+                    0
+                )
+
+            );
+
+
+        const tenantFilter =
+            this.buildTenantFilter(
+                {
+                    transactionId
+                },
+                metadata
+            );
+
+
+        const update = {
+
+            $set: {
+
+                state:
+                    metadata.state ||
+                    'RETRYING',
+
+                retryAt,
+
+                retryScheduledAt:
+                    now,
+
+                recoveryOwner:
+                    null,
+
+                recoveryLeaseUntil:
+                    null,
+
+                updatedAt:
+                    now
+
+            },
+
+            $inc: {
+
+                version:
+                    1
+
+            },
+
+            $push: {
+
+                history:
+                    this.createHistoryEntry(
+
+                        'RECOVERY_RETRY_SCHEDULED',
+
+                        {
+
+                            retryAttempt:
+                                metadata.retryAttempt ||
+                                null,
+
+                            retryAt,
+
+                            retryDelayMs:
+                                metadata.retryDelayMs ||
+                                0,
+
+                            owner:
+                                metadata.owner ||
+                                null,
+
+                            timestamp:
+                                now
+
+                        }
+
+                    )
+
+            }
+
+        };
+
+
+        const updated =
+            await this.model.findOneAndUpdate(
+
+                tenantFilter,
+
+                update,
+
+                {
+
+                    new:
+                        true
+
+                }
+
+            );
+
+
+        if (!updated) {
+
+            throw this.createConcurrencyError(
+
+                transactionId,
+
+                'Unable to schedule transaction retry.'
+
+            );
+
+        }
+
+
+        this.incrementMetric(
+            'transaction_repository_retry_schedule_total'
+        );
+
+
+        return updated;
+
+    }
+
+
+    /**
+     * =========================================================================
+     * Record Recovery Attempt
+     * =========================================================================
+     */
+
+    async recordRecoveryAttempt(
+        transactionId,
+        metadata = {}
+    ) {
+
+        const now =
+            this.now();
+
+
+        const update = {
+
+            $set: {
+
+                lastRecoveryAttemptAt:
+                    now,
+
+                updatedAt:
+                    now
+
+            },
+
+            $inc: {
+
+                version:
+                    1
+
+            },
+
+            $push: {
+
+                history:
+                    this.createHistoryEntry(
+
+                        'RECOVERY_ATTEMPT',
+
+                        {
+
+                            recoveryId:
+                                metadata.recoveryId ||
+                                null,
+
+                            owner:
+                                metadata.owner ||
+                                null,
+
+                            attempt:
+                                metadata.attempt ||
+                                null,
+
+                            state:
+                                metadata.state ||
+                                null,
+
+                            timestamp:
+                                now
+
+                        }
+
+                    )
+
+            }
+
+        };
+
+
+        const updated =
+            await this.model.findOneAndUpdate(
+
+                this.buildTenantFilter(
+                    {
+                        transactionId
+                    },
+                    metadata
+                ),
+
+                update,
+
+                {
+
+                    new:
+                        true
+
+                }
+
+            );
+
+
+        if (!updated) {
+
+            throw this.createConcurrencyError(
+
+                transactionId,
+
+                'Unable to record recovery attempt.'
+
+            );
+
+        }
+
+
+        this.incrementMetric(
+            'transaction_repository_recovery_attempt_total'
+        );
+
+
+        return updated;
+
+    }
+
+
+    /**
+     * =========================================================================
+     * Record Recovery History
+     * =========================================================================
+     */
+
+    async recordRecoveryHistory(
+        transactionId,
+        metadata = {}
+    ) {
+
+        const status =
+            metadata.status ||
+            'UNKNOWN';
+
+
+        const now =
+            this.now();
+
+
+        const entry =
+            this.createHistoryEntry(
+
+                `RECOVERY_${status}`,
+
+                {
+
+                    ...metadata,
+
+                    timestamp:
+                        metadata.timestamp ||
+                        now
+
+                }
+
+            );
+
+
+        const updated =
+            await this.model.findOneAndUpdate(
+
+                this.buildTenantFilter(
+                    {
+                        transactionId
+                    },
+                    metadata
+                ),
+
+                {
+
+                    $push: {
+
+                        history:
+                            entry
+
+                    },
+
+                    $set: {
+
+                        lastRecoveryStatus:
+                            status,
+
+                        lastRecoveryCompletedAt:
+                            now,
+
+                        updatedAt:
+                            now
+
+                    },
+
+                    $inc: {
+
+                        version:
+                            1
+
+                    }
+
+                },
+
+                {
+
+                    new:
+                        true
+
+                }
+
+            );
+
+
+        if (!updated) {
+
+            throw this.createConcurrencyError(
+
+                transactionId,
+
+                'Unable to record recovery history.'
+
+            );
+
+        }
+
+
+        this.incrementMetric(
+            'transaction_repository_recovery_history_total'
+        );
+
+
+        return updated;
+
+    }
+
+
+    /**
+     * =========================================================================
+     * Mark Recovery Successful
+     * =========================================================================
+     */
+
+    async markRecoverySuccessful(
+        transactionId,
+        metadata = {}
+    ) {
+
+        return this.updateState(
+
+            transactionId,
+
+            metadata.state ||
+                'COMPLETED',
+
+            {
+
+                ...metadata,
+
+                historyEvent:
+                    'RECOVERY_SUCCESS'
 
             }
 
         );
 
     }
+
+
+    /**
+     * =========================================================================
+     * Mark Failed
+     * =========================================================================
+     */
+
+    async markFailed(
+        transactionId,
+        error,
+        metadata = {}
+    ) {
+
+        const normalizedError =
+            this.normalizeError(
+                error
+            );
+
+
+        return this.updateState(
+
+            transactionId,
+
+            metadata.state ||
+                'FAILED',
+
+            {
+
+                ...metadata,
+
+                lastError:
+                    normalizedError,
+
+                historyEvent:
+                    'RECOVERY_FAILED'
+
+            }
+
+        );
+
+    }
+
+
+    /**
+     * =========================================================================
+     * Mark Dead Lettered
+     * =========================================================================
+     */
+
+    async markDeadLettered(
+        transactionId,
+        metadata = {}
+    ) {
+
+        const now =
+            this.now();
+
+
+        const update = {
+
+            $set: {
+
+                state:
+                    'DEAD_LETTERED',
+
+                deadLetterId:
+                    metadata.deadLetterId ||
+                    null,
+
+                deadLetterReason:
+                    metadata.reason ||
+                    null,
+
+                deadLetteredAt:
+                    now,
+
+                lastError:
+                    metadata.error ||
+                    null,
+
+                recoveryOwner:
+                    null,
+
+                recoveryLeaseUntil:
+                    null,
+
+                updatedAt:
+                    now
+
+            },
+
+            $inc: {
+
+                version:
+                    1
+
+            },
+
+            $push: {
+
+                history:
+                    this.createHistoryEntry(
+
+                        'DEAD_LETTERED',
+
+                        {
+
+                            deadLetterId:
+                                metadata.deadLetterId ||
+                                null,
+
+                            reason:
+                                metadata.reason ||
+                                null,
+
+                            error:
+                                metadata.error ||
+                                null,
+
+                            timestamp:
+                                now
+
+                        }
+
+                    )
+
+            }
+
+        };
+
+
+        const updated =
+            await this.model.findOneAndUpdate(
+
+                this.buildTenantFilter(
+                    {
+                        transactionId
+                    },
+                    metadata
+                ),
+
+                update,
+
+                {
+
+                    new:
+                        true
+
+                }
+
+            );
+
+
+        if (!updated) {
+
+            throw this.createConcurrencyError(
+
+                transactionId,
+
+                'Unable to mark transaction as dead-lettered.'
+
+            );
+
+        }
+
+
+        this.incrementMetric(
+            'transaction_repository_dead_letter_total'
+        );
+
+
+        return updated;
+
+    }
+
 
     /**
      * =========================================================================
@@ -215,16 +1580,39 @@ class TransactionRepository {
      * =========================================================================
      */
 
-    async save(transaction) {
+    async save(
+        transaction,
+        options = {}
+    ) {
 
-        transaction.updatedAt = new Date();
+        if (!transaction) {
+
+            throw new TypeError(
+                'Transaction is required.'
+            );
+
+        }
+
+
+        this.assertTenantContext(
+            transaction
+        );
+
+
+        transaction.updatedAt =
+            this.now();
+
 
         transaction.version =
             (transaction.version || 0) + 1;
 
-        return transaction.save();
+
+        return transaction.save(
+            options
+        );
 
     }
+
 
     /**
      * =========================================================================
@@ -232,33 +1620,58 @@ class TransactionRepository {
      * =========================================================================
      */
 
-    async replace(transactionId, replacement) {
+    async replace(
+        transactionId,
+        replacement,
+        options = {}
+    ) {
 
-        replacement.updatedAt = new Date();
+        if (!transactionId) {
 
-        return this.model.findOneAndReplace(
+            throw new TypeError(
+                'transactionId is required.'
+            );
 
-            {
+        }
 
-                transactionId,
 
-                isDeleted: { $ne: true }
+        const filter =
+            this.buildTenantFilter(
+                {
+                    transactionId
+                },
+                options
+            );
 
-            },
 
-            replacement,
+        replacement.updatedAt =
+            this.now();
 
-            {
 
-                new: true,
+        const result =
+            await this.model.findOneAndReplace(
 
-                upsert: false
+                filter,
 
-            }
+                replacement,
 
-        );
+                {
+
+                    new:
+                        true,
+
+                    upsert:
+                        false
+
+                }
+
+            );
+
+
+        return result;
 
     }
+
 
     /**
      * =========================================================================
@@ -266,33 +1679,55 @@ class TransactionRepository {
      * =========================================================================
      */
 
-    async delete(transactionId) {
+    async delete(
+        transactionId,
+        options = {}
+    ) {
 
         return this.model.findOneAndUpdate(
 
+            this.buildTenantFilter(
+                {
+                    transactionId
+                },
+                options
+            ),
+
             {
 
-                transactionId
+                $set: {
+
+                    isDeleted:
+                        true,
+
+                    deletedAt:
+                        this.now(),
+
+                    updatedAt:
+                        this.now()
+
+                },
+
+                $inc: {
+
+                    version:
+                        1
+
+                }
 
             },
 
             {
 
-                isDeleted: true,
-
-                deletedAt: new Date()
-
-            },
-
-            {
-
-                new: true
+                new:
+                    true
 
             }
 
         );
 
     }
+
 
     /**
      * =========================================================================
@@ -300,27 +1735,56 @@ class TransactionRepository {
      * =========================================================================
      */
 
-    async restore(transactionId) {
+    async restore(
+        transactionId,
+        options = {}
+    ) {
 
         return this.model.findOneAndUpdate(
 
             {
 
-                transactionId
+                transactionId,
+
+                ...this.buildTenantFilter(
+                    {},
+                    options,
+                    {
+                        includeDeleted:
+                            true
+                    }
+                )
 
             },
 
             {
 
-                isDeleted: false,
+                $set: {
 
-                deletedAt: null
+                    isDeleted:
+                        false,
+
+                    deletedAt:
+                        null,
+
+                    updatedAt:
+                        this.now()
+
+                },
+
+                $inc: {
+
+                    version:
+                        1
+
+                }
 
             },
 
             {
 
-                new: true
+                new:
+                    true
 
             }
 
@@ -328,23 +1792,31 @@ class TransactionRepository {
 
     }
 
+
     /**
      * =========================================================================
      * Exists
      * =========================================================================
      */
 
-    async exists(transactionId) {
+    async exists(
+        transactionId,
+        options = {}
+    ) {
 
-        return this.model.exists({
+        return this.model.exists(
 
-            transactionId,
+            this.buildTenantFilter(
+                {
+                    transactionId
+                },
+                options
+            )
 
-            isDeleted: { $ne: true }
-
-        });
+        );
 
     }
+
 
     /**
      * =========================================================================
@@ -352,37 +1824,71 @@ class TransactionRepository {
      * =========================================================================
      */
 
-    async list(filter = {}, options = {}) {
+    async list(
+        filter = {},
+        options = {}
+    ) {
 
         const page =
-            Math.max(1, options.page || 1);
+            Math.max(
+                1,
+                Number(options.page) || 1
+            );
+
 
         const limit =
-            Math.min(500, options.limit || 50);
+            Math.min(
+
+                this.maxListLimit,
+
+                Math.max(
+                    1,
+                    Number(options.limit) || 50
+                )
+
+            );
+
 
         const skip =
-            (page - 1) * limit;
+            (page - 1) *
+            limit;
 
-        const query = {
 
-            ...filter,
+        const query =
+            this.buildTenantFilter(
 
-            isDeleted: { $ne: true }
+                {
 
-        };
+                    ...filter
+
+                },
+
+                options
+
+            );
+
 
         const [items, total] =
             await Promise.all([
 
                 this.model
                     .find(query)
-                    .sort(options.sort || { createdAt: -1 })
+                    .sort(
+                        options.sort ||
+                        {
+                            createdAt:
+                                -1
+                        }
+                    )
                     .skip(skip)
                     .limit(limit),
 
-                this.model.countDocuments(query)
+                this.model.countDocuments(
+                    query
+                )
 
             ]);
+
 
         return {
 
@@ -396,13 +1902,140 @@ class TransactionRepository {
 
                 total,
 
-                pages: Math.ceil(total / limit)
+                pages:
+                    Math.ceil(
+                        total / limit
+                    )
 
             }
 
         };
 
     }
+
+
+    /**
+     * =========================================================================
+     * Find Recoverable Transactions
+     * =========================================================================
+     */
+
+    async findRecoverable(
+        options = {}
+    ) {
+
+        const now =
+            this.now();
+
+
+        const cutoff =
+            options.cutoff ||
+            new Date(
+
+                now.getTime() -
+                (
+                    Number(
+                        options.stuckTimeout
+                    ) ||
+                    300000
+                )
+
+            );
+
+
+        const states =
+            options.states ||
+            [
+
+                'RUNNING',
+
+                'WAITING_EXTERNAL',
+
+                'FAILED',
+
+                'TIMED_OUT',
+
+                'ROLLING_BACK'
+
+            ];
+
+
+        const filter = {
+
+            state:
+                {
+                    $in:
+                        states
+                },
+
+            updatedAt:
+                {
+                    $lte:
+                        cutoff
+                }
+
+        };
+
+
+        if (
+            options.leaseAware !== false
+        ) {
+
+            filter.$or = [
+
+                {
+
+                    recoveryLeaseUntil:
+                        {
+                            $exists:
+                                false
+                        }
+
+                },
+
+                {
+
+                    recoveryLeaseUntil:
+                        null
+
+                },
+
+                {
+
+                    recoveryLeaseUntil:
+                        {
+                            $lte:
+                                now
+                        }
+
+                }
+
+            ];
+
+        }
+
+
+        return this.list(
+
+            filter,
+
+            {
+
+                ...options,
+
+                page:
+                    1,
+
+                limit:
+                    options.limit ||
+                    100
+
+            }
+
+        );
+
+    }
+
 
     /**
      * =========================================================================
@@ -410,39 +2043,74 @@ class TransactionRepository {
      * =========================================================================
      */
 
-    async bulkCreate(transactions) {
+    async bulkCreate(
+        transactions,
+        options = {}
+    ) {
 
-        if (!transactions.length) {
+        if (
+            !Array.isArray(
+                transactions
+            )
+        ) {
+
+            throw new TypeError(
+                'transactions must be an array.'
+            );
+
+        }
+
+
+        if (
+            !transactions.length
+        ) {
 
             return [];
 
         }
 
+
+        const now =
+            this.now();
+
+
         return this.model.insertMany(
 
-            transactions.map(t => ({
+            transactions.map(
+                transaction => ({
 
-                ...t,
+                    ...transaction,
 
-                createdAt: t.createdAt || new Date(),
+                    createdAt:
+                        transaction.createdAt ||
+                        now,
 
-                updatedAt: new Date(),
+                    updatedAt:
+                        now,
 
-                isDeleted: false,
+                    isDeleted:
+                        false,
 
-                version: 1
+                    version:
+                        transaction.version ||
+                        1
 
-            })),
+                })
+            ),
 
             {
 
-                ordered: true
+                ordered:
+                    true,
+
+                ...options
 
             }
 
         );
 
     }
+
 
     /**
      * =========================================================================
@@ -450,41 +2118,86 @@ class TransactionRepository {
      * =========================================================================
      */
 
-    async bulkUpdateState(transactionIds, state) {
+    async bulkUpdateState(
+        transactionIds,
+        state,
+        options = {}
+    ) {
 
-        return this.model.updateMany(
+        if (
+            !Array.isArray(
+                transactionIds
+            ) ||
+            !transactionIds.length
+        ) {
 
-            {
+            return {
 
-                transactionId: {
+                acknowledged:
+                    true,
 
-                    $in: transactionIds
+                modifiedCount:
+                    0
 
-                }
+            };
 
-            },
+        }
 
-            {
 
-                $set: {
+        const filter =
+            this.buildTenantFilter(
 
-                    state,
+                {
 
-                    updatedAt: new Date()
+                    transactionId:
+                        {
+                            $in:
+                                transactionIds
+                        }
 
                 },
 
-                $inc: {
+                options
 
-                    version: 1
+            );
+
+
+        const now =
+            this.now();
+
+
+        const result =
+            await this.model.updateMany(
+
+                filter,
+
+                {
+
+                    $set: {
+
+                        state,
+
+                        updatedAt:
+                            now
+
+                    },
+
+                    $inc: {
+
+                        version:
+                            1
+
+                    }
 
                 }
 
-            }
+            );
 
-        );
+
+        return result;
 
     }
+
 
     /**
      * =========================================================================
@@ -492,17 +2205,22 @@ class TransactionRepository {
      * =========================================================================
      */
 
-    async count(filter = {}) {
+    async count(
+        filter = {},
+        options = {}
+    ) {
 
-        return this.model.countDocuments({
+        return this.model.countDocuments(
 
-            ...filter,
+            this.buildTenantFilter(
+                filter,
+                options
+            )
 
-            isDeleted: { $ne: true }
-
-        });
+        );
 
     }
+
 
     /**
      * =========================================================================
@@ -510,31 +2228,43 @@ class TransactionRepository {
      * =========================================================================
      */
 
-    async history(transactionId) {
+    async history(
+        transactionId,
+        options = {}
+    ) {
 
         return this.model.findOne(
 
+            this.buildTenantFilter(
+                {
+                    transactionId
+                },
+                options
+            ),
+
             {
 
-                transactionId,
+                history:
+                    1,
 
-                isDeleted: { $ne: true }
+                state:
+                    1,
 
-            },
+                transactionId:
+                    1,
 
-            {
+                tenantId:
+                    1,
 
-                history: 1,
-
-                state: 1,
-
-                transactionId: 1
+                version:
+                    1
 
             }
 
         );
 
     }
+
 
     /**
      * =========================================================================
@@ -542,40 +2272,580 @@ class TransactionRepository {
      * =========================================================================
      */
 
-    async updateWithVersion(transactionId, version, update) {
+    async updateWithVersion(
+        transactionId,
+        version,
+        update,
+        options = {}
+    ) {
 
-        update.updatedAt = new Date();
+        if (
+            !Number.isInteger(
+                version
+            )
+        ) {
 
-        update.$inc = {
+            throw new TypeError(
+                'version must be an integer.'
+            );
 
-            version: 1
+        }
 
-        };
 
-        return this.model.findOneAndUpdate(
+        const filter =
+            this.buildTenantFilter(
 
+                {
+
+                    transactionId,
+
+                    version
+
+                },
+
+                options
+
+            );
+
+
+        const normalizedUpdate =
             {
+
+                ...update,
+
+                $inc: {
+
+                    ...(update.$inc || {}),
+
+                    version:
+                        1
+
+                },
+
+                $set: {
+
+                    ...(update.$set || {}),
+
+                    updatedAt:
+                        this.now()
+
+                }
+
+            };
+
+
+        const result =
+            await this.model.findOneAndUpdate(
+
+                filter,
+
+                normalizedUpdate,
+
+                {
+
+                    new:
+                        true,
+
+                    runValidators:
+                        options.runValidators !== false
+
+                }
+
+            );
+
+
+        if (!result) {
+
+            throw this.createConcurrencyError(
 
                 transactionId,
 
-                version,
+                'Optimistic concurrency update failed.'
 
-                isDeleted: { $ne: true }
+            );
 
-            },
+        }
 
-            update,
 
-            {
+        this.incrementMetric(
+            'transaction_repository_optimistic_update_total'
+        );
 
-                new: true
+
+        return result;
+
+    }
+
+
+    /**
+     * =========================================================================
+     * Build Tenant Filter
+     * =========================================================================
+     *
+     * Tenant isolation is enforced here rather than relying on every caller
+     * remembering to add tenantId manually.
+     */
+
+    buildTenantFilter(
+        filter = {},
+        options = {},
+        flags = {}
+    ) {
+
+        const output = {
+
+            ...filter
+
+        };
+
+
+        if (
+            !flags.includeDeleted
+        ) {
+
+            output.isDeleted =
+                {
+                    $ne:
+                        true
+                };
+
+        }
+
+
+        const tenantId =
+            options.tenantId;
+
+
+        if (
+            tenantId !== undefined &&
+            tenantId !== null
+        ) {
+
+            this.assertTenantId(
+                tenantId
+            );
+
+
+            output.tenantId =
+                tenantId;
+
+        }
+
+        else if (
+            this.tenantRequired
+        ) {
+
+            /**
+             * Existing internal/system operations can explicitly opt out.
+             *
+             * Example:
+             *
+             * repository.list(filter, {
+             *     tenantRequired: false
+             * });
+             */
+
+            if (
+                options.tenantRequired !== false
+            ) {
+
+                throw new Error(
+                    'Tenant context is required for this repository operation.'
+                );
 
             }
 
+        }
+
+
+        return output;
+
+    }
+
+
+    /**
+     * =========================================================================
+     * Tenant Assertions
+     * =========================================================================
+     */
+
+    assertTenantContext(
+        transaction
+    ) {
+
+        if (
+            !this.tenantRequired
+        ) {
+
+            return;
+
+        }
+
+
+        this.assertTenantId(
+            transaction?.tenantId
         );
+
+    }
+
+
+    assertTenantId(
+        tenantId
+    ) {
+
+        if (
+            tenantId === undefined ||
+            tenantId === null ||
+            tenantId === ''
+        ) {
+
+            throw new Error(
+                'tenantId is required.'
+            );
+
+        }
+
+    }
+
+
+    /**
+     * =========================================================================
+     * Recovery Metadata
+     * =========================================================================
+     */
+
+    applyRecoveryMetadata(
+        update,
+        metadata
+    ) {
+
+        const fields = [
+
+            'recoveryOwner',
+
+            'recoveryLeaseUntil',
+
+            'recoveryClaimedAt',
+
+            'recoveryReleasedAt',
+
+            'retryAt',
+
+            'retryScheduledAt',
+
+            'retryAttempt',
+
+            'deadLetterId',
+
+            'deadLetterReason',
+
+            'deadLetteredAt'
+
+        ];
+
+
+        for (
+            const field
+            of fields
+        ) {
+
+            if (
+                Object.prototype.hasOwnProperty.call(
+                    metadata,
+                    field
+                )
+            ) {
+
+                update.$set[field] =
+                    metadata[field];
+
+            }
+
+        }
+
+
+        if (
+            Number.isInteger(
+                metadata.recoveryAttempts
+            )
+        ) {
+
+            update.$set.recoveryAttempts =
+                metadata.recoveryAttempts;
+
+        }
+
+    }
+
+
+    /**
+     * =========================================================================
+     * History Entry
+     * =========================================================================
+     */
+
+    createHistoryEntry(
+        type,
+        metadata = {}
+    ) {
+
+        return {
+
+            id:
+                crypto.randomUUID(),
+
+            type,
+
+            timestamp:
+                metadata.timestamp ||
+                this.now(),
+
+            recoveryId:
+                metadata.recoveryId ||
+                null,
+
+            owner:
+                metadata.owner ||
+                null,
+
+            attempt:
+                metadata.attempt ||
+                null,
+
+            state:
+                metadata.state ||
+                null,
+
+            reason:
+                metadata.reason ||
+                null
+
+        };
+
+    }
+
+
+    /**
+     * =========================================================================
+     * Error Normalization
+     * =========================================================================
+     */
+
+    normalizeError(
+        error
+    ) {
+
+        if (!error) {
+
+            return null;
+
+        }
+
+
+        return {
+
+            name:
+                error.name ||
+                'Error',
+
+            message:
+                error.message ||
+                String(error),
+
+            code:
+                error.code ||
+                null,
+
+            status:
+                error.status ??
+                error.statusCode ??
+                null,
+
+            retryable:
+                error.retryable ??
+                null
+
+        };
+
+    }
+
+
+    /**
+     * =========================================================================
+     * Concurrency Error
+     * =========================================================================
+     */
+
+    createConcurrencyError(
+        transactionId,
+        message
+    ) {
+
+        const error =
+            new Error(
+                message
+            );
+
+
+        error.code =
+            'TRANSACTION_CONCURRENCY_CONFLICT';
+
+
+        error.transactionId =
+            transactionId;
+
+
+        error.retryable =
+            true;
+
+
+        return error;
+
+    }
+
+
+    /**
+     * =========================================================================
+     * Repository Compatibility
+     * =========================================================================
+     */
+
+    ensureRepositoryCompatibility() {
+
+        const required =
+            [
+
+                'findOne',
+                'find',
+                'findOneAndUpdate',
+                'countDocuments'
+
+            ];
+
+
+        for (
+            const method
+            of required
+        ) {
+
+            if (
+                typeof this.model?.[method] !==
+                'function'
+            ) {
+
+                throw new Error(
+
+                    `TransactionRepository model is missing required method: ${method}`
+
+                );
+
+            }
+
+        }
+
+    }
+
+
+    /**
+     * =========================================================================
+     * Metrics
+     * =========================================================================
+     */
+
+    incrementMetric(
+        name,
+        value = 1,
+        labels = {}
+    ) {
+
+        try {
+
+            this.metrics?.increment?.(
+                name,
+                value,
+                labels
+            );
+
+        }
+
+        catch (error) {
+
+            this.logger.warn?.(
+
+                'Transaction repository metric failed',
+
+                {
+
+                    metric:
+                        name,
+
+                    error:
+                        error.message
+
+                }
+
+            );
+
+        }
+
+    }
+
+
+    /**
+     * =========================================================================
+     * Clock
+     * =========================================================================
+     */
+
+    now() {
+
+        const value =
+            this.clock();
+
+
+        return value instanceof Date
+            ? value
+            : new Date(
+                value
+            );
+
+    }
+
+
+    /**
+     * =========================================================================
+     * Configuration
+     * =========================================================================
+     */
+
+    getConfiguration() {
+
+        return {
+
+            tenantRequired:
+                this.tenantRequired,
+
+            maxListLimit:
+                this.maxListLimit,
+
+            recoveryLeaseField:
+                this.recoveryLeaseField,
+
+            recoveryOwnerField:
+                this.recoveryOwnerField
+
+        };
 
     }
 
 }
 
-module.exports = TransactionRepository;
+
+/**
+ * ============================================================================
+ * Module Export
+ * ============================================================================
+ */
+
+module.exports =
+    TransactionRepository;
