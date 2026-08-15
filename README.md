@@ -32,7 +32,7 @@ make docker-build && make docker-up
 
 ## 🎯 What Is This?
 
-TITech Community Capital — Africa Communinity Finance Operating System(ACFOS) is a full-stack MERN application that enables communities to manage group savings, contributions, and loans with professional-grade features(finance + payments + ledger + reconciliation + AML + KYC + fraud + risk + transaction orchestration + regulatory reporting + observability + settlement.):
+TITech Community Capital — The African Community Finance Operating System(ACFOS) is a full-stack MERN application that enables communities to manage group savings, contributions, and loans with professional-grade features(finance + payments + ledger + reconciliation + AML + KYC + fraud + risk + transaction orchestration + regulatory reporting + observability + settlement.):
 
 ✅ **Group Management** - Create and manage community groups  
 ✅ **Savings Tracking** - Track member contributions  
