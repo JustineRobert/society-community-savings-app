@@ -3,46 +3,48 @@
 /**
  * ============================================================================
  * TITech Community Capital LTD
- * Regulatory Adapter Interface
+ * Enterprise Regulatory Adapter Interface
  * ============================================================================
  *
- * Purpose:
- * --------
+ * Purpose
+ * ----------------------------------------------------------------------------
  * Provider/jurisdiction-neutral contract for regulatory reporting.
  *
  * The RegulatoryReportingService MUST NOT contain:
  *
- *   - country-specific thresholds
- *   - regulator-specific schemas
- *   - filing calendars
- *   - submission URLs
- *   - regulator authentication
- *   - acknowledgement parsing
- *   - jurisdiction-specific validation rules
- *   - regulator-specific report transformations
+ * - country-specific thresholds
+ * - regulator-specific schemas
+ * - filing calendars
+ * - submission URLs
+ * - regulator authentication
+ * - acknowledgement parsing
+ * - jurisdiction-specific validation
+ * - jurisdiction-specific report transformation
+ * - regulator transport semantics
  *
  * Those responsibilities belong to concrete regulatory adapters.
  *
- * Examples:
+ * Examples
+ * ----------------------------------------------------------------------------
+ * - UgandaRegulatoryAdapter
+ * - KenyaRegulatoryAdapter
+ * - TanzaniaRegulatoryAdapter
+ * - RwandaRegulatoryAdapter
+ * - NigeriaRegulatoryAdapter
  *
- *   UgandaRegulatoryAdapter
- *   KenyaRegulatoryAdapter
- *   TanzaniaRegulatoryAdapter
- *   RwandaRegulatoryAdapter
- *   NigeriaRegulatoryAdapter
- *   etc.
- *
- * Design principles:
- * ------------------
+ * Design Principles
+ * ----------------------------------------------------------------------------
  * - Multi-country ready
  * - Multi-tenant safe
- * - No regulator logic in core reporting service
  * - Deterministic transformations
  * - Explicit capability discovery
  * - Idempotent submission support
  * - Validation before submission
  * - Structured acknowledgements
  * - Audit-friendly
+ * - Immutable adapter identity
+ * - Safe serialization
+ * - Stable error normalization
  * - Backward compatible
  *
  * ============================================================================
@@ -50,77 +52,727 @@
 
 const crypto = require('crypto');
 
-const ADAPTER_VERSION = '1.0.0';
+/**
+ * ============================================================================
+ * Constants
+ * ============================================================================
+ */
+
+const ADAPTER_VERSION = '1.1.0';
+
+const DEFAULT_COUNTRY_CODE = 'XX';
+
+const DEFAULT_REGULATOR_CODE =
+    'UNKNOWN_REGULATOR';
+
+const MAX_ADAPTER_NAME_LENGTH = 128;
+
+const MAX_COUNTRY_CODE_LENGTH = 8;
+
+const MAX_JURISDICTION_LENGTH = 128;
+
+const MAX_REGULATOR_CODE_LENGTH = 128;
+
+const MAX_VERSION_LENGTH = 64;
+
+const MAX_TENANT_ID_LENGTH = 256;
+
+const MAX_REPORT_ID_LENGTH = 256;
+
+const MAX_REPORT_TYPE_LENGTH = 64;
+
+const MAX_REFERENCE_LENGTH = 256;
+
+const MAX_OPERATION_LENGTH = 128;
+
+const MAX_ERROR_CODE_LENGTH = 128;
+
+const MAX_ERROR_MESSAGE_LENGTH = 2000;
+
+const MAX_METADATA_KEYS = 100;
 
 const REPORT_TYPES = Object.freeze({
-    CTR: 'CTR',
-    STR: 'STR',
-    SAR: 'SAR',
-    KYC_COMPLIANCE: 'KYC_COMPLIANCE',
-    FRAUD: 'FRAUD',
-    TRANSACTION: 'TRANSACTION',
+
+    CTR:
+        'CTR',
+
+    STR:
+        'STR',
+
+    SAR:
+        'SAR',
+
+    KYC_COMPLIANCE:
+        'KYC_COMPLIANCE',
+
+    FRAUD:
+        'FRAUD',
+
+    TRANSACTION:
+        'TRANSACTION',
+
 });
 
 const SUBMISSION_STATUS = Object.freeze({
-    NOT_SUPPORTED: 'NOT_SUPPORTED',
-    DRAFT: 'DRAFT',
-    VALIDATED: 'VALIDATED',
-    READY: 'READY',
-    SUBMITTED: 'SUBMITTED',
-    ACCEPTED: 'ACCEPTED',
-    REJECTED: 'REJECTED',
-    FAILED: 'FAILED',
-    ACKNOWLEDGED: 'ACKNOWLEDGED',
+
+    NOT_SUPPORTED:
+        'NOT_SUPPORTED',
+
+    DRAFT:
+        'DRAFT',
+
+    VALIDATED:
+        'VALIDATED',
+
+    READY:
+        'READY',
+
+    SUBMITTED:
+        'SUBMITTED',
+
+    ACCEPTED:
+        'ACCEPTED',
+
+    REJECTED:
+        'REJECTED',
+
+    FAILED:
+        'FAILED',
+
+    ACKNOWLEDGED:
+        'ACKNOWLEDGED',
+
 });
 
 const CAPABILITIES = Object.freeze({
-    REPORT_SCHEMA: 'reportSchema',
-    VALIDATION: 'validation',
-    TRANSFORMATION: 'transformation',
-    THRESHOLDS: 'thresholds',
-    CALENDAR: 'calendar',
-    SUBMISSION: 'submission',
-    ACKNOWLEDGEMENT: 'acknowledgement',
-    STATUS_QUERY: 'statusQuery',
-    AMENDMENT: 'amendment',
-    CANCELLATION: 'cancellation',
+
+    REPORT_SCHEMA:
+        'reportSchema',
+
+    VALIDATION:
+        'validation',
+
+    TRANSFORMATION:
+        'transformation',
+
+    THRESHOLDS:
+        'thresholds',
+
+    CALENDAR:
+        'calendar',
+
+    SUBMISSION:
+        'submission',
+
+    ACKNOWLEDGEMENT:
+        'acknowledgement',
+
+    STATUS_QUERY:
+        'statusQuery',
+
+    AMENDMENT:
+        'amendment',
+
+    CANCELLATION:
+        'cancellation',
+
 });
 
-class RegulatoryAdapterInterface {
-    /**
-     * =========================================================================
-     * CONSTRUCTOR
-     * =========================================================================
-     */
+const DEFAULT_CAPABILITIES =
+    Object.freeze({
 
-    constructor(config = {}) {
-        if (new.target === RegulatoryAdapterInterface) {
+        [CAPABILITIES.REPORT_SCHEMA]:
+            false,
+
+        [CAPABILITIES.VALIDATION]:
+            false,
+
+        [CAPABILITIES.TRANSFORMATION]:
+            false,
+
+        [CAPABILITIES.THRESHOLDS]:
+            false,
+
+        [CAPABILITIES.CALENDAR]:
+            false,
+
+        [CAPABILITIES.SUBMISSION]:
+            false,
+
+        [CAPABILITIES.ACKNOWLEDGEMENT]:
+            false,
+
+        [CAPABILITIES.STATUS_QUERY]:
+            false,
+
+        [CAPABILITIES.AMENDMENT]:
+            false,
+
+        [CAPABILITIES.CANCELLATION]:
+            false,
+
+    });
+
+/**
+ * ============================================================================
+ * Helpers
+ * ============================================================================
+ */
+
+function normalizeRequiredString(
+    value,
+    field,
+    maxLength
+) {
+    if (
+        typeof value !== 'string' ||
+        value.trim() === ''
+    ) {
+        throw new TypeError(
+            `${field} is required`
+        );
+    }
+
+    const normalized =
+        value.trim();
+
+    if (
+        normalized.length >
+        maxLength
+    ) {
+        throw new RangeError(
+            `${field} exceeds maximum length`
+        );
+    }
+
+    return normalized;
+}
+
+function normalizeOptionalString(
+    value,
+    field,
+    maxLength
+) {
+    if (
+        value === undefined ||
+        value === null ||
+        value === ''
+    ) {
+        return null;
+    }
+
+    if (
+        typeof value !== 'string'
+    ) {
+        throw new TypeError(
+            `${field} must be a string`
+        );
+    }
+
+    const normalized =
+        value.trim();
+
+    if (
+        !normalized
+    ) {
+        return null;
+    }
+
+    if (
+        normalized.length >
+        maxLength
+    ) {
+        throw new RangeError(
+            `${field} exceeds maximum length`
+        );
+    }
+
+    return normalized;
+}
+
+function normalizeReportType(
+    type
+) {
+    const normalized =
+        normalizeRequiredString(
+            type,
+            'reportType',
+            MAX_REPORT_TYPE_LENGTH
+        ).toUpperCase();
+
+    if (
+        !Object.values(
+            REPORT_TYPES
+        ).includes(
+            normalized
+        )
+    ) {
+        throw new TypeError(
+            `Unsupported report type: ${normalized}`
+        );
+    }
+
+    return normalized;
+}
+
+function normalizeSubmissionStatus(
+    status
+) {
+    if (
+        status === undefined ||
+        status === null
+    ) {
+        return null;
+    }
+
+    const normalized =
+        String(status)
+            .trim()
+            .toUpperCase();
+
+    if (
+        !Object.values(
+            SUBMISSION_STATUS
+        ).includes(
+            normalized
+        )
+    ) {
+        throw new TypeError(
+            `Unsupported submission status: ${normalized}`
+        );
+    }
+
+    return normalized;
+}
+
+function isPlainObject(
+    value
+) {
+    if (
+        value === null ||
+        typeof value !== 'object'
+    ) {
+        return false;
+    }
+
+    const prototype =
+        Object.getPrototypeOf(value);
+
+    return (
+        prototype === Object.prototype ||
+        prototype === null
+    );
+}
+
+function deepClone(
+    value,
+    seen = new WeakMap()
+) {
+    if (
+        value === null ||
+        value === undefined ||
+        typeof value !== 'object'
+    ) {
+        return value;
+    }
+
+    if (
+        value instanceof Date
+    ) {
+        return new Date(
+            value.getTime()
+        );
+    }
+
+    if (
+        seen.has(value)
+    ) {
+        return seen.get(
+            value
+        );
+    }
+
+    if (
+        Array.isArray(value)
+    ) {
+        const result = [];
+
+        seen.set(
+            value,
+            result
+        );
+
+        for (
+            const item of value
+        ) {
+            result.push(
+                deepClone(
+                    item,
+                    seen
+                )
+            );
+        }
+
+        return result;
+    }
+
+    const result = {};
+
+    seen.set(
+        value,
+        result
+    );
+
+    for (
+        const [
+            key,
+            child
+        ] of Object.entries(
+            value
+        )
+    ) {
+        result[key] =
+            deepClone(
+                child,
+                seen
+            );
+    }
+
+    return result;
+}
+
+function deepFreeze(
+    value,
+    seen = new WeakSet()
+) {
+    if (
+        value === null ||
+        typeof value !== 'object' ||
+        seen.has(value)
+    ) {
+        return value;
+    }
+
+    if (
+        value instanceof Date
+    ) {
+        return value;
+    }
+
+    seen.add(
+        value
+    );
+
+    for (
+        const child
+        of Object.values(
+            value
+        )
+    ) {
+        deepFreeze(
+            child,
+            seen
+        );
+    }
+
+    return Object.freeze(
+        value
+    );
+}
+
+function stableSerialize(
+    value
+) {
+    if (
+        value === null ||
+        value === undefined
+    ) {
+        return JSON.stringify(
+            value
+        );
+    }
+
+    if (
+        value instanceof Date
+    ) {
+        return JSON.stringify(
+            value.toISOString()
+        );
+    }
+
+    if (
+        Array.isArray(value)
+    ) {
+        return `[${value
+            .map(
+                stableSerialize
+            )
+            .join(',')}]`;
+    }
+
+    if (
+        typeof value === 'object'
+    ) {
+        return `{${Object.keys(value)
+            .sort()
+            .map(
+                key =>
+                    `${JSON.stringify(
+                        key
+                    )}:${stableSerialize(
+                        value[key]
+                    )}`
+            )
+            .join(',')}}`;
+    }
+
+    return JSON.stringify(
+        value
+    );
+}
+
+function sha256(
+    value
+) {
+    return crypto
+        .createHash(
+            'sha256'
+        )
+        .update(
+            value,
+            'utf8'
+        )
+        .digest('hex');
+}
+
+function sanitizeConfiguration(
+    config
+) {
+    if (
+        config === null ||
+        config === undefined
+    ) {
+        return {};
+    }
+
+    if (
+        !isPlainObject(config)
+    ) {
+        throw new TypeError(
+            'Regulatory adapter config must be an object'
+        );
+    }
+
+    const cloned =
+        deepClone(
+            config
+        );
+
+    const unsafeKeys = [
+        'password',
+        'secret',
+        'clientSecret',
+        'client_secret',
+        'accessToken',
+        'access_token',
+        'refreshToken',
+        'refresh_token',
+        'authorization',
+        'apiKey',
+        'api_key',
+        'privateKey',
+        'private_key',
+    ];
+
+    function inspect(
+        value,
+        path = 'config',
+        depth = 0
+    ) {
+        if (
+            depth > 8
+        ) {
+            throw new RangeError(
+                `${path} exceeds maximum configuration depth`
+            );
+        }
+
+        if (
+            !value ||
+            typeof value !== 'object'
+        ) {
+            return;
+        }
+
+        const keys =
+            Object.keys(
+                value
+            );
+
+        if (
+            keys.length >
+            MAX_METADATA_KEYS
+        ) {
+            throw new RangeError(
+                `${path} contains too many keys`
+            );
+        }
+
+        for (
+            const key of keys
+        ) {
+            if (
+                key === '__proto__' ||
+                key === 'prototype' ||
+                key === 'constructor'
+            ) {
+                throw new Error(
+                    `Unsafe configuration key: ${path}.${key}`
+                );
+            }
+
+            const normalized =
+                key
+                    .replace(
+                        /[\s_-]/g,
+                        ''
+                    )
+                    .toLowerCase();
+
+            if (
+                unsafeKeys.some(
+                    secretKey =>
+                        normalized ===
+                        secretKey
+                            .replace(
+                                /[\s_-]/g,
+                                ''
+                            )
+                            .toLowerCase()
+                )
+            ) {
+                throw new Error(
+                    `Sensitive configuration field is not permitted in adapter identity/configuration`
+                );
+            }
+
+            inspect(
+                value[key],
+                `${path}.${key}`,
+                depth + 1
+            );
+        }
+    }
+
+    inspect(
+        cloned
+    );
+
+    return deepFreeze(
+        cloned
+    );
+}
+
+function normalizeIdentity(
+    config,
+    className
+) {
+    const adapterName =
+        normalizeRequiredString(
+            config.adapterName ||
+                className,
+            'adapterName',
+            MAX_ADAPTER_NAME_LENGTH
+        );
+
+    const countryCode =
+        normalizeRequiredString(
+            config.countryCode ||
+                DEFAULT_COUNTRY_CODE,
+            'countryCode',
+            MAX_COUNTRY_CODE_LENGTH
+        ).toUpperCase();
+
+    const jurisdiction =
+        normalizeRequiredString(
+            config.jurisdiction ||
+                countryCode,
+            'jurisdiction',
+            MAX_JURISDICTION_LENGTH
+        );
+
+    const regulatorCode =
+        normalizeRequiredString(
+            config.regulatorCode ||
+                DEFAULT_REGULATOR_CODE,
+            'regulatorCode',
+            MAX_REGULATOR_CODE_LENGTH
+        ).toUpperCase();
+
+    const version =
+        normalizeRequiredString(
+            config.version ||
+                ADAPTER_VERSION,
+            'version',
+            MAX_VERSION_LENGTH
+        );
+
+    return Object.freeze({
+        adapterName,
+
+        countryCode,
+
+        jurisdiction,
+
+        regulatorCode,
+
+        version,
+    });
+}
+
+/**
+ * ============================================================================
+ * Abstract Interface
+ * ============================================================================
+ */
+
+class RegulatoryAdapterInterface {
+
+    constructor(
+        config = {}
+    ) {
+
+        if (
+            new.target ===
+            RegulatoryAdapterInterface
+        ) {
             throw new Error(
                 'RegulatoryAdapterInterface is abstract and cannot be instantiated directly'
             );
         }
 
-        this.config = config;
-
-        this.adapterName =
-            config.adapterName ||
+        const className =
             this.constructor.name ||
             'UNKNOWN_REGULATORY_ADAPTER';
 
-        this.countryCode =
-            String(config.countryCode || 'XX').toUpperCase();
+        /**
+         * Adapter configuration is copied/frozen so a caller cannot mutate
+         * live adapter configuration after construction.
+         */
+        this.config =
+            sanitizeConfiguration(
+                config
+            );
 
-        this.jurisdiction =
-            config.jurisdiction ||
-            this.countryCode;
+        this.identity =
+            normalizeIdentity(
+                config,
+                className
+            );
 
-        this.regulatorCode =
-            config.regulatorCode ||
-            'UNKNOWN_REGULATOR';
-
-        this.version =
-            config.version ||
-            ADAPTER_VERSION;
+        Object.freeze(
+            this.identity
+        );
     }
 
     /**
@@ -131,12 +783,16 @@ class RegulatoryAdapterInterface {
 
     getIdentity() {
         return {
-            adapterName: this.adapterName,
-            countryCode: this.countryCode,
-            jurisdiction: this.jurisdiction,
-            regulatorCode: this.regulatorCode,
-            version: this.version,
+            ...this.identity,
         };
+    }
+
+    getIdentityFingerprint() {
+        return sha256(
+            stableSerialize(
+                this.identity
+            )
+        );
     }
 
     /**
@@ -147,25 +803,94 @@ class RegulatoryAdapterInterface {
 
     getCapabilities() {
         return {
-            [CAPABILITIES.REPORT_SCHEMA]: false,
-            [CAPABILITIES.VALIDATION]: false,
-            [CAPABILITIES.TRANSFORMATION]: false,
-            [CAPABILITIES.THRESHOLDS]: false,
-            [CAPABILITIES.CALENDAR]: false,
-            [CAPABILITIES.SUBMISSION]: false,
-            [CAPABILITIES.ACKNOWLEDGEMENT]: false,
-            [CAPABILITIES.STATUS_QUERY]: false,
-            [CAPABILITIES.AMENDMENT]: false,
-            [CAPABILITIES.CANCELLATION]: false,
+            ...DEFAULT_CAPABILITIES,
         };
     }
 
-    supports(capability) {
-        return this.getCapabilities()[capability] === true;
+    getNormalizedCapabilities() {
+        const capabilities =
+            this.getCapabilities() ||
+            {};
+
+        const normalized = {
+            ...DEFAULT_CAPABILITIES,
+        };
+
+        for (
+            const key
+            of Object.keys(
+                DEFAULT_CAPABILITIES
+            )
+        ) {
+            if (
+                Object.prototype.hasOwnProperty.call(
+                    capabilities,
+                    key
+                )
+            ) {
+                normalized[key] =
+                    capabilities[key] === true;
+            }
+        }
+
+        return Object.freeze(
+            normalized
+        );
     }
 
-    supportsReportType(type) {
-        return Object.values(REPORT_TYPES).includes(type);
+    supports(
+        capability
+    ) {
+        if (
+            typeof capability !== 'string'
+        ) {
+            return false;
+        }
+
+        return (
+            this.getNormalizedCapabilities()[
+                capability
+            ] === true
+        );
+    }
+
+    supportsReportType(
+        type
+    ) {
+        try {
+            const normalized =
+                normalizeReportType(
+                    type
+                );
+
+            /**
+             * If the concrete adapter exposes an explicit supported-report
+             * list, honor it.
+             */
+            if (
+                typeof this.getSupportedReportTypes ===
+                'function'
+            ) {
+                return this
+                    .getSupportedReportTypes()
+                    .includes(
+                        normalized
+                    );
+            }
+
+            return true;
+
+        } catch {
+            return false;
+        }
+    }
+
+    getSupportedReportTypes() {
+        return Object.freeze([
+            ...Object.values(
+                REPORT_TYPES
+            ),
+        ]);
     }
 
     /**
@@ -174,36 +899,31 @@ class RegulatoryAdapterInterface {
      * =========================================================================
      */
 
-    /**
-     * Return jurisdiction-specific reporting configuration.
-     *
-     * Concrete adapters should return:
-     *
-     * {
-     *   currency,
-     *   timezone,
-     *   thresholds,
-     *   reportingPeriods,
-     *   submissionChannels,
-     *   retentionPolicy
-     * }
-     */
     getRegulatoryConfig() {
         return {};
     }
 
+    getSafeRegulatoryConfig() {
+        const configuration =
+            this.getRegulatoryConfig() ||
+            {};
+
+        return deepClone(
+            configuration
+        );
+    }
+
     /**
      * =========================================================================
-     * REPORT SCHEMAS
+     * REPORT SCHEMA
      * =========================================================================
      */
 
-    /**
-     * Return schema metadata for a report type.
-     */
-    getReportSchema(reportType) {
+    getReportSchema(
+        reportType
+    ) {
         throw new Error(
-            `${this.adapterName}: getReportSchema(${reportType}) must be implemented`
+            `${this.identity.adapterName}: getReportSchema(${reportType}) must be implemented`
         );
     }
 
@@ -213,19 +933,11 @@ class RegulatoryAdapterInterface {
      * =========================================================================
      */
 
-    /**
-     * Resolve jurisdiction-specific thresholds.
-     *
-     * Example:
-     *
-     * {
-     *   transactionReportingThreshold: 10000000,
-     *   cashReportingThreshold: 5000000
-     * }
-     */
-    getThresholds(context = {}) {
+    getThresholds(
+        context = {}
+    ) {
         throw new Error(
-            `${this.adapterName}: getThresholds() must be implemented`
+            `${this.identity.adapterName}: getThresholds() must be implemented`
         );
     }
 
@@ -235,13 +947,12 @@ class RegulatoryAdapterInterface {
      * =========================================================================
      */
 
-    /**
-     * Convert internal TITech report representation into
-     * regulator-specific representation.
-     */
-    async transformReport(report, context = {}) {
+    async transformReport(
+        report,
+        context = {}
+    ) {
         throw new Error(
-            `${this.adapterName}: transformReport() must be implemented`
+            `${this.identity.adapterName}: transformReport() must be implemented`
         );
     }
 
@@ -251,20 +962,12 @@ class RegulatoryAdapterInterface {
      * =========================================================================
      */
 
-    /**
-     * Validate a report before submission.
-     *
-     * Expected response:
-     *
-     * {
-     *   valid: true,
-     *   errors: [],
-     *   warnings: []
-     * }
-     */
-    async validateReport(report, context = {}) {
+    async validateReport(
+        report,
+        context = {}
+    ) {
         throw new Error(
-            `${this.adapterName}: validateReport() must be implemented`
+            `${this.identity.adapterName}: validateReport() must be implemented`
         );
     }
 
@@ -274,31 +977,29 @@ class RegulatoryAdapterInterface {
      * =========================================================================
      */
 
-    /**
-     * Determine whether a report is currently within
-     * an allowed filing window.
-     */
-    getReportingCalendar(context = {}) {
+    getReportingCalendar(
+        context = {}
+    ) {
         throw new Error(
-            `${this.adapterName}: getReportingCalendar() must be implemented`
+            `${this.identity.adapterName}: getReportingCalendar() must be implemented`
         );
     }
 
-    /**
-     * Determine filing deadline.
-     */
-    getSubmissionDeadline(report, context = {}) {
+    getSubmissionDeadline(
+        report,
+        context = {}
+    ) {
         throw new Error(
-            `${this.adapterName}: getSubmissionDeadline() must be implemented`
+            `${this.identity.adapterName}: getSubmissionDeadline() must be implemented`
         );
     }
 
-    /**
-     * Determine whether a report is due.
-     */
-    isReportDue(report, context = {}) {
+    isReportDue(
+        report,
+        context = {}
+    ) {
         throw new Error(
-            `${this.adapterName}: isReportDue() must be implemented`
+            `${this.identity.adapterName}: isReportDue() must be implemented`
         );
     }
 
@@ -308,15 +1009,12 @@ class RegulatoryAdapterInterface {
      * =========================================================================
      */
 
-    /**
-     * Submit report to regulator.
-     *
-     * Concrete adapters should NEVER blindly submit.
-     * Validation should occur before this method.
-     */
-    async submitReport(report, context = {}) {
+    async submitReport(
+        report,
+        context = {}
+    ) {
         throw new Error(
-            `${this.adapterName}: submitReport() must be implemented`
+            `${this.identity.adapterName}: submitReport() must be implemented`
         );
     }
 
@@ -326,9 +1024,12 @@ class RegulatoryAdapterInterface {
      * =========================================================================
      */
 
-    async getSubmissionStatus(reference, context = {}) {
+    async getSubmissionStatus(
+        reference,
+        context = {}
+    ) {
         throw new Error(
-            `${this.adapterName}: getSubmissionStatus() must be implemented`
+            `${this.identity.adapterName}: getSubmissionStatus() must be implemented`
         );
     }
 
@@ -338,35 +1039,27 @@ class RegulatoryAdapterInterface {
      * =========================================================================
      */
 
-    /**
-     * Parse regulator acknowledgement.
-     *
-     * Expected response:
-     *
-     * {
-     *   status,
-     *   accepted,
-     *   reference,
-     *   regulatorReference,
-     *   errors,
-     *   warnings
-     * }
-     */
-    async parseAcknowledgement(response, context = {}) {
+    async parseAcknowledgement(
+        response,
+        context = {}
+    ) {
         throw new Error(
-            `${this.adapterName}: parseAcknowledgement() must be implemented`
+            `${this.identity.adapterName}: parseAcknowledgement() must be implemented`
         );
     }
 
     /**
      * =========================================================================
-     * AMENDMENTS
+     * AMENDMENT
      * =========================================================================
      */
 
-    async amendReport(report, context = {}) {
+    async amendReport(
+        report,
+        context = {}
+    ) {
         throw new Error(
-            `${this.adapterName}: amendReport() must be implemented`
+            `${this.identity.adapterName}: amendReport() must be implemented`
         );
     }
 
@@ -376,9 +1069,12 @@ class RegulatoryAdapterInterface {
      * =========================================================================
      */
 
-    async cancelReport(report, context = {}) {
+    async cancelReport(
+        report,
+        context = {}
+    ) {
         throw new Error(
-            `${this.adapterName}: cancelReport() must be implemented`
+            `${this.identity.adapterName}: cancelReport() must be implemented`
         );
     }
 
@@ -390,11 +1086,26 @@ class RegulatoryAdapterInterface {
 
     async healthCheck() {
         return {
-            healthy: true,
-            adapter: this.adapterName,
-            countryCode: this.countryCode,
-            regulatorCode: this.regulatorCode,
-            timestamp: new Date().toISOString(),
+            healthy:
+                true,
+
+            adapter:
+                this.identity.adapterName,
+
+            countryCode:
+                this.identity.countryCode,
+
+            jurisdiction:
+                this.identity.jurisdiction,
+
+            regulatorCode:
+                this.identity.regulatorCode,
+
+            version:
+                this.identity.version,
+
+            timestamp:
+                new Date().toISOString(),
         };
     }
 
@@ -402,29 +1113,109 @@ class RegulatoryAdapterInterface {
      * =========================================================================
      * IDEMPOTENCY
      * =========================================================================
+     *
+     * Report content is included in the idempotency material.
+     *
+     * This avoids treating two different report revisions as the same
+     * submission merely because they share reportId/version metadata.
      */
 
-    /**
-     * Generate deterministic submission idempotency key.
-     *
-     * The same report should produce the same key unless
-     * its version/content changes.
-     */
-    createIdempotencyKey(report, context = {}) {
+    createIdempotencyKey(
+        report,
+        context = {}
+    ) {
+        this.assertReport(
+            report
+        );
+
+        const reportFingerprint =
+            this.createReportFingerprint(
+                report
+            );
+
         const material = {
-            adapter: this.adapterName,
-            countryCode: this.countryCode,
-            regulatorCode: this.regulatorCode,
-            tenantId: context.tenantId || report.tenantId || null,
-            reportId: report.id || null,
-            reportType: report.type || null,
-            version: report.version || 1,
+            adapter:
+                this.identity.adapterName,
+
+            countryCode:
+                this.identity.countryCode,
+
+            jurisdiction:
+                this.identity.jurisdiction,
+
+            regulatorCode:
+                this.identity.regulatorCode,
+
+            adapterVersion:
+                this.identity.version,
+
+            tenantId:
+                context.tenantId ||
+                report.tenantId ||
+                null,
+
+            reportId:
+                report.id ||
+                report.reportId ||
+                null,
+
+            reportType:
+                report.type,
+
+            reportVersion:
+                report.version ||
+                1,
+
+            reportFingerprint,
         };
 
-        return crypto
-            .createHash('sha256')
-            .update(JSON.stringify(material))
-            .digest('hex');
+        return sha256(
+            stableSerialize(
+                material
+            )
+        );
+    }
+
+    createReportFingerprint(
+        report
+    ) {
+        this.assertReport(
+            report
+        );
+
+        /**
+         * Exclude operational/transient fields that should not change report
+         * business identity.
+         */
+        const canonical = {
+            type:
+                report.type,
+
+            tenantId:
+                report.tenantId ||
+                null,
+
+            id:
+                report.id ||
+                report.reportId ||
+                null,
+
+            version:
+                report.version ||
+                1,
+
+            data:
+                report.data ||
+                report.payload ||
+                report.content ||
+                report,
+        };
+
+        return sha256(
+            stableSerialize(
+                canonical
+            )
+        );
     }
 
     /**
@@ -433,14 +1224,30 @@ class RegulatoryAdapterInterface {
      * =========================================================================
      */
 
-    normalizeSubmissionResponse(response = {}) {
+    normalizeSubmissionResponse(
+        response = {}
+    ) {
+        if (
+            response === null ||
+            typeof response !== 'object'
+        ) {
+            response = {};
+        }
+
+        const status =
+            normalizeSubmissionStatus(
+                response.status
+            ) ||
+            SUBMISSION_STATUS.SUBMITTED;
+
         return {
             success:
                 response.success !== false,
 
-            status:
-                response.status ||
-                SUBMISSION_STATUS.SUBMITTED,
+            adapter:
+                this.identity.adapterName,
+
+            status,
 
             reference:
                 response.reference ||
@@ -456,17 +1263,44 @@ class RegulatoryAdapterInterface {
                 new Date().toISOString(),
 
             raw:
-                response.raw || response,
+                response.raw !== undefined
+                    ? response.raw
+                    : response,
         };
     }
 
-    normalizeAcknowledgement(response = {}) {
+    normalizeAcknowledgement(
+        response = {}
+    ) {
+        if (
+            response === null ||
+            typeof response !== 'object'
+        ) {
+            response = {};
+        }
+
+        const errors =
+            Array.isArray(
+                response.errors
+            )
+                ? [...response.errors]
+                : [];
+
+        const warnings =
+            Array.isArray(
+                response.warnings
+            )
+                ? [...response.warnings]
+                : [];
+
         return {
             accepted:
                 response.accepted === true,
 
             status:
-                response.status ||
+                normalizeSubmissionStatus(
+                    response.status
+                ) ||
                 SUBMISSION_STATUS.ACKNOWLEDGED,
 
             reference:
@@ -477,22 +1311,18 @@ class RegulatoryAdapterInterface {
                 response.regulatorReference ||
                 null,
 
-            errors:
-                Array.isArray(response.errors)
-                    ? response.errors
-                    : [],
+            errors,
 
-            warnings:
-                Array.isArray(response.warnings)
-                    ? response.warnings
-                    : [],
+            warnings,
 
             acknowledgedAt:
                 response.acknowledgedAt ||
                 new Date().toISOString(),
 
             raw:
-                response.raw || response,
+                response.raw !== undefined
+                    ? response.raw
+                    : response,
         };
     }
 
@@ -502,37 +1332,56 @@ class RegulatoryAdapterInterface {
      * =========================================================================
      */
 
-    normalizeError(error, context = {}) {
+    normalizeError(
+        error,
+        context = {}
+    ) {
         return {
-            success: false,
+            success:
+                false,
 
             adapter:
-                this.adapterName,
+                this.identity.adapterName,
 
             countryCode:
-                this.countryCode,
+                this.identity.countryCode,
+
+            jurisdiction:
+                this.identity.jurisdiction,
 
             regulatorCode:
-                this.regulatorCode,
+                this.identity.regulatorCode,
 
             code:
-                error?.code ||
-                'REGULATORY_ADAPTER_ERROR',
+                normalizeString(
+                    error?.code,
+                    'REGULATORY_ADAPTER_ERROR',
+                    MAX_ERROR_CODE_LENGTH
+                ),
 
             message:
-                error?.message ||
-                'Regulatory adapter operation failed.',
+                normalizeString(
+                    error?.message,
+                    'Regulatory adapter operation failed.',
+                    MAX_ERROR_MESSAGE_LENGTH
+                ),
 
             retryable:
                 error?.retryable === true,
 
             operation:
-                context.operation ||
-                null,
+                normalizeOptionalString(
+                    context.operation,
+                    'operation',
+                    MAX_OPERATION_LENGTH
+                ),
 
             reportId:
-                context.reportId ||
-                null,
+                normalizeOptionalString(
+                    context.reportId,
+                    'reportId',
+                    MAX_REPORT_ID_LENGTH
+                ),
 
             timestamp:
                 new Date().toISOString(),
@@ -545,50 +1394,86 @@ class RegulatoryAdapterInterface {
      * =========================================================================
      */
 
-    success(data = {}) {
+    success(
+        data = {}
+    ) {
+        if (
+            !isPlainObject(
+                data
+            )
+        ) {
+            throw new TypeError(
+                'Regulatory adapter success data must be an object'
+            );
+        }
+
         return {
-            success: true,
+            success:
+                true,
 
             adapter:
-                this.adapterName,
+                this.identity.adapterName,
 
             countryCode:
-                this.countryCode,
+                this.identity.countryCode,
+
+            jurisdiction:
+                this.identity.jurisdiction,
 
             regulatorCode:
-                this.regulatorCode,
+                this.identity.regulatorCode,
 
             timestamp:
                 new Date().toISOString(),
 
-            ...data,
+            ...deepClone(
+                data
+            ),
         };
     }
 
     failure(
         message,
-        code = 'REGULATORY_ADAPTER_ERROR',
+        code =
+            'REGULATORY_ADAPTER_ERROR',
         data = {}
     ) {
         return {
-            success: false,
+            success:
+                false,
 
             adapter:
-                this.adapterName,
+                this.identity.adapterName,
 
             countryCode:
-                this.countryCode,
+                this.identity.countryCode,
+
+            jurisdiction:
+                this.identity.jurisdiction,
 
             regulatorCode:
-                this.regulatorCode,
+                this.identity.regulatorCode,
 
-            code,
-            message,
+            code:
+                normalizeString(
+                    code,
+                    'REGULATORY_ADAPTER_ERROR',
+                    MAX_ERROR_CODE_LENGTH
+                ),
+
+            message:
+                normalizeString(
+                    message,
+                    'Regulatory adapter operation failed.',
+                    MAX_ERROR_MESSAGE_LENGTH
+                ),
 
             timestamp:
                 new Date().toISOString(),
 
-            ...data,
+            ...deepClone(
+                data
+            ),
         };
     }
 
@@ -598,22 +1483,86 @@ class RegulatoryAdapterInterface {
      * =========================================================================
      */
 
-    assertReport(report) {
-        if (!report || typeof report !== 'object') {
+    assertReport(
+        report
+    ) {
+        if (
+            !report ||
+            typeof report !== 'object'
+        ) {
             throw new TypeError(
-                `${this.adapterName}: report is required`
+                `${this.identity.adapterName}: report is required`
             );
         }
 
-        if (!report.type) {
-            throw new TypeError(
-                `${this.adapterName}: report.type is required`
+        const type =
+            normalizeReportType(
+                report.type
             );
-        }
 
-        if (!this.supportsReportType(report.type)) {
+        if (
+            !this.supportsReportType(
+                type
+            )
+        ) {
             throw new Error(
-                `${this.adapterName}: unsupported report type ${report.type}`
+                `${this.identity.adapterName}: unsupported report type ${type}`
+            );
+        }
+
+        return true;
+    }
+
+    assertTenantContext(
+        report,
+        context = {}
+    ) {
+        const tenantId =
+            context.tenantId ||
+            report?.tenantId;
+
+        if (
+            !tenantId
+        ) {
+            throw new TypeError(
+                `${this.identity.adapterName}: tenantId is required`
+            );
+        }
+
+        normalizeRequiredString(
+            tenantId,
+            'tenantId',
+            MAX_TENANT_ID_LENGTH
+        );
+
+        if (
+            context.tenantId &&
+            report?.tenantId &&
+            String(
+                context.tenantId
+            ) !==
+                String(
+                    report.tenantId
+                )
+        ) {
+            throw new Error(
+                `${this.identity.adapterName}: tenant context does not match report tenant`
+            );
+        }
+
+        return true;
+    }
+
+    assertCapability(
+        capability
+    ) {
+        if (
+            !this.supports(
+                capability
+            )
+        ) {
+            throw new Error(
+                `${this.identity.adapterName}: capability ${capability} is not supported`
             );
         }
 
@@ -624,13 +1573,24 @@ class RegulatoryAdapterInterface {
      * =========================================================================
      * LIFECYCLE HOOKS
      * =========================================================================
-     *
-     * Optional hooks that concrete adapters may override.
      */
 
-    async beforeValidation(report, context = {}) {
+    async beforeValidation(
+        report,
+        context = {}
+    ) {
+        this.assertReport(
+            report
+        );
+
+        this.assertTenantContext(
+            report,
+            context
+        );
+
         return {
             report,
+
             context,
         };
     }
@@ -642,15 +1602,40 @@ class RegulatoryAdapterInterface {
     ) {
         return {
             report,
+
             validationResult,
+
             context,
         };
     }
 
-    async beforeSubmission(report, context = {}) {
+    async beforeSubmission(
+        report,
+        context = {}
+    ) {
+        this.assertReport(
+            report
+        );
+
+        this.assertTenantContext(
+            report,
+            context
+        );
+
+        this.assertCapability(
+            CAPABILITIES.SUBMISSION
+        );
+
         return {
             report,
+
             context,
+
+            idempotencyKey:
+                this.createIdempotencyKey(
+                    report,
+                    context
+                ),
         };
     }
 
@@ -661,7 +1646,9 @@ class RegulatoryAdapterInterface {
     ) {
         return {
             report,
+
             submissionResult,
+
             context,
         };
     }
@@ -670,28 +1657,81 @@ class RegulatoryAdapterInterface {
      * =========================================================================
      * SERIALIZATION
      * =========================================================================
+     *
+     * Only expose safe adapter identity and capabilities.
+     *
+     * Adapter configuration may contain sensitive endpoint/runtime details and
+     * is deliberately excluded.
      */
 
     toJSON() {
         return {
             ...this.getIdentity(),
+
             capabilities:
-                this.getCapabilities(),
+                this.getNormalizedCapabilities(),
+
+            identityFingerprint:
+                this.getIdentityFingerprint(),
+        };
+    }
+
+    /**
+     * =========================================================================
+     * Safe Diagnostics
+     * =========================================================================
+     */
+
+    getDiagnostics() {
+        return {
+            ...this.toJSON(),
+
+            supportedReportTypes:
+                [
+                    ...this.getSupportedReportTypes()
+                ],
+
             regulatoryConfig:
-                this.getRegulatoryConfig(),
+                this.getSafeRegulatoryConfig(),
         };
     }
 }
 
-module.exports = RegulatoryAdapterInterface;
-
 /**
  * ============================================================================
- * STATIC CONSTANTS
+ * Static Constants
  * ============================================================================
  */
 
-module.exports.REPORT_TYPES = REPORT_TYPES;
-module.exports.SUBMISSION_STATUS = SUBMISSION_STATUS;
-module.exports.CAPABILITIES = CAPABILITIES;
-module.exports.ADAPTER_VERSION = ADAPTER_VERSION;
+RegulatoryAdapterInterface.REPORT_TYPES =
+    REPORT_TYPES;
+
+RegulatoryAdapterInterface.SUBMISSION_STATUS =
+    SUBMISSION_STATUS;
+
+RegulatoryAdapterInterface.CAPABILITIES =
+    CAPABILITIES;
+
+RegulatoryAdapterInterface.ADAPTER_VERSION =
+    ADAPTER_VERSION;
+
+/**
+ * ============================================================================
+ * Exports
+ * ============================================================================
+ */
+
+module.exports =
+    RegulatoryAdapterInterface;
+
+module.exports.REPORT_TYPES =
+    REPORT_TYPES;
+
+module.exports.SUBMISSION_STATUS =
+    SUBMISSION_STATUS;
+
+module.exports.CAPABILITIES =
+    CAPABILITIES;
+
+module.exports.ADAPTER_VERSION =
+    ADAPTER_VERSION;

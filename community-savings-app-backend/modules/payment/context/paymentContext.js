@@ -6,35 +6,43 @@
  * Enterprise Payment Execution Context
  * ============================================================================
  *
- * Canonical request context shared across:
+ * File:
+ * backend/modules/payment/context/PaymentContext.js
  *
- *  • Airtel Money
- *  • MTN MoMo
- *  • Payment orchestration
- *  • Authentication
- *  • Idempotency
- *  • Callback processing
- *  • Settlement
- *  • Reconciliation
- *  • Ledger integration
- *  • Audit logging
- *  • Metrics
- *  • Distributed tracing
+ * Purpose
+ * ----------------------------------------------------------------------------
+ * Canonical execution context shared across:
+ *
+ * • Airtel Money
+ * • MTN MoMo
+ * • Payment orchestration
+ * • Authentication
+ * • Idempotency
+ * • Callback processing
+ * • Settlement
+ * • Reconciliation
+ * • Ledger integration
+ * • Audit logging
+ * • Metrics
+ * • Distributed tracing
  *
  * Design Goals
- * ------------
+ * ----------------------------------------------------------------------------
  * • Immutable execution identity
+ * • Deeply immutable metadata
  * • Tenant isolation
  * • Correlation propagation
  * • Idempotency propagation
- * • Provider/operation identification
+ * • Provider / operation identification
  * • Safe diagnostics
  * • Context fingerprinting
  * • Child context support
- * • Serialization
+ * • Deterministic serialization
+ * • Sensitive-data protection
+ * • Distributed workflow traceability
  *
  * Explicitly NOT Responsible For
- * ------------------------------
+ * ----------------------------------------------------------------------------
  * • Payment execution
  * • Authentication
  * • Ledger posting
@@ -46,39 +54,86 @@
 
 const crypto = require('crypto');
 
-
 /**
  * ============================================================================
  * Constants
  * ============================================================================
  */
 
-const CONTEXT_VERSION =
-    '1.0';
+const CONTEXT_VERSION = '1.1';
 
-const MAX_STRING_LENGTH =
-    512;
+const MAX_STRING_LENGTH = 512;
 
-const MAX_METADATA_KEYS =
-    50;
+const MAX_TENANT_ID_LENGTH = 256;
 
-const RESERVED_METADATA_KEYS =
-    new Set([
-        'password',
-        'secret',
-        'clientSecret',
-        'accessToken',
-        'refreshToken',
-        'authorization',
-        'token',
-        'apiKey',
-        'privateKey',
-    ]);
+const MAX_USER_ID_LENGTH = 256;
 
+const MAX_PROVIDER_LENGTH = 128;
+
+const MAX_OPERATION_LENGTH = 256;
+
+const MAX_REQUEST_ID_LENGTH = 256;
+
+const MAX_CORRELATION_ID_LENGTH = 256;
+
+const MAX_IDEMPOTENCY_KEY_LENGTH = 512;
+
+const MAX_PARENT_REQUEST_ID_LENGTH = 256;
+
+const MAX_METADATA_KEYS = 50;
+
+const MAX_METADATA_DEPTH = 6;
+
+const MAX_METADATA_ARRAY_LENGTH = 100;
+
+const RESERVED_METADATA_KEYS = new Set([
+    'password',
+    'passwd',
+    'passphrase',
+    'secret',
+    'clientsecret',
+    'client_secret',
+    'accessToken',
+    'accesstoken',
+    'access_token',
+    'refreshToken',
+    'refreshtoken',
+    'refresh_token',
+    'authorization',
+    'proxyAuthorization',
+    'cookie',
+    'set-cookie',
+    'token',
+    'bearerToken',
+    'bearertoken',
+    'apiKey',
+    'apikey',
+    'api_key',
+    'privateKey',
+    'privatekey',
+    'private_key',
+    'credential',
+    'credentials',
+    'signature',
+    'webhookSecret',
+    'webhooksecret',
+    'webhook_secret',
+]);
+
+const RESERVED_METADATA_NORMALIZED_KEYS =
+    new Set(
+        Array.from(
+            RESERVED_METADATA_KEYS,
+            key =>
+                String(key)
+                    .replace(/[\s_-]/g, '')
+                    .toLowerCase()
+        )
+    );
 
 /**
  * ============================================================================
- * Utilities
+ * Utility Functions
  * ============================================================================
  */
 
@@ -86,10 +141,27 @@ function generateId() {
     return crypto.randomUUID();
 }
 
+function isPlainObject(value) {
+    if (
+        value === null ||
+        typeof value !== 'object'
+    ) {
+        return false;
+    }
+
+    const prototype =
+        Object.getPrototypeOf(value);
+
+    return (
+        prototype === Object.prototype ||
+        prototype === null
+    );
+}
 
 function normalizeRequiredString(
     value,
-    field
+    field,
+    maxLength = MAX_STRING_LENGTH
 ) {
     if (
         typeof value !== 'string' ||
@@ -105,20 +177,20 @@ function normalizeRequiredString(
 
     if (
         normalized.length >
-        MAX_STRING_LENGTH
+        maxLength
     ) {
         throw new RangeError(
-            `${field} exceeds maximum length`
+            `${field} exceeds maximum length of ${maxLength}`
         );
     }
 
     return normalized;
 }
 
-
 function normalizeOptionalString(
     value,
-    field
+    field,
+    maxLength = MAX_STRING_LENGTH
 ) {
     if (
         value === undefined ||
@@ -128,7 +200,9 @@ function normalizeOptionalString(
         return null;
     }
 
-    if (typeof value !== 'string') {
+    if (
+        typeof value !== 'string'
+    ) {
         throw new TypeError(
             `${field} must be a string`
         );
@@ -138,39 +212,297 @@ function normalizeOptionalString(
         value.trim();
 
     if (
+        normalized.length === 0
+    ) {
+        return null;
+    }
+
+    if (
         normalized.length >
-        MAX_STRING_LENGTH
+        maxLength
     ) {
         throw new RangeError(
-            `${field} exceeds maximum length`
+            `${field} exceeds maximum length of ${maxLength}`
         );
     }
 
-    return normalized || null;
+    return normalized;
 }
 
+function normalizeProvider(
+    provider
+) {
+    return normalizeRequiredString(
+        provider,
+        'provider',
+        MAX_PROVIDER_LENGTH
+    ).toUpperCase();
+}
+
+function normalizeOperation(
+    operation
+) {
+    return normalizeRequiredString(
+        operation,
+        'operation',
+        MAX_OPERATION_LENGTH
+    );
+}
+
+/**
+ * ============================================================================
+ * Deep Freeze
+ * ============================================================================
+ *
+ * Object.freeze() only freezes the object itself.
+ *
+ * Nested arrays/objects and Date instances require special handling.
+ * ============================================================================
+ */
+
+function deepFreeze(value, seen = new WeakSet()) {
+    if (
+        value === null ||
+        typeof value !== 'object'
+    ) {
+        return value;
+    }
+
+    if (
+        seen.has(value)
+    ) {
+        return value;
+    }
+
+    seen.add(value);
+
+    if (
+        value instanceof Date
+    ) {
+        return value;
+    }
+
+    if (
+        Array.isArray(value)
+    ) {
+        for (
+            const item of value
+        ) {
+            deepFreeze(
+                item,
+                seen
+            );
+        }
+
+        return Object.freeze(
+            value
+        );
+    }
+
+    for (
+        const key of Object.keys(value)
+    ) {
+        deepFreeze(
+            value[key],
+            seen
+        );
+    }
+
+    return Object.freeze(
+        value
+    );
+}
+
+/**
+ * ============================================================================
+ * Clone Value
+ * ============================================================================
+ *
+ * Used for safe outward serialization.
+ * ============================================================================
+ */
+
+function cloneValue(
+    value,
+    seen = new WeakMap()
+) {
+    if (
+        value === null ||
+        typeof value !== 'object'
+    ) {
+        return value;
+    }
+
+    if (
+        value instanceof Date
+    ) {
+        return new Date(
+            value.getTime()
+        );
+    }
+
+    if (
+        Buffer.isBuffer(value)
+    ) {
+        return '[BUFFER_REDACTED]';
+    }
+
+    if (
+        seen.has(value)
+    ) {
+        return '[CIRCULAR]';
+    }
+
+    if (
+        Array.isArray(value)
+    ) {
+        const result = [];
+
+        seen.set(
+            value,
+            result
+        );
+
+        for (
+            const item of value
+        ) {
+            result.push(
+                cloneValue(
+                    item,
+                    seen
+                )
+            );
+        }
+
+        return result;
+    }
+
+    const result = {};
+
+    seen.set(
+        value,
+        result
+    );
+
+    for (
+        const [key, child]
+        of Object.entries(value)
+    ) {
+        result[key] =
+            cloneValue(
+                child,
+                seen
+            );
+    }
+
+    return result;
+}
+
+/**
+ * ============================================================================
+ * Metadata Key Security
+ * ============================================================================
+ */
+
+function normalizeMetadataKey(
+    key
+) {
+    return String(key)
+        .trim()
+        .replace(/[\s_-]/g, '')
+        .toLowerCase();
+}
+
+function isReservedMetadataKey(
+    key
+) {
+    return RESERVED_METADATA_NORMALIZED_KEYS.has(
+        normalizeMetadataKey(key)
+    );
+}
+
+/**
+ * ============================================================================
+ * Metadata Sanitization
+ * ============================================================================
+ *
+ * Strictly rejects sensitive metadata instead of silently redacting it.
+ *
+ * This is preferable for payment contexts because accidentally attempting to
+ * place credentials in a context should fail immediately.
+ * ============================================================================
+ */
 
 function sanitizeMetadata(
-    metadata = {}
+    metadata = {},
+    depth = 0,
+    seen = new WeakSet()
 ) {
     if (
         metadata === null ||
         metadata === undefined
     ) {
-        return Object.freeze({});
+        return {};
     }
 
     if (
-        typeof metadata !== 'object' ||
-        Array.isArray(metadata)
+        depth > MAX_METADATA_DEPTH
+    ) {
+        throw new RangeError(
+            `metadata exceeds maximum nesting depth of ${MAX_METADATA_DEPTH}`
+        );
+    }
+
+    if (
+        !isPlainObject(metadata) &&
+        !Array.isArray(metadata)
     ) {
         throw new TypeError(
             'metadata must be an object'
         );
     }
 
+    if (
+        seen.has(metadata)
+    ) {
+        throw new TypeError(
+            'metadata cannot contain circular references'
+        );
+    }
+
+    seen.add(metadata);
+
+    if (
+        Array.isArray(metadata)
+    ) {
+        if (
+            metadata.length >
+            MAX_METADATA_ARRAY_LENGTH
+        ) {
+            throw new RangeError(
+                `metadata arrays cannot contain more than ${MAX_METADATA_ARRAY_LENGTH} items`
+            );
+        }
+
+        const result =
+            metadata.map(
+                item =>
+                    sanitizeMetadataValue(
+                        item,
+                        depth + 1,
+                        seen
+                    )
+            );
+
+        return deepFreeze(
+            result
+        );
+    }
+
     const entries =
-        Object.entries(metadata);
+        Object.entries(
+            metadata
+        );
 
     if (
         entries.length >
@@ -188,33 +520,142 @@ function sanitizeMetadata(
         of entries
     ) {
         if (
-            RESERVED_METADATA_KEYS.has(
-                key
-            )
+            key === '__proto__' ||
+            key === 'prototype' ||
+            key === 'constructor'
+        ) {
+            throw new Error(
+                `Unsafe metadata field is not permitted: ${key}`
+            );
+        }
+
+        if (
+            isReservedMetadataKey(key)
         ) {
             throw new Error(
                 `Sensitive metadata field is not permitted: ${key}`
             );
         }
 
-        if (
-            typeof value === 'function' ||
-            typeof value === 'symbol'
-        ) {
-            throw new TypeError(
-                `Unsupported metadata value for ${key}`
-            );
-        }
-
         result[key] =
-            value;
+            sanitizeMetadataValue(
+                value,
+                depth + 1,
+                seen
+            );
     }
 
-    return Object.freeze(
+    return deepFreeze(
         result
     );
 }
 
+function sanitizeMetadataValue(
+    value,
+    depth,
+    seen
+) {
+    if (
+        value === null ||
+        value === undefined
+    ) {
+        return value;
+    }
+
+    if (
+        typeof value === 'string' ||
+        typeof value === 'number' ||
+        typeof value === 'boolean'
+    ) {
+        if (
+            typeof value === 'number' &&
+            !Number.isFinite(value)
+        ) {
+            throw new TypeError(
+                'metadata cannot contain non-finite numbers'
+            );
+        }
+
+        return value;
+    }
+
+    if (
+        value instanceof Date
+    ) {
+        return new Date(
+            value.getTime()
+        );
+    }
+
+    if (
+        typeof value === 'function' ||
+        typeof value === 'symbol' ||
+        typeof value === 'bigint'
+    ) {
+        throw new TypeError(
+            'Unsupported metadata value type'
+        );
+    }
+
+    return sanitizeMetadata(
+        value,
+        depth,
+        seen
+    );
+}
+
+/**
+ * ============================================================================
+ * Canonical Serialization
+ * ============================================================================
+ */
+
+function stableSerialize(value) {
+    if (
+        value === null ||
+        value === undefined
+    ) {
+        return JSON.stringify(
+            value
+        );
+    }
+
+    if (
+        value instanceof Date
+    ) {
+        return JSON.stringify(
+            value.toISOString()
+        );
+    }
+
+    if (
+        Array.isArray(value)
+    ) {
+        return `[${value
+            .map(
+                stableSerialize
+            )
+            .join(',')}]`;
+    }
+
+    if (
+        typeof value === 'object'
+    ) {
+        return `{${Object.keys(value)
+            .sort()
+            .map(
+                key =>
+                    `${JSON.stringify(key)}:${stableSerialize(
+                        value[key]
+                    )}`
+            )
+            .join(',')}}`;
+    }
+
+    return JSON.stringify(
+        value
+    );
+}
 
 /**
  * ============================================================================
@@ -225,7 +666,6 @@ function sanitizeMetadata(
 class PaymentContext {
 
     constructor({
-
         tenantId,
 
         userId = null,
@@ -253,78 +693,81 @@ class PaymentContext {
 
         /**
          * --------------------------------------------------------------------
-         * Validate mandatory identity
+         * Tenant identity
          * --------------------------------------------------------------------
          */
 
         this._tenantId =
             normalizeRequiredString(
                 tenantId,
-                'tenantId'
+                'tenantId',
+                MAX_TENANT_ID_LENGTH
             );
-
-        this._provider =
-            normalizeRequiredString(
-                provider,
-                'provider'
-            )
-            .toUpperCase();
-
-        this._operation =
-            normalizeRequiredString(
-                operation,
-                'operation'
-            );
-
 
         /**
          * --------------------------------------------------------------------
-         * Optional identity
+         * Provider / operation identity
+         * --------------------------------------------------------------------
+         */
+
+        this._provider =
+            normalizeProvider(
+                provider
+            );
+
+        this._operation =
+            normalizeOperation(
+                operation
+            );
+
+        /**
+         * --------------------------------------------------------------------
+         * Optional user identity
          * --------------------------------------------------------------------
          */
 
         this._userId =
             normalizeOptionalString(
                 userId,
-                'userId'
+                'userId',
+                MAX_USER_ID_LENGTH
             );
-
 
         /**
          * --------------------------------------------------------------------
          * Request identity
          * --------------------------------------------------------------------
          *
-         * requestId identifies one concrete execution/request.
+         * requestId = one concrete execution/request.
          *
-         * correlationId connects multiple related operations across
-         * services, retries, callbacks and asynchronous workflows.
+         * correlationId = distributed workflow identity shared by all related
+         * child operations, retries, callbacks and asynchronous processing.
          */
 
         this._requestId =
             requestId
                 ? normalizeRequiredString(
                     requestId,
-                    'requestId'
+                    'requestId',
+                    MAX_REQUEST_ID_LENGTH
                 )
                 : generateId();
-
 
         this._correlationId =
             correlationId
                 ? normalizeRequiredString(
                     correlationId,
-                    'correlationId'
+                    'correlationId',
+                    MAX_CORRELATION_ID_LENGTH
                 )
                 : this._requestId;
-
 
         this._parentRequestId =
             normalizeOptionalString(
                 parentRequestId,
-                'parentRequestId'
+                'parentRequestId',
+                MAX_PARENT_REQUEST_ID_LENGTH
             );
-
 
         /**
          * --------------------------------------------------------------------
@@ -335,13 +778,13 @@ class PaymentContext {
         this._idempotencyKey =
             normalizeOptionalString(
                 idempotencyKey,
-                'idempotencyKey'
+                'idempotencyKey',
+                MAX_IDEMPOTENCY_KEY_LENGTH
             );
-
 
         /**
          * --------------------------------------------------------------------
-         * Context metadata
+         * Metadata
          * --------------------------------------------------------------------
          */
 
@@ -349,7 +792,6 @@ class PaymentContext {
             sanitizeMetadata(
                 metadata
             );
-
 
         /**
          * --------------------------------------------------------------------
@@ -360,9 +802,9 @@ class PaymentContext {
         this._contextVersion =
             normalizeRequiredString(
                 contextVersion,
-                'contextVersion'
+                'contextVersion',
+                64
             );
-
 
         /**
          * --------------------------------------------------------------------
@@ -370,15 +812,16 @@ class PaymentContext {
          * --------------------------------------------------------------------
          */
 
-        this._createdAt =
+        const timestamp =
             createdAt
-                ? new Date(createdAt)
+                ? new Date(
+                    createdAt
+                )
                 : new Date();
-
 
         if (
             Number.isNaN(
-                this._createdAt.getTime()
+                timestamp.getTime()
             )
         ) {
             throw new TypeError(
@@ -386,23 +829,37 @@ class PaymentContext {
             );
         }
 
+        /**
+         * Store the timestamp as a frozen primitive-backed Date snapshot.
+         *
+         * The getter below returns a clone, preventing callers from mutating
+         * the internal execution timestamp.
+         */
+
+        this._createdAt =
+            Object.freeze(
+                timestamp
+            );
 
         /**
          * --------------------------------------------------------------------
-         * Freeze nested metadata and the context itself
+         * Context fingerprint
          * --------------------------------------------------------------------
          */
 
-        Object.freeze(
-            this._metadata
-        );
+        this._fingerprint =
+            this._computeFingerprint();
 
+        /**
+         * --------------------------------------------------------------------
+         * Freeze context
+         * --------------------------------------------------------------------
+         */
 
         Object.freeze(
             this
         );
     }
-
 
     /**
      * =========================================================================
@@ -414,56 +871,56 @@ class PaymentContext {
         return this._requestId;
     }
 
-
     get tenantId() {
         return this._tenantId;
     }
-
 
     get userId() {
         return this._userId;
     }
 
-
     get provider() {
         return this._provider;
     }
-
 
     get operation() {
         return this._operation;
     }
 
-
     get correlationId() {
         return this._correlationId;
     }
-
 
     get idempotencyKey() {
         return this._idempotencyKey;
     }
 
-
     get parentRequestId() {
         return this._parentRequestId;
     }
-
 
     get contextVersion() {
         return this._contextVersion;
     }
 
-
     get createdAt() {
-        return this._createdAt;
+        /**
+         * Date remains mutable even when frozen, so always return a clone.
+         */
+        return new Date(
+            this._createdAt.getTime()
+        );
     }
-
 
     get metadata() {
-        return this._metadata;
+        /**
+         * Return a cloned frozen structure so callers cannot mutate internal
+         * nested references.
+         */
+        return cloneValue(
+            this._metadata
+        );
     }
-
 
     /**
      * =========================================================================
@@ -472,26 +929,60 @@ class PaymentContext {
      */
 
     requiresIdempotency() {
-
         return Boolean(
             this._idempotencyKey
         );
     }
 
+    /**
+     * =========================================================================
+     * Require Idempotency
+     * =========================================================================
+     *
+     * Useful for operations such as payment initiation, reversal, refund,
+     * settlement creation, or other financial mutations where idempotency
+     * must exist before provider execution.
+     */
+
+    assertIdempotencyRequired() {
+
+        if (
+            !this._idempotencyKey
+        ) {
+            const error =
+                new TypeError(
+                    `Idempotency key is required for payment operation: ${this._operation}`
+                );
+
+            error.code =
+                'PAYMENT_IDEMPOTENCY_KEY_REQUIRED';
+
+            throw error;
+        }
+
+        return this;
+    }
 
     /**
      * =========================================================================
      * Context Fingerprint
      * =========================================================================
      *
-     * Used for diagnostics and correlation.
+     * Used for deterministic diagnostics and correlation.
      *
-     * Do NOT use this as the idempotency key itself.
+     * IMPORTANT:
+     * This is NOT an idempotency key.
      */
 
     fingerprint() {
+        return this._fingerprint;
+    }
+
+    _computeFingerprint() {
 
         const canonical = {
+            contextVersion:
+                this._contextVersion,
 
             tenantId:
                 this._tenantId,
@@ -513,16 +1004,14 @@ class PaymentContext {
 
             parentRequestId:
                 this._parentRequestId,
-
-            contextVersion:
-                this._contextVersion,
         };
 
-
         return crypto
-            .createHash('sha256')
+            .createHash(
+                'sha256'
+            )
             .update(
-                JSON.stringify(
+                stableSerialize(
                     canonical
                 ),
                 'utf8'
@@ -530,30 +1019,36 @@ class PaymentContext {
             .digest('hex');
     }
 
-
     /**
      * =========================================================================
      * Child Context
      * =========================================================================
      *
-     * Useful when one payment operation invokes a downstream operation.
+     * Parent:
      *
-     * Example:
+     *   PAYMENT_INITIATE
+     *        │
+     *        ├── PROVIDER_AUTH
+     *        ├── PROVIDER_REQUEST
+     *        └── AUDIT
      *
-     * Payment request
-     *      ↓
-     * Airtel authentication
-     *      ↓
-     * Provider request
+     * Child contexts preserve:
+     * - tenant
+     * - user
+     * - correlation
+     * - idempotency
+     *
+     * but receive a new requestId and parentRequestId.
      */
 
     child({
-
         operation,
 
-        provider = this._provider,
+        provider =
+            this._provider,
 
-        userId = this._userId,
+        userId =
+            this._userId,
 
         idempotencyKey =
             this._idempotencyKey,
@@ -561,6 +1056,13 @@ class PaymentContext {
         metadata = {},
 
     } = {}) {
+
+        const mergedMetadata = {
+            ...cloneValue(
+                this._metadata
+            ),
+            ...metadata,
+        };
 
         return new PaymentContext({
 
@@ -581,21 +1083,60 @@ class PaymentContext {
             parentRequestId:
                 this._requestId,
 
-            metadata: {
-                ...this._metadata,
-                ...metadata,
-            },
+            metadata:
+                mergedMetadata,
 
             contextVersion:
                 this._contextVersion,
+
         });
     }
 
+    /**
+     * =========================================================================
+     * Child Context With Independent Idempotency
+     * =========================================================================
+     *
+     * Useful where the downstream operation has its own idempotency identity.
+     */
+
+    childWithIdempotency(
+        {
+            operation,
+
+            provider =
+                this._provider,
+
+            idempotencyKey,
+
+            userId =
+                this._userId,
+
+            metadata = {},
+
+        } = {}
+    ) {
+
+        return this.child({
+            operation,
+
+            provider,
+
+            userId,
+
+            idempotencyKey,
+
+            metadata,
+        });
+    }
 
     /**
      * =========================================================================
      * Safe Diagnostic Representation
      * =========================================================================
+     *
+     * Includes the idempotency key because this representation is intended
+     * for controlled diagnostics, not general-purpose application logging.
      */
 
     toJSON() {
@@ -629,26 +1170,24 @@ class PaymentContext {
                 this._idempotencyKey,
 
             createdAt:
-                this._createdAt,
+                this.createdAt,
 
             metadata:
-                this._metadata,
+                cloneValue(
+                    this._metadata
+                ),
 
             fingerprint:
-                this.fingerprint(),
+                this._fingerprint,
         };
     }
-
 
     /**
      * =========================================================================
      * Safe Logging Representation
      * =========================================================================
      *
-     * Intentionally excludes the idempotency key.
-     *
-     * Idempotency keys can sometimes contain business identifiers supplied by
-     * clients and should not automatically become part of general logs.
+     * Intentionally excludes idempotencyKey.
      */
 
     toLogContext() {
@@ -679,10 +1218,101 @@ class PaymentContext {
                 this._correlationId,
 
             contextFingerprint:
-                this.fingerprint(),
+                this._fingerprint,
         };
     }
 
+    /**
+     * =========================================================================
+     * Provider Request Context
+     * =========================================================================
+     *
+     * Useful when building provider adapter calls.
+     *
+     * Excludes:
+     * - credentials
+     * - metadata
+     * - idempotency secrets
+     */
+
+    toProviderContext() {
+
+        return {
+            tenantId:
+                this._tenantId,
+
+            provider:
+                this._provider,
+
+            operation:
+                this._operation,
+
+            requestId:
+                this._requestId,
+
+            correlationId:
+                this._correlationId,
+
+            parentRequestId:
+                this._parentRequestId,
+
+            contextVersion:
+                this._contextVersion,
+
+            contextFingerprint:
+                this._fingerprint,
+        };
+    }
+
+    /**
+     * =========================================================================
+     * Audit Context
+     * =========================================================================
+     */
+
+    toAuditContext() {
+
+        return {
+            tenantId:
+                this._tenantId,
+
+            userId:
+                this._userId,
+
+            provider:
+                this._provider,
+
+            operation:
+                this._operation,
+
+            requestId:
+                this._requestId,
+
+            correlationId:
+                this._correlationId,
+
+            parentRequestId:
+                this._parentRequestId,
+
+            contextVersion:
+                this._contextVersion,
+
+            contextFingerprint:
+                this._fingerprint,
+        };
+    }
+
+    /**
+     * =========================================================================
+     * Serialization
+     * =========================================================================
+     */
+
+    serialize() {
+        return JSON.stringify(
+            this.toJSON()
+        );
+    }
 
     /**
      * =========================================================================
@@ -690,13 +1320,13 @@ class PaymentContext {
      * =========================================================================
      */
 
-    static create(options = {}) {
-
+    static create(
+        options = {}
+    ) {
         return new PaymentContext(
             options
         );
     }
-
 
     /**
      * =========================================================================
@@ -704,16 +1334,76 @@ class PaymentContext {
      * =========================================================================
      */
 
-    static isValid(context) {
-
+    static isValid(
+        context
+    ) {
         return (
             context instanceof
             PaymentContext
         );
     }
 
-}
+    /**
+     * =========================================================================
+     * Rehydrate
+     * =========================================================================
+     *
+     * Reconstruct a context from serialized diagnostic state.
+     *
+     * This is intentionally explicit rather than relying on object spreading,
+     * which could accidentally bypass constructors/validation.
+     */
 
+    static fromJSON(
+        payload
+    ) {
+
+        if (
+            payload === null ||
+            typeof payload !== 'object'
+        ) {
+            throw new TypeError(
+                'Payment context payload must be an object'
+            );
+        }
+
+        return new PaymentContext({
+            tenantId:
+                payload.tenantId,
+
+            userId:
+                payload.userId,
+
+            provider:
+                payload.provider,
+
+            operation:
+                payload.operation,
+
+            correlationId:
+                payload.correlationId,
+
+            idempotencyKey:
+                payload.idempotencyKey,
+
+            requestId:
+                payload.requestId,
+
+            parentRequestId:
+                payload.parentRequestId,
+
+            metadata:
+                payload.metadata || {},
+
+            createdAt:
+                payload.createdAt,
+
+            contextVersion:
+                payload.contextVersion ||
+                CONTEXT_VERSION,
+        });
+    }
+}
 
 /**
  * ============================================================================

@@ -1,4 +1,3 @@
-// backend/modules/risk/risk.service.js
 'use strict';
 
 /**
@@ -7,46 +6,104 @@
  * Enterprise Risk Scoring Service
  * ============================================================================
  *
+ * File:
+ * backend/modules/risk/risk.service.js
+ *
+ * Purpose
+ * ----------------------------------------------------------------------------
+ * Deterministic, explainable, tenant-aware transaction risk scoring.
+ *
  * Responsibilities
- * ----------------
- * • Deterministic transaction risk scoring
- * • Tenant-aware rule configuration
- * • Rule-based risk evaluation
- * • Risk decision classification
- * • Input validation and normalization
- * • Correlation ID propagation
- * • Scoring versioning
- * • Input fingerprinting
- * • Explainable scoring
- * • Operational metrics hooks
- * • Structured logging
- * • Failure-safe diagnostics
+ * ----------------------------------------------------------------------------
+ * - Deterministic transaction risk scoring
+ * - Tenant-aware rule configuration
+ * - Strict rule/weight validation
+ * - Rule-based risk evaluation
+ * - Risk decision classification
+ * - Input validation and normalization
+ * - Correlation ID propagation
+ * - Scoring versioning
+ * - Scoring configuration fingerprinting
+ * - Input fingerprinting
+ * - Explainable scoring
+ * - Operational metrics hooks
+ * - Structured logging
+ * - Failure-safe diagnostics
  *
  * Explicitly NOT Responsible For
- * ------------------------------
- * • Transaction execution
- * • Ledger posting
- * • Payment processing
- * • AML case management
- * • Sanctions screening
- * • Account blocking
+ * ----------------------------------------------------------------------------
+ * - Transaction execution
+ * - Ledger posting
+ * - Payment processing
+ * - AML case management
+ * - Sanctions screening
+ * - Account blocking
+ * - Customer account mutation
+ * - Financial balance mutation
+ *
+ * Architectural Boundary
+ * ----------------------------------------------------------------------------
+ *
+ *                Transaction Request
+ *                       │
+ *                       ▼
+ *              Input Normalization
+ *                       │
+ *                       ▼
+ *              Canonical Fingerprint
+ *                       │
+ *                       ▼
+ *              Versioned Rule Engine
+ *                       │
+ *             ┌─────────┴─────────┐
+ *             ▼                   ▼
+ *          Rule Evidence      Base Score
+ *             │                   │
+ *             └─────────┬─────────┘
+ *                       ▼
+ *                  Final Score
+ *                       │
+ *             ┌─────────┼─────────┐
+ *             ▼         ▼         ▼
+ *           APPROVE   REVIEW     BLOCK
+ *
+ * The service produces a decision.
+ * Another subsystem is responsible for enforcing that decision.
  *
  * ============================================================================
  */
 
 const crypto = require('crypto');
 
-const PROVIDER = 'TITech Community Capital';
+/**
+ * ============================================================================
+ * Constants
+ * ============================================================================
+ */
+
+const PROVIDER =
+    'TITech Community Capital';
+
+const SERVICE_NAME =
+    'risk-scoring';
 
 const SCORING_VERSION =
     'risk-v1';
 
 const MAX_SCORE = 100;
 
+const MIN_SCORE = 0;
+
 const DECISIONS = Object.freeze({
     APPROVE: 'APPROVE',
     REVIEW: 'REVIEW',
     BLOCK: 'BLOCK',
+});
+
+const RISK_LEVELS = Object.freeze({
+    LOW: 'LOW',
+    MEDIUM: 'MEDIUM',
+    HIGH: 'HIGH',
 });
 
 const RISK_RULES = Object.freeze({
@@ -62,12 +119,42 @@ const RULE_WEIGHTS = Object.freeze({
     LOCATION_MISMATCH: 25,
 });
 
+const DECISION_THRESHOLDS = Object.freeze({
+    APPROVE_MAX_EXCLUSIVE: 40,
+    REVIEW_MAX_EXCLUSIVE: 80,
+});
+
+const RULE_CODES = Object.freeze([
+    'LARGE_TRANSACTION',
+    'NEW_ACCOUNT',
+    'HIGH_TRANSACTION_VELOCITY',
+    'LOCATION_MISMATCH',
+]);
+
+const REQUIRED_RULE_KEYS = Object.freeze([
+    'LARGE_TX_AMOUNT',
+    'NEW_ACCOUNT_MINUTES',
+    'HIGH_TX_COUNT',
+]);
+
+const REQUIRED_WEIGHT_KEYS = Object.freeze([
+    'LARGE_TRANSACTION',
+    'NEW_ACCOUNT',
+    'HIGH_VELOCITY',
+    'LOCATION_MISMATCH',
+]);
+
 const DEFAULT_OPTIONS = Object.freeze({
     rules: RISK_RULES,
     weights: RULE_WEIGHTS,
     scoringVersion: SCORING_VERSION,
 });
 
+const MAX_TENANT_ID_LENGTH = 256;
+const MAX_TRANSACTION_TYPE_LENGTH = 128;
+const MAX_ACCOUNT_TYPE_LENGTH = 128;
+const MAX_CURRENCY_LENGTH = 3;
+const MAX_CORRELATION_ID_LENGTH = 256;
 
 /**
  * ============================================================================
@@ -75,25 +162,40 @@ const DEFAULT_OPTIONS = Object.freeze({
  * ============================================================================
  */
 
-let logger = console;
+let defaultLogger = console;
 
 try {
     // eslint-disable-next-line global-require
-    const importedLogger = require('../utils/logger');
+    const importedLogger =
+        require('../utils/logger');
 
-    if (importedLogger) {
-        logger = importedLogger;
+    if (
+        importedLogger &&
+        (
+            typeof importedLogger.info === 'function' ||
+            typeof importedLogger.error === 'function' ||
+            typeof importedLogger.warn === 'function'
+        )
+    ) {
+        defaultLogger =
+            importedLogger;
     }
 } catch (error) {
-    // Deliberately fall back to console.
-    // Risk scoring must never fail because optional logging is unavailable.
-    logger = console;
+    /**
+     * Risk evaluation must never fail because optional logging is unavailable.
+     */
+    defaultLogger = console;
 }
-
 
 /**
  * ============================================================================
  * Runtime Statistics
+ * ============================================================================
+ *
+ * Process-local telemetry only.
+ *
+ * These statistics are NOT authoritative financial/risk records and are not
+ * safe to treat as durable metrics.
  * ============================================================================
  */
 
@@ -105,7 +207,6 @@ const statistics = {
     failures: 0,
 };
 
-
 /**
  * ============================================================================
  * Utility Functions
@@ -116,16 +217,41 @@ function generateCorrelationId() {
     return crypto.randomUUID();
 }
 
+function isPlainObject(value) {
+    if (
+        value === null ||
+        typeof value !== 'object'
+    ) {
+        return false;
+    }
 
-function normalizeNumber(value, fallback = 0) {
-    if (typeof value === 'number') {
+    const prototype =
+        Object.getPrototypeOf(value);
+
+    return (
+        prototype === Object.prototype ||
+        prototype === null
+    );
+}
+
+function normalizeNumber(
+    value,
+    fallback = 0
+) {
+    if (
+        typeof value === 'number'
+    ) {
         return Number.isFinite(value)
             ? value
             : fallback;
     }
 
-    if (typeof value === 'string' && value.trim() !== '') {
-        const parsed = Number(value);
+    if (
+        typeof value === 'string' &&
+        value.trim() !== ''
+    ) {
+        const parsed =
+            Number(value);
 
         return Number.isFinite(parsed)
             ? parsed
@@ -135,30 +261,39 @@ function normalizeNumber(value, fallback = 0) {
     return fallback;
 }
 
-
 function normalizeBoolean(value) {
-    if (typeof value === 'boolean') {
+    if (
+        typeof value === 'boolean'
+    ) {
         return value;
     }
 
-    if (typeof value === 'string') {
+    if (
+        typeof value === 'string'
+    ) {
         return [
             'true',
             '1',
             'yes',
             'y',
-        ].includes(value.toLowerCase());
+        ].includes(
+            value.trim().toLowerCase()
+        );
     }
 
-    if (typeof value === 'number') {
+    if (
+        typeof value === 'number'
+    ) {
         return value === 1;
     }
 
     return false;
 }
 
-
-function normalizeString(value, fallback = null) {
+function normalizeString(
+    value,
+    fallback = null
+) {
     if (
         typeof value !== 'string' ||
         value.trim() === ''
@@ -169,6 +304,135 @@ function normalizeString(value, fallback = null) {
     return value.trim();
 }
 
+function normalizeBoundedString(
+    value,
+    field,
+    maxLength,
+    fallback = null
+) {
+    const normalized =
+        normalizeString(
+            value,
+            fallback
+        );
+
+    if (
+        normalized === null
+    ) {
+        return null;
+    }
+
+    if (
+        normalized.length >
+        maxLength
+    ) {
+        throw new RangeError(
+            `${field} exceeds maximum length`
+        );
+    }
+
+    return normalized;
+}
+
+function normalizeTenantId(
+    value
+) {
+    const tenantId =
+        normalizeBoundedString(
+            value,
+            'tenantId',
+            MAX_TENANT_ID_LENGTH
+        );
+
+    if (!tenantId) {
+        throw new TypeError(
+            'tenantId is required'
+        );
+    }
+
+    return tenantId;
+}
+
+function normalizeCorrelationId(
+    value
+) {
+    const correlationId =
+        normalizeBoundedString(
+            value,
+            'correlationId',
+            MAX_CORRELATION_ID_LENGTH
+        );
+
+    return correlationId ||
+        generateCorrelationId();
+}
+
+function clampScore(value) {
+    const normalized =
+        normalizeNumber(
+            value,
+            0
+        );
+
+    return Math.min(
+        Math.max(
+            normalized,
+            MIN_SCORE
+        ),
+        MAX_SCORE
+    );
+}
+
+function stableSerialize(value) {
+    if (
+        value === null ||
+        value === undefined
+    ) {
+        return JSON.stringify(
+            value
+        );
+    }
+
+    if (
+        value instanceof Date
+    ) {
+        return JSON.stringify(
+            value.toISOString()
+        );
+    }
+
+    if (
+        Array.isArray(value)
+    ) {
+        return `[${value
+            .map(stableSerialize)
+            .join(',')}]`;
+    }
+
+    if (
+        typeof value === 'object'
+    ) {
+        return `{${Object.keys(value)
+            .sort()
+            .map(
+                key =>
+                    `${JSON.stringify(key)}:${stableSerialize(value[key])}`
+            )
+            .join(',')}}`;
+    }
+
+    return JSON.stringify(value);
+}
+
+function sha256(value) {
+    return crypto
+        .createHash('sha256')
+        .update(
+            value,
+            'utf8'
+        )
+        .digest('hex');
+}
 
 /**
  * ============================================================================
@@ -176,33 +440,45 @@ function normalizeString(value, fallback = null) {
  * ============================================================================
  */
 
-function validateTransactionInput(data = {}) {
-    if (!data || typeof data !== 'object') {
+function validateTransactionInput(
+    data = {}
+) {
+    if (
+        !isPlainObject(data)
+    ) {
         throw new TypeError(
             'Risk evaluation input must be an object'
         );
     }
 
-    if (
-        data.tenantId !== undefined &&
-        data.tenantId !== null &&
-        typeof data.tenantId !== 'string'
-    ) {
-        throw new TypeError(
-            'tenantId must be a string'
-        );
-    }
+    /**
+     * Tenant identity is mandatory for a production multi-tenant risk engine.
+     *
+     * The trusted tenant context should normally already have been established
+     * by authentication/tenant middleware. This validation simply ensures that
+     * the service never executes an unscoped tenant evaluation.
+     */
+    normalizeTenantId(
+        data.tenantId
+    );
 
     const amount =
-        normalizeNumber(data.amount, NaN);
+        normalizeNumber(
+            data.amount,
+            NaN
+        );
 
-    if (!Number.isFinite(amount)) {
+    if (
+        !Number.isFinite(amount)
+    ) {
         throw new TypeError(
             'amount must be a finite number'
         );
     }
 
-    if (amount < 0) {
+    if (
+        amount < 0
+    ) {
         throw new RangeError(
             'amount cannot be negative'
         );
@@ -214,9 +490,14 @@ function validateTransactionInput(data = {}) {
             0
         );
 
-    if (userAgeMinutes < 0) {
+    if (
+        !Number.isFinite(
+            userAgeMinutes
+        ) ||
+        userAgeMinutes < 0
+    ) {
         throw new RangeError(
-            'userAgeMinutes cannot be negative'
+            'userAgeMinutes must be a non-negative finite number'
         );
     }
 
@@ -226,35 +507,104 @@ function validateTransactionInput(data = {}) {
             0
         );
 
-    if (transactionCount < 0) {
+    if (
+        !Number.isFinite(
+            transactionCount
+        ) ||
+        transactionCount < 0
+    ) {
         throw new RangeError(
-            'transactionCount cannot be negative'
+            'transactionCount must be a non-negative finite number'
+        );
+    }
+
+    if (
+        data.currency !== undefined &&
+        data.currency !== null
+    ) {
+        const currency =
+            normalizeString(
+                data.currency
+            );
+
+        if (
+            !/^[A-Za-z]{3}$/.test(
+                currency
+            )
+        ) {
+            throw new TypeError(
+                'currency must be a three-letter currency code'
+            );
+        }
+    }
+
+    if (
+        data.transactionType !== undefined &&
+        data.transactionType !== null
+    ) {
+        normalizeBoundedString(
+            data.transactionType,
+            'transactionType',
+            MAX_TRANSACTION_TYPE_LENGTH
+        );
+    }
+
+    if (
+        data.accountType !== undefined &&
+        data.accountType !== null
+    ) {
+        normalizeBoundedString(
+            data.accountType,
+            'accountType',
+            MAX_ACCOUNT_TYPE_LENGTH
+        );
+    }
+
+    if (
+        data.correlationId !== undefined &&
+        data.correlationId !== null
+    ) {
+        normalizeCorrelationId(
+            data.correlationId
         );
     }
 
     return true;
 }
 
-
 /**
  * ============================================================================
  * Canonical Input
  * ============================================================================
  *
- * Canonicalization guarantees that the same logical input produces the same
- * fingerprint regardless of object property ordering.
+ * Only fields that participate in the scoring algorithm are included.
  *
- * IMPORTANT:
- * Do not include secrets, credentials, tokens, or raw authentication material.
+ * This gives:
+ *
+ * same logical scoring inputs
+ *        +
+ * same scoring configuration
+ *        =
+ * same fingerprinted decision context
+ *
+ * Secrets, tokens, credentials and arbitrary request payloads are deliberately
+ * excluded.
+ * ============================================================================
  */
 
-function buildCanonicalInput(data = {}) {
+function buildCanonicalInput(
+    data = {}
+) {
     return {
         tenantId:
-            normalizeString(data.tenantId),
+            normalizeTenantId(
+                data.tenantId
+            ),
 
         amount:
-            normalizeNumber(data.amount),
+            normalizeNumber(
+                data.amount
+            ),
 
         userAgeMinutes:
             normalizeNumber(
@@ -274,20 +624,24 @@ function buildCanonicalInput(data = {}) {
         currency:
             normalizeString(
                 data.currency
-            ),
+            )?.toUpperCase() ||
+            null,
 
         transactionType:
-            normalizeString(
-                data.transactionType
+            normalizeBoundedString(
+                data.transactionType,
+                'transactionType',
+                MAX_TRANSACTION_TYPE_LENGTH
             ),
 
         accountType:
-            normalizeString(
-                data.accountType
+            normalizeBoundedString(
+                data.accountType,
+                'accountType',
+                MAX_ACCOUNT_TYPE_LENGTH
             ),
     };
 }
-
 
 /**
  * ============================================================================
@@ -295,27 +649,217 @@ function buildCanonicalInput(data = {}) {
  * ============================================================================
  */
 
-function createInputFingerprint(data) {
+function createInputFingerprint(
+    data
+) {
     const canonical =
-        buildCanonicalInput(data);
-
-    return crypto
-        .createHash('sha256')
-        .update(
-            JSON.stringify(canonical),
-            'utf8'
+        isPlainObject(data) &&
+        Object.prototype.hasOwnProperty.call(
+            data,
+            'tenantId'
         )
-        .digest('hex');
-}
+            ? buildCanonicalInput(data)
+            : buildCanonicalInput({
+                ...data,
+                tenantId:
+                    data?.tenantId
+            });
 
+    return sha256(
+        stableSerialize(
+            canonical
+        )
+    );
+}
 
 /**
  * ============================================================================
- * Rule Configuration
+ * Configuration Validation
  * ============================================================================
  */
 
-function resolveConfiguration(options = {}) {
+function assertFiniteNonNegative(
+    value,
+    field
+) {
+    const normalized =
+        Number(value);
+
+    if (
+        !Number.isFinite(
+            normalized
+        ) ||
+        normalized < 0
+    ) {
+        throw new TypeError(
+            `${field} must be a non-negative finite number`
+        );
+    }
+
+    return normalized;
+}
+
+function assertPositiveThreshold(
+    value,
+    field
+) {
+    const normalized =
+        Number(value);
+
+    if (
+        !Number.isFinite(
+            normalized
+        ) ||
+        normalized < 0
+    ) {
+        throw new TypeError(
+            `${field} must be a non-negative finite number`
+        );
+    }
+
+    return normalized;
+}
+
+function validateRuleConfiguration(
+    rules
+) {
+    if (
+        !isPlainObject(rules)
+    ) {
+        throw new TypeError(
+            'Risk rules configuration must be an object'
+        );
+    }
+
+    const normalized = {};
+
+    for (
+        const key of REQUIRED_RULE_KEYS
+    ) {
+        if (
+            !Object.prototype.hasOwnProperty.call(
+                rules,
+                key
+            )
+        ) {
+            throw new TypeError(
+                `Missing risk rule: ${key}`
+            );
+        }
+
+        normalized[key] =
+            assertPositiveThreshold(
+                rules[key],
+                `rules.${key}`
+            );
+    }
+
+    return Object.freeze(
+        normalized
+    );
+}
+
+function validateWeightConfiguration(
+    weights
+) {
+    if (
+        !isPlainObject(weights)
+    ) {
+        throw new TypeError(
+            'Risk weights configuration must be an object'
+        );
+    }
+
+    const normalized = {};
+
+    for (
+        const key of REQUIRED_WEIGHT_KEYS
+    ) {
+        if (
+            !Object.prototype.hasOwnProperty.call(
+                weights,
+                key
+            )
+        ) {
+            throw new TypeError(
+                `Missing risk weight: ${key}`
+            );
+        }
+
+        normalized[key] =
+            assertFiniteNonNegative(
+                weights[key],
+                `weights.${key}`
+            );
+    }
+
+    const totalWeight =
+        Object.values(
+            normalized
+        ).reduce(
+            (sum, value) =>
+                sum + value,
+            0
+        );
+
+    if (
+        totalWeight <= 0
+    ) {
+        throw new RangeError(
+            'Total risk rule weight must be greater than zero'
+        );
+    }
+
+    return Object.freeze(
+        normalized
+    );
+}
+
+/**
+ * ============================================================================
+ * Configuration Fingerprint
+ * ============================================================================
+ *
+ * Immutable fingerprint of:
+ *
+ * - scoring version
+ * - thresholds
+ * - weights
+ * - decision thresholds
+ *
+ * This is essential for reproducing historical decisions after configuration
+ * changes.
+ * ============================================================================
+ */
+
+function createConfigurationFingerprint(
+    configuration
+) {
+    return sha256(
+        stableSerialize(
+            configuration
+        )
+    );
+}
+
+/**
+ * ============================================================================
+ * Rule Configuration Resolution
+ * ============================================================================
+ */
+
+function resolveConfiguration(
+    options = {}
+) {
+    if (
+        options === null ||
+        typeof options !== 'object'
+    ) {
+        throw new TypeError(
+            'Risk configuration options must be an object'
+        );
+    }
+
     const rules = {
         ...RISK_RULES,
         ...(options.rules || {}),
@@ -326,15 +870,55 @@ function resolveConfiguration(options = {}) {
         ...(options.weights || {}),
     };
 
-    return {
-        rules,
-        weights,
-        scoringVersion:
+    const scoringVersion =
+        normalizeBoundedString(
             options.scoringVersion ||
-            SCORING_VERSION,
-    };
-}
+                SCORING_VERSION,
+            'scoringVersion',
+            128
+        );
 
+    if (
+        !scoringVersion
+    ) {
+        throw new TypeError(
+            'scoringVersion is required'
+        );
+    }
+
+    const validatedRules =
+        validateRuleConfiguration(
+            rules
+        );
+
+    const validatedWeights =
+        validateWeightConfiguration(
+            weights
+        );
+
+    const configuration = {
+        rules:
+            validatedRules,
+
+        weights:
+            validatedWeights,
+
+        scoringVersion,
+
+        decisionThresholds: {
+            ...DECISION_THRESHOLDS,
+        },
+    };
+
+    return Object.freeze({
+        ...configuration,
+
+        configurationFingerprint:
+            createConfigurationFingerprint(
+                configuration
+            ),
+    });
+}
 
 /**
  * ============================================================================
@@ -352,10 +936,10 @@ function evaluateRules({
 }) {
     const triggeredRules = [];
 
-    let score = 0;
+    let rawScore = 0;
 
     /**
-     * Large transaction
+     * Large transaction.
      */
     if (
         amount >
@@ -364,7 +948,8 @@ function evaluateRules({
         const points =
             weights.LARGE_TRANSACTION;
 
-        score += points;
+        rawScore +=
+            points;
 
         triggeredRules.push({
             code:
@@ -377,6 +962,7 @@ function evaluateRules({
 
             evidence: {
                 amount,
+
                 threshold:
                     rules.LARGE_TX_AMOUNT,
             },
@@ -387,7 +973,7 @@ function evaluateRules({
     }
 
     /**
-     * New account
+     * New account.
      */
     if (
         userAgeMinutes <
@@ -396,7 +982,8 @@ function evaluateRules({
         const points =
             weights.NEW_ACCOUNT;
 
-        score += points;
+        rawScore +=
+            points;
 
         triggeredRules.push({
             code:
@@ -409,6 +996,7 @@ function evaluateRules({
 
             evidence: {
                 userAgeMinutes,
+
                 threshold:
                     rules.NEW_ACCOUNT_MINUTES,
             },
@@ -419,7 +1007,7 @@ function evaluateRules({
     }
 
     /**
-     * Transaction velocity
+     * Transaction velocity.
      */
     if (
         transactionCount >
@@ -428,7 +1016,8 @@ function evaluateRules({
         const points =
             weights.HIGH_VELOCITY;
 
-        score += points;
+        rawScore +=
+            points;
 
         triggeredRules.push({
             code:
@@ -441,6 +1030,7 @@ function evaluateRules({
 
             evidence: {
                 transactionCount,
+
                 threshold:
                     rules.HIGH_TX_COUNT,
             },
@@ -451,13 +1041,16 @@ function evaluateRules({
     }
 
     /**
-     * Location anomaly
+     * Location mismatch.
      */
-    if (locationMismatch) {
+    if (
+        locationMismatch
+    ) {
         const points =
             weights.LOCATION_MISMATCH;
 
-        score += points;
+        rawScore +=
+            points;
 
         triggeredRules.push({
             code:
@@ -469,7 +1062,8 @@ function evaluateRules({
             points,
 
             evidence: {
-                locationMismatch: true,
+                locationMismatch:
+                    true,
             },
 
             reason:
@@ -478,19 +1072,16 @@ function evaluateRules({
     }
 
     return {
-        rawScore:
-            score,
+        rawScore,
 
         score:
-            Math.min(
-                Math.max(score, 0),
-                MAX_SCORE
+            clampScore(
+                rawScore
             ),
 
         triggeredRules,
     };
 }
-
 
 /**
  * ============================================================================
@@ -498,21 +1089,32 @@ function evaluateRules({
  * ============================================================================
  */
 
-function getDecision(score) {
+function getDecision(
+    score,
+    thresholds =
+        DECISION_THRESHOLDS
+) {
     const normalizedScore =
-        normalizeNumber(score, 0);
+        clampScore(
+            score
+        );
 
-    if (normalizedScore < 40) {
+    if (
+        normalizedScore <
+        thresholds.APPROVE_MAX_EXCLUSIVE
+    ) {
         return DECISIONS.APPROVE;
     }
 
-    if (normalizedScore < 80) {
+    if (
+        normalizedScore <
+        thresholds.REVIEW_MAX_EXCLUSIVE
+    ) {
         return DECISIONS.REVIEW;
     }
 
     return DECISIONS.BLOCK;
 }
-
 
 /**
  * ============================================================================
@@ -520,28 +1122,56 @@ function getDecision(score) {
  * ============================================================================
  */
 
-function getRiskLevel(score) {
-    if (score < 40) {
-        return 'LOW';
+function getRiskLevel(
+    score
+) {
+    const normalizedScore =
+        clampScore(
+            score
+        );
+
+    if (
+        normalizedScore <
+        DECISION_THRESHOLDS.APPROVE_MAX_EXCLUSIVE
+    ) {
+        return RISK_LEVELS.LOW;
     }
 
-    if (score < 80) {
-        return 'MEDIUM';
+    if (
+        normalizedScore <
+        DECISION_THRESHOLDS.REVIEW_MAX_EXCLUSIVE
+    ) {
+        return RISK_LEVELS.MEDIUM;
     }
 
-    return 'HIGH';
+    return RISK_LEVELS.HIGH;
 }
-
 
 /**
  * ============================================================================
  * Metrics
  * ============================================================================
+ *
+ * Metrics failures are deliberately non-fatal.
+ * ============================================================================
  */
 
-function incrementMetric(metrics, name, labels) {
+function incrementMetric(
+    metrics,
+    logger,
+    name,
+    labels = {}
+) {
+    if (
+        !metrics ||
+        typeof metrics.counter !==
+            'function'
+    ) {
+        return;
+    }
+
     try {
-        metrics?.counter?.(
+        metrics.counter(
             name,
             labels
         );
@@ -554,55 +1184,99 @@ function incrementMetric(metrics, name, labels) {
                 name,
 
             error:
-                error.message,
+                error?.message,
         });
     }
 }
 
+/**
+ * ============================================================================
+ * Structured Logging
+ * ============================================================================
+ */
+
+function logInfo(
+    logger,
+    payload
+) {
+    try {
+        logger?.info?.(
+            payload
+        );
+    } catch (error) {
+        /**
+         * Never allow logging infrastructure to change scoring behavior.
+         */
+    }
+}
+
+function logError(
+    logger,
+    payload
+) {
+    try {
+        logger?.error?.(
+            payload
+        );
+    } catch (error) {
+        /**
+         * Intentionally ignored.
+         */
+    }
+}
 
 /**
  * ============================================================================
  * Core Risk Calculation
  * ============================================================================
+ *
+ * Returns only the numeric score.
+ *
+ * This preserves the original API while using the same deterministic engine
+ * as evaluateTransaction().
+ * ============================================================================
  */
 
 function calculateRiskScore(
-    {
-        amount = 0,
-        userAgeMinutes = 0,
-        transactionCount = 0,
-        locationMismatch = false,
-    } = {},
+    data = {},
     options = {}
 ) {
-    const normalized = {
-        amount:
-            normalizeNumber(amount),
+    validateTransactionInput(
+        {
+            ...data,
 
-        userAgeMinutes:
-            normalizeNumber(
-                userAgeMinutes
-            ),
+            /**
+             * calculateRiskScore historically allowed a reduced payload.
+             * Production service calls should still supply tenantId.
+             */
+            tenantId:
+                data.tenantId
+        }
+    );
 
-        transactionCount:
-            normalizeNumber(
-                transactionCount
-            ),
-
-        locationMismatch:
-            normalizeBoolean(
-                locationMismatch
-            ),
-    };
+    const canonicalInput =
+        buildCanonicalInput(
+            data
+        );
 
     const configuration =
         resolveConfiguration(
             options
         );
 
-    const result =
+    const rulesResult =
         evaluateRules({
-            ...normalized,
+            amount:
+                canonicalInput.amount,
+
+            userAgeMinutes:
+                canonicalInput.userAgeMinutes,
+
+            transactionCount:
+                canonicalInput.transactionCount,
+
+            locationMismatch:
+                canonicalInput.locationMismatch,
 
             rules:
                 configuration.rules,
@@ -611,9 +1285,8 @@ function calculateRiskScore(
                 configuration.weights,
         });
 
-    return result.score;
+    return rulesResult.score;
 }
-
 
 /**
  * ============================================================================
@@ -625,26 +1298,46 @@ function evaluateTransaction(
     data = {},
     options = {}
 ) {
-    const correlationId =
-        data.correlationId ||
-        generateCorrelationId();
-
     const startedAt =
         Date.now();
+
+    const correlationId =
+        normalizeCorrelationId(
+            data.correlationId
+        );
+
+    const evaluationLogger =
+        options.logger ||
+        defaultLogger;
+
+    const evaluationMetrics =
+        options.metrics ||
+        null;
 
     statistics.evaluations++;
 
     try {
-        validateTransactionInput(data);
+        validateTransactionInput(
+            data
+        );
 
+        const canonicalInput =
+            buildCanonicalInput(
+                data
+            );
+
+        /**
+         * Resolve and freeze the exact scoring configuration used for this
+         * decision.
+         */
         const configuration =
             resolveConfiguration(
                 options
             );
 
-        const canonicalInput =
-            buildCanonicalInput(data);
-
+        /**
+         * Fingerprint the exact normalized scoring input.
+         */
         const inputFingerprint =
             createInputFingerprint(
                 canonicalInput
@@ -675,30 +1368,58 @@ function evaluateTransaction(
             rulesResult.score;
 
         const decision =
-            getDecision(score);
+            getDecision(
+                score,
+                configuration.decisionThresholds
+            );
 
         const riskLevel =
-            getRiskLevel(score);
+            getRiskLevel(
+                score
+            );
 
-        if (decision === DECISIONS.APPROVE) {
+        if (
+            decision ===
+            DECISIONS.APPROVE
+        ) {
             statistics.approved++;
         } else if (
-            decision === DECISIONS.REVIEW
+            decision ===
+            DECISIONS.REVIEW
         ) {
             statistics.reviewed++;
-        } else {
+        } else if (
+            decision ===
+            DECISIONS.BLOCK
+        ) {
             statistics.blocked++;
         }
+
+        const durationMs =
+            Date.now() -
+            startedAt;
+
+        const evaluatedAt =
+            new Date();
+
+        /**
+         * Base score explicitly represents the initial score before rule
+         * contributions.
+         */
+        const baseScore = 0;
 
         const result = {
             provider:
                 PROVIDER,
 
             service:
-                'risk-scoring',
+                SERVICE_NAME,
 
             scoringVersion:
                 configuration.scoringVersion,
+
+            configurationFingerprint:
+                configuration.configurationFingerprint,
 
             correlationId,
 
@@ -707,8 +1428,7 @@ function evaluateTransaction(
 
             inputFingerprint,
 
-            baseScore:
-                0,
+            baseScore,
 
             score,
 
@@ -722,21 +1442,28 @@ function evaluateTransaction(
             ruleCount:
                 rulesResult.triggeredRules.length,
 
-            durationMs:
-                Date.now() - startedAt,
+            rawScore:
+                rulesResult.rawScore,
 
-            evaluatedAt:
-                new Date(),
+            maxScore:
+                MAX_SCORE,
+
+            durationMs,
+
+            evaluatedAt,
         };
 
         incrementMetric(
-            options.metrics,
+            evaluationMetrics,
+            evaluationLogger,
             'risk_evaluations_total',
             {
                 tenantId:
-                    canonicalInput.tenantId || 'unknown',
+                    canonicalInput.tenantId,
 
                 decision,
+
+                riskLevel,
 
                 scoringVersion:
                     configuration.scoringVersion,
@@ -744,100 +1471,186 @@ function evaluateTransaction(
         );
 
         incrementMetric(
-            options.metrics,
-            'risk_score_decision_total',
+            evaluationMetrics,
+            evaluationLogger,
+            'risk_score_total',
             {
                 decision,
                 riskLevel,
             }
         );
 
-        options.logger?.info?.({
-            message:
-                'Risk transaction evaluated',
+        logInfo(
+            evaluationLogger,
+            {
+                message:
+                    'Risk transaction evaluated',
 
-            tenantId:
-                canonicalInput.tenantId,
+                component:
+                    SERVICE_NAME,
 
-            correlationId,
+                tenantId:
+                    canonicalInput.tenantId,
 
-            scoringVersion:
-                configuration.scoringVersion,
+                correlationId,
 
-            inputFingerprint,
+                scoringVersion:
+                    configuration.scoringVersion,
 
-            score,
+                configurationFingerprint:
+                    configuration.configurationFingerprint,
 
-            decision,
+                inputFingerprint,
 
-            riskLevel,
+                score,
 
-            ruleCount:
-                rulesResult.triggeredRules.length,
+                riskLevel,
 
-            durationMs:
-                result.durationMs,
-        });
+                decision,
+
+                ruleCount:
+                    rulesResult.triggeredRules.length,
+
+                durationMs,
+            }
+        );
 
         return result;
     } catch (error) {
         statistics.failures++;
 
-        options.metrics?.counter?.(
-            'risk_evaluation_failures_total'
+        incrementMetric(
+            evaluationMetrics,
+            evaluationLogger,
+            'risk_evaluation_failures_total',
+            {
+                tenantId:
+                    normalizeString(
+                        data?.tenantId,
+                        'unknown'
+                    ),
+            }
         );
 
-        options.logger?.error?.({
-            message:
-                'Risk evaluation failed',
+        logError(
+            evaluationLogger,
+            {
+                message:
+                    'Risk evaluation failed',
 
-            tenantId:
-                data?.tenantId,
+                component:
+                    SERVICE_NAME,
 
-            correlationId,
+                tenantId:
+                    normalizeString(
+                        data?.tenantId
+                    ),
 
-            error:
-                error?.message,
+                correlationId,
 
-            errorName:
-                error?.name,
-        });
+                error:
+                    error?.message,
+
+                errorName:
+                    error?.name,
+
+                durationMs:
+                    Date.now() -
+                    startedAt,
+            }
+        );
 
         throw error;
     }
 }
 
+/**
+ * ============================================================================
+ * Configuration Inspection
+ * ============================================================================
+ *
+ * Returns the frozen scoring configuration without exposing mutable references.
+ * ============================================================================
+ */
+
+function getScoringConfiguration(
+    options = {}
+) {
+    const configuration =
+        resolveConfiguration(
+            options
+        );
+
+    return {
+        scoringVersion:
+            configuration.scoringVersion,
+
+        configurationFingerprint:
+            configuration.configurationFingerprint,
+
+        rules: {
+            ...configuration.rules,
+        },
+
+        weights: {
+            ...configuration.weights,
+        },
+
+        decisionThresholds: {
+            ...configuration.decisionThresholds,
+        },
+    };
+}
 
 /**
  * ============================================================================
  * Service Factory
  * ============================================================================
  *
- * Allows the risk engine to be configured per tenant/environment without
- * changing the public calculation API.
+ * Allows tenant/environment-specific configuration without changing the
+ * service's public API.
+ * ============================================================================
  */
 
 function createRiskService({
-    logger: serviceLogger = logger,
+    logger:
+        serviceLogger = defaultLogger,
+
     metrics = null,
+
     configuration = {},
 } = {}) {
+    /**
+     * Resolve once for deterministic service configuration.
+     *
+     * The resulting object is frozen by resolveConfiguration().
+     */
+    const resolvedConfiguration =
+        resolveConfiguration(
+            configuration
+        );
+
     return Object.freeze({
-        evaluateTransaction(data = {}) {
+        evaluateTransaction(
+            data = {}
+        ) {
             return evaluateTransaction(
                 data,
                 {
-                    ...configuration,
-                    logger: serviceLogger,
+                    ...resolvedConfiguration,
+                    logger:
+                        serviceLogger,
                     metrics,
                 }
             );
         },
 
-        calculateRiskScore(data = {}) {
+        calculateRiskScore(
+            data = {}
+        ) {
             return calculateRiskScore(
                 data,
-                configuration
+                resolvedConfiguration
             );
         },
 
@@ -846,9 +1659,19 @@ function createRiskService({
         getRiskLevel,
 
         getConfiguration() {
-            return resolveConfiguration(
-                configuration
+            return getScoringConfiguration(
+                resolvedConfiguration
             );
+        },
+
+        getScoringVersion() {
+            return resolvedConfiguration
+                .scoringVersion;
+        },
+
+        getConfigurationFingerprint() {
+            return resolvedConfiguration
+                .configurationFingerprint;
         },
 
         health() {
@@ -857,19 +1680,20 @@ function createRiskService({
                     PROVIDER,
 
                 component:
-                    'risk-scoring',
+                    SERVICE_NAME,
 
                 status:
                     'UP',
 
                 scoringVersion:
-                    configuration.scoringVersion ||
-                    SCORING_VERSION,
+                    resolvedConfiguration.scoringVersion,
 
-                statistics:
-                    {
-                        ...statistics,
-                    },
+                configurationFingerprint:
+                    resolvedConfiguration.configurationFingerprint,
+
+                statistics: {
+                    ...statistics,
+                },
             };
         },
 
@@ -881,33 +1705,41 @@ function createRiskService({
     });
 }
 
-
 /**
  * ============================================================================
  * Health
  * ============================================================================
  */
 
-function health() {
+function health(
+    options = {}
+) {
+    const configuration =
+        resolveConfiguration(
+            options
+        );
+
     return {
         provider:
             PROVIDER,
 
         component:
-            'risk-scoring',
+            SERVICE_NAME,
 
         status:
             'UP',
 
         scoringVersion:
-            SCORING_VERSION,
+            configuration.scoringVersion,
+
+        configurationFingerprint:
+            configuration.configurationFingerprint,
 
         statistics: {
             ...statistics,
         },
     };
 }
-
 
 /**
  * ============================================================================
@@ -920,7 +1752,6 @@ function stats() {
         ...statistics,
     };
 }
-
 
 /**
  * ============================================================================
@@ -943,9 +1774,13 @@ module.exports = {
 
     buildCanonicalInput,
 
+    createConfigurationFingerprint,
+
     createRiskService,
 
     resolveConfiguration,
+
+    getScoringConfiguration,
 
     health,
 
@@ -955,7 +1790,13 @@ module.exports = {
 
     RULE_WEIGHTS,
 
+    DECISION_THRESHOLDS,
+
     DECISIONS,
 
+    RISK_LEVELS,
+
     SCORING_VERSION,
+
+    PROVIDER,
 };

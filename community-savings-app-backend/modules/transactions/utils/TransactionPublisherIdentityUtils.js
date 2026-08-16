@@ -1,9 +1,9 @@
-'use strict';
+"use strict";
 
 /**
  * ============================================================================
  * TITech Community Capital Ltd
- * Batch & Publisher Identity Utilities
+ * Enterprise Batch & Publisher Identity Utilities
  * ============================================================================
  *
  * File:
@@ -11,21 +11,22 @@
  *
  * Purpose
  * -------
- * Provides enterprise-grade identity utilities for transaction event
- * publishing infrastructure.
+ * Enterprise identity utilities for distributed transaction event publishing.
  *
  * Responsibilities
  * ----------------
  * • Generate globally unique batch identifiers
- * • Generate publisher/worker instance identifiers
+ * • Generate unique publisher / worker incarnation identifiers
  * • Build immutable publisher identity snapshots
- * • Build batch processing metadata
+ * • Build immutable batch creation metadata
  * • Support horizontal worker scaling
- * • Support Kubernetes replicas
+ * • Support Kubernetes replicas / pods
  * • Support retry and replay traceability
  * • Support operational debugging
  * • Validate generated identifiers
  * • Prevent unsafe identifier injection
+ * • Normalize bounded identity components
+ * • Generate deterministic identity fingerprints
  * • Preserve backward-compatible exports
  *
  * Design Principles
@@ -33,17 +34,19 @@
  * • Cryptographically strong entropy
  * • No Math.random()
  * • No mutable shared identity state
- * • Safe for distributed workers
+ * • Worker-incarnation uniqueness
  * • Log/index friendly identifiers
- * • Deterministic validation
+ * • Deterministic parsing
  * • Bounded identifier length
- * • Explicit input normalization
+ * • Explicit input validation
+ * • Fail closed on malformed identity material
+ * • No client-controlled trust assumptions
  *
  * ============================================================================
  */
 
-const crypto = require('crypto');
-const os = require('os');
+const crypto = require("crypto");
+const os = require("os");
 
 /**
  * ============================================================================
@@ -51,20 +54,57 @@ const os = require('os');
  * ============================================================================
  */
 
-const BATCH_PREFIX = 'batch';
-const PUBLISHER_PREFIX = 'pub';
+const BATCH_PREFIX = "batch";
 
-const DEFAULT_ENVIRONMENT = 'development';
-const DEFAULT_PRIORITY = 'NORMAL';
+const PUBLISHER_PREFIX = "pub";
 
-const MAX_HOSTNAME_LENGTH = 40;
-const MAX_PREFIX_LENGTH = 24;
-const MAX_PRIORITY_LENGTH = 32;
+const DEFAULT_ENVIRONMENT =
+    "development";
+
+const DEFAULT_SERVICE_NAME =
+    "transaction-event-publisher";
+
+const DEFAULT_PRIORITY =
+    "NORMAL";
 
 const DEFAULT_BATCH_SIZE = 0;
+
 const DEFAULT_RETRY_ATTEMPT = 0;
 
-const PROCESS_ID = process.pid;
+const DEFAULT_SEQUENCE = 0;
+
+const DEFAULT_RANDOM_BYTES = 16;
+
+const DEFAULT_INSTANCE_BYTES = 16;
+
+const MAX_HOSTNAME_LENGTH = 40;
+
+const MAX_PREFIX_LENGTH = 24;
+
+const MAX_PRIORITY_LENGTH = 32;
+
+const MAX_SERVICE_NAME_LENGTH = 96;
+
+const MAX_ENVIRONMENT_LENGTH = 32;
+
+const MAX_POD_NAME_LENGTH = 63;
+
+const MAX_TENANT_ID_LENGTH = 256;
+
+const MAX_CORRELATION_ID_LENGTH = 256;
+
+const MAX_PARTITION_LENGTH = 128;
+
+const MAX_BATCH_ID_LENGTH = 256;
+
+const MAX_PUBLISHER_ID_LENGTH = 256;
+
+const PROCESS_ID =
+    Number.isSafeInteger(
+        Number(process.pid)
+    ) && process.pid >= 0
+        ? process.pid
+        : 0;
 
 /**
  * ============================================================================
@@ -73,11 +113,37 @@ const PROCESS_ID = process.pid;
  */
 
 const PRIORITIES = Object.freeze([
-    'LOW',
-    'NORMAL',
-    'HIGH',
-    'CRITICAL'
+    "LOW",
+    "NORMAL",
+    "HIGH",
+    "CRITICAL"
 ]);
+
+/**
+ * ============================================================================
+ * Internal Character Policies
+ * ============================================================================
+ */
+
+/**
+ * Identity components are deliberately narrower than arbitrary strings.
+ *
+ * We normalize these components rather than allowing:
+ * - whitespace
+ * - slashes
+ * - underscores
+ * - shell metacharacters
+ * - control characters
+ * - arbitrary punctuation
+ *
+ * This keeps identifiers safe for logs, metrics labels, cache keys, and
+ * database indexes.
+ */
+const SAFE_COMPONENT_PATTERN =
+    /^[a-zA-Z0-9.-]+$/;
+
+const SAFE_HEX_PATTERN =
+    /^[a-f0-9]+$/i;
 
 /**
  * ============================================================================
@@ -85,58 +151,173 @@ const PRIORITIES = Object.freeze([
  * ============================================================================
  */
 
-/**
- * Determine whether a value is a non-empty string.
- *
- * @param {*} value
- * @returns {boolean}
- */
 function isNonEmptyString(value) {
     return (
-        typeof value === 'string' &&
+        typeof value === "string" &&
         value.trim().length > 0
     );
 }
 
+function assertNonEmptyString(
+    value,
+    field
+) {
+    if (
+        !isNonEmptyString(value)
+    ) {
+        throw new TypeError(
+            `${field} must be a non-empty string`
+        );
+    }
+
+    return value.trim();
+}
+
 /**
- * Normalize a bounded identifier component.
+ * Normalize a bounded identity component.
  *
- * @param {*} value
- * @param {string} fallback
- * @param {number} maxLength
- * @returns {string}
+ * IMPORTANT:
+ * Unlike the original implementation, unsafe input is not silently
+ * transformed when strict identity semantics are required.
  */
 function normalizeComponent(
     value,
     fallback,
-    maxLength
+    maxLength,
+    {
+        strict = false
+    } = {}
 ) {
-    const candidate = isNonEmptyString(value)
-        ? value.trim()
-        : fallback;
+    let candidate;
 
-    return String(candidate)
-        .replace(/[^a-zA-Z0-9.-]/g, '-')
-        .replace(/-+/g, '-')
-        .replace(/^\.+|\.+$/g, '')
-        .substring(0, maxLength) || fallback;
+    if (
+        isNonEmptyString(value)
+    ) {
+        candidate =
+            value.trim();
+    } else {
+        candidate =
+            assertNonEmptyString(
+                fallback,
+                "fallback"
+            );
+    }
+
+    if (
+        strict &&
+        !SAFE_COMPONENT_PATTERN.test(
+            candidate
+        )
+    ) {
+        throw new TypeError(
+            "Identity component contains unsupported characters"
+        );
+    }
+
+    let normalized =
+        candidate
+            .replace(
+                /[^a-zA-Z0-9.-]/g,
+                "-"
+            )
+            .replace(
+                /-+/g,
+                "-"
+            )
+            .replace(
+                /^\.+|\.+$/g,
+                ""
+            );
+
+    if (
+        normalized.length > maxLength
+    ) {
+        normalized =
+            normalized.substring(
+                0,
+                maxLength
+            );
+    }
+
+    if (
+        normalized.length === 0
+    ) {
+        normalized =
+            assertNonEmptyString(
+                fallback,
+                "fallback"
+            );
+    }
+
+    return normalized;
+}
+
+/**
+ * Strict hex component.
+ *
+ * Entropy is identity material. Silently replacing invalid characters would
+ * change the supplied identity rather than reject it.
+ */
+function normalizeHexEntropy(
+    value,
+    fallbackBytes = DEFAULT_RANDOM_BYTES,
+    maxLength = 128
+) {
+    if (
+        value === undefined ||
+        value === null
+    ) {
+        return randomToken(
+            fallbackBytes
+        );
+    }
+
+    if (
+        !isNonEmptyString(value)
+    ) {
+        throw new TypeError(
+            "entropy must be a non-empty hexadecimal string"
+        );
+    }
+
+    const candidate =
+        value.trim();
+
+    if (
+        !SAFE_HEX_PATTERN.test(
+            candidate
+        )
+    ) {
+        throw new TypeError(
+            "entropy must contain hexadecimal characters only"
+        );
+    }
+
+    if (
+        candidate.length > maxLength
+    ) {
+        throw new TypeError(
+            "entropy exceeds maximum length"
+        );
+    }
+
+    return candidate.toLowerCase();
 }
 
 /**
  * Normalize a numeric value to a safe non-negative integer.
- *
- * @param {*} value
- * @param {number} fallback
- * @returns {number}
  */
 function normalizeNonNegativeInteger(
     value,
     fallback
 ) {
-    const number = Number(value);
+    const number =
+        Number(value);
 
     if (
-        Number.isSafeInteger(number) &&
+        Number.isSafeInteger(
+            number
+        ) &&
         number >= 0
     ) {
         return number;
@@ -147,15 +328,17 @@ function normalizeNonNegativeInteger(
 
 /**
  * Normalize process ID.
- *
- * @param {*} value
- * @returns {number}
  */
-function normalizeProcessId(value) {
-    const processId = Number(value);
+function normalizeProcessId(
+    value
+) {
+    const processId =
+        Number(value);
 
     if (
-        Number.isSafeInteger(processId) &&
+        Number.isSafeInteger(
+            processId
+        ) &&
         processId >= 0
     ) {
         return processId;
@@ -165,30 +348,66 @@ function normalizeProcessId(value) {
 }
 
 /**
+ * Normalize a bounded optional identifier.
+ */
+function normalizeOptionalIdentifier(
+    value,
+    field,
+    maxLength
+) {
+    if (
+        value === undefined ||
+        value === null
+    ) {
+        return null;
+    }
+
+    const normalized =
+        assertNonEmptyString(
+            value,
+            field
+        );
+
+    if (
+        normalized.length >
+        maxLength
+    ) {
+        throw new TypeError(
+            `${field} exceeds maximum length`
+        );
+    }
+
+    return normalized;
+}
+
+/**
  * ============================================================================
  * Secure Random Component
  * ============================================================================
- *
- * Uses cryptographically secure randomness.
- *
- * @param {number} bytes
- * @returns {string}
  */
-function randomToken(bytes = 12) {
-    const normalizedBytes = normalizeNonNegativeInteger(
-        bytes,
-        12
-    );
 
-    if (normalizedBytes <= 0) {
+function randomToken(
+    bytes = DEFAULT_RANDOM_BYTES
+) {
+    const normalizedBytes =
+        normalizeNonNegativeInteger(
+            bytes,
+            DEFAULT_RANDOM_BYTES
+        );
+
+    if (
+        normalizedBytes <= 0
+    ) {
         throw new RangeError(
-            'Random token byte length must be greater than zero'
+            "Random token byte length must be greater than zero"
         );
     }
 
     return crypto
-        .randomBytes(normalizedBytes)
-        .toString('hex');
+        .randomBytes(
+            normalizedBytes
+        )
+        .toString("hex");
 }
 
 /**
@@ -196,28 +415,77 @@ function randomToken(bytes = 12) {
  * Timestamp Encoding
  * ============================================================================
  *
- * Base36 timestamp keeps identifiers compact while retaining chronological
- * traceability.
+ * Compact base36 timestamp.
  *
  * @param {number|Date} timestamp
  * @returns {string}
  */
-function timestampToken(timestamp = Date.now()) {
-    const value = timestamp instanceof Date
-        ? timestamp.getTime()
-        : Number(timestamp);
+function timestampToken(
+    timestamp = Date.now()
+) {
+    const value =
+        timestamp instanceof Date
+            ? timestamp.getTime()
+            : Number(timestamp);
 
     if (
         !Number.isFinite(value) ||
         value < 0
     ) {
         throw new TypeError(
-            'Invalid timestamp supplied'
+            "Invalid timestamp supplied"
         );
     }
 
     return Math.floor(value)
         .toString(36);
+}
+
+/**
+ * ============================================================================
+ * Timestamp Decoding
+ * ============================================================================
+ */
+
+function parseTimestampToken(
+    token
+) {
+    if (
+        !isNonEmptyString(token)
+    ) {
+        throw new TypeError(
+            "Invalid timestamp token"
+        );
+    }
+
+    if (
+        !/^[a-z0-9]+$/i.test(
+            token
+        )
+    ) {
+        throw new TypeError(
+            "Invalid timestamp token"
+        );
+    }
+
+    const timestamp =
+        parseInt(
+            token,
+            36
+        );
+
+    if (
+        !Number.isSafeInteger(
+            timestamp
+        ) ||
+        timestamp < 0
+    ) {
+        throw new TypeError(
+            "Invalid decoded timestamp"
+        );
+    }
+
+    return timestamp;
 }
 
 /**
@@ -237,83 +505,208 @@ function timestampToken(timestamp = Date.now()) {
  *
  * • Globally unique
  * • Compact
+ * • Roughly chronological
  * • Traceable
  * • Index friendly
  * • Safe for distributed workers
- *
- * @param {Object} options
- * @returns {string}
+ * ============================================================================
  */
-function generateBatchId(options = {}) {
-    const prefix = normalizeComponent(
-        options.prefix,
-        BATCH_PREFIX,
-        MAX_PREFIX_LENGTH
-    );
 
-    const timestamp = timestampToken(
-        options.timestamp ?? Date.now()
-    );
+function generateBatchId(
+    options = {}
+) {
+    if (
+        options === null ||
+        typeof options !== "object"
+    ) {
+        throw new TypeError(
+            "Batch ID options must be an object"
+        );
+    }
 
-    const entropy = isNonEmptyString(options.entropy)
-        ? normalizeComponent(
+    const prefix =
+        normalizeComponent(
+            options.prefix,
+            BATCH_PREFIX,
+            MAX_PREFIX_LENGTH,
+            {
+                strict: true
+            }
+        );
+
+    const timestamp =
+        timestampToken(
+            options.timestamp ??
+            Date.now()
+        );
+
+    const entropy =
+        normalizeHexEntropy(
             options.entropy,
-            randomToken(10),
+            10,
             64
-        )
-        : randomToken(10);
+        );
 
-    return [
+    const batchId = [
         prefix,
         timestamp,
         entropy
-    ].join('_');
+    ].join("_");
+
+    if (
+        batchId.length >
+        MAX_BATCH_ID_LENGTH
+    ) {
+        throw new RangeError(
+            "Generated batch ID exceeds maximum length"
+        );
+    }
+
+    return batchId;
 }
 
 /**
  * ============================================================================
- * Generate Publisher Instance ID
+ * Generate Publisher ID
  * ============================================================================
  *
  * Format:
  *
  * pub_<hostname>_<pid>_<timestamp>_<entropy>
  *
- * This identifies one logical publisher process.
+ * The entropy represents the worker incarnation.
  *
- * @param {Object} options
- * @returns {string}
+ * A pod/process restart therefore generates a different publisher identity
+ * even when:
+ *
+ * - hostname is unchanged
+ * - PID is reused
+ * - Kubernetes replica naming is reused
+ *
+ * ============================================================================
  */
-function generatePublisherId(options = {}) {
-    const hostname = normalizeComponent(
-        options.hostname,
-        os.hostname(),
-        MAX_HOSTNAME_LENGTH
-    );
 
-    const processId = normalizeProcessId(
-        options.processId
-    );
+function generatePublisherId(
+    options = {}
+) {
+    if (
+        options === null ||
+        typeof options !== "object"
+    ) {
+        throw new TypeError(
+            "Publisher ID options must be an object"
+        );
+    }
 
-    const timestamp = timestampToken(
-        options.timestamp ?? Date.now()
-    );
+    const hostname =
+        normalizeComponent(
+            options.hostname,
+            os.hostname(),
+            MAX_HOSTNAME_LENGTH,
+            {
+                strict: true
+            }
+        );
 
-    const entropy = isNonEmptyString(options.entropy)
-        ? normalizeComponent(
+    const processId =
+        normalizeProcessId(
+            options.processId
+        );
+
+    const timestamp =
+        timestampToken(
+            options.timestamp ??
+            Date.now()
+        );
+
+    const entropy =
+        normalizeHexEntropy(
             options.entropy,
-            randomToken(8),
+            12,
             64
-        )
-        : randomToken(8);
+        );
 
-    return [
+    const publisherId = [
         PUBLISHER_PREFIX,
         hostname,
         processId,
         timestamp,
         entropy
-    ].join('_');
+    ].join("_");
+
+    if (
+        publisherId.length >
+        MAX_PUBLISHER_ID_LENGTH
+    ) {
+        throw new RangeError(
+            "Generated publisher ID exceeds maximum length"
+        );
+    }
+
+    return publisherId;
+}
+
+/**
+ * ============================================================================
+ * Identity Fingerprint
+ * ============================================================================
+ *
+ * Provides a deterministic SHA-256 fingerprint for audit and diagnostics.
+ *
+ * This is NOT an authorization token.
+ * ============================================================================
+ */
+
+function createIdentityFingerprint(
+    identity
+) {
+    if (
+        !identity ||
+        typeof identity !== "object"
+    ) {
+        throw new TypeError(
+            "Identity must be an object"
+        );
+    }
+
+    const canonical = {
+        publisherId:
+            identity.publisherId ??
+            null,
+
+        hostname:
+            identity.hostname ??
+            null,
+
+        processId:
+            identity.processId ??
+            null,
+
+        podName:
+            identity.podName ??
+            null,
+
+        serviceName:
+            identity.serviceName ??
+            null,
+
+        environment:
+            identity.environment ??
+            null,
+
+        instanceToken:
+            identity.instanceToken ??
+            null
+    };
+
+    return crypto
+        .createHash("sha256")
+        .update(
+            stableSerialize(
+                canonical
+            )
+        )
+        .digest("hex");
 }
 
 /**
@@ -321,35 +714,113 @@ function generatePublisherId(options = {}) {
  * Create Publisher Identity
  * ============================================================================
  *
- * Represents one active publisher instance.
+ * Represents one immutable worker incarnation.
  *
- * The returned object is frozen to prevent accidental runtime mutation.
- *
- * @param {Object} options
- * @returns {Object}
+ * The returned object is deeply frozen at the top-level fields used by the
+ * publisher infrastructure. Date values are cloned and exposed through
+ * getters so callers cannot mutate internal state through Date.setTime().
+ * ============================================================================
  */
-function createPublisherIdentity(options = {}) {
-    const hostname = normalizeComponent(
-        options.hostname,
-        os.hostname(),
-        MAX_HOSTNAME_LENGTH
-    );
 
-    const processId = normalizeProcessId(
-        options.processId
-    );
+function createPublisherIdentity(
+    options = {}
+) {
+    if (
+        options === null ||
+        typeof options !== "object"
+    ) {
+        throw new TypeError(
+            "Publisher identity options must be an object"
+        );
+    }
 
-    const createdAt = options.createdAt instanceof Date
-        ? new Date(options.createdAt.getTime())
-        : new Date();
+    const hostname =
+        normalizeComponent(
+            options.hostname,
+            os.hostname(),
+            MAX_HOSTNAME_LENGTH,
+            {
+                strict: true
+            }
+        );
+
+    const processId =
+        normalizeProcessId(
+            options.processId
+        );
+
+    const createdAtValue =
+        options.createdAt instanceof Date
+            ? options.createdAt.getTime()
+            : Date.now();
+
+    if (
+        !Number.isFinite(
+            createdAtValue
+        ) ||
+        createdAtValue < 0
+    ) {
+        throw new TypeError(
+            "createdAt must be a valid timestamp"
+        );
+    }
+
+    const instanceToken =
+        normalizeHexEntropy(
+            options.instanceToken,
+            DEFAULT_INSTANCE_BYTES,
+            128
+        );
 
     const publisherId =
-        options.publisherId ||
-        generatePublisherId({
+        options.publisherId
+            ? assertPublisherId(
+                options.publisherId
+            )
+            : generatePublisherId({
+                hostname,
+                processId,
+                timestamp:
+                    createdAtValue,
+                entropy:
+                    instanceToken
+            });
+
+    const environment =
+        normalizeComponent(
+            options.environment ||
+                process.env.NODE_ENV ||
+                DEFAULT_ENVIRONMENT,
+            DEFAULT_ENVIRONMENT,
+            MAX_ENVIRONMENT_LENGTH,
+            {
+                strict: true
+            }
+        );
+
+    const serviceName =
+        normalizeComponent(
+            options.serviceName ||
+                process.env.SERVICE_NAME ||
+                DEFAULT_SERVICE_NAME,
+            DEFAULT_SERVICE_NAME,
+            MAX_SERVICE_NAME_LENGTH,
+            {
+                strict: true
+            }
+        );
+
+    const podName =
+        normalizeComponent(
+            options.podName ||
+                process.env.HOSTNAME ||
+                hostname,
             hostname,
-            processId,
-            timestamp: createdAt.getTime()
-        });
+            MAX_POD_NAME_LENGTH,
+            {
+                strict: true
+            }
+        );
 
     const identity = {
         publisherId,
@@ -367,41 +838,78 @@ function createPublisherIdentity(options = {}) {
         architecture:
             process.arch,
 
-        environment:
-            normalizeComponent(
-                options.environment ||
-                process.env.NODE_ENV ||
-                DEFAULT_ENVIRONMENT,
-                DEFAULT_ENVIRONMENT,
-                MAX_PRIORITY_LENGTH
+        environment,
+
+        serviceName,
+
+        podName,
+
+        createdAt:
+            new Date(
+                createdAtValue
             ),
 
-        serviceName:
-            normalizeComponent(
-                options.serviceName ||
-                process.env.SERVICE_NAME ||
-                'transaction-event-publisher',
-                'transaction-event-publisher',
-                MAX_PRIORITY_LENGTH
-            ),
+        instanceToken,
 
-        podName:
-            normalizeComponent(
-                options.podName ||
-                process.env.HOSTNAME ||
-                hostname,
-                hostname,
-                MAX_HOSTNAME_LENGTH
-            ),
-
-        createdAt,
-
-        instanceToken:
-            options.instanceToken ||
-            randomToken(16)
+        identityFingerprint:
+            null
     };
 
-    return Object.freeze(identity);
+    identity.identityFingerprint =
+        createIdentityFingerprint(
+            identity
+        );
+
+    const frozenDate =
+        new Date(
+            createdAtValue
+        );
+
+    /**
+     * Return a getter for Date so consumers cannot mutate the internal Date
+     * object.
+     */
+    Object.defineProperty(
+        identity,
+        "createdAt",
+        {
+            enumerable: true,
+
+            configurable: false,
+
+            get() {
+                return new Date(
+                    frozenDate.getTime()
+                );
+            }
+        }
+    );
+
+    return Object.freeze(
+        identity
+    );
+}
+
+/**
+ * ============================================================================
+ * Assert Publisher ID
+ * ============================================================================
+ */
+
+function assertPublisherId(
+    value
+) {
+    if (
+        !validatePublisherId(
+            value
+        )
+    ) {
+        throw new TypeError(
+            "Invalid publisher ID"
+        );
+    }
+
+    return value.trim();
 }
 
 /**
@@ -409,100 +917,283 @@ function createPublisherIdentity(options = {}) {
  * Build Batch Metadata
  * ============================================================================
  *
- * Metadata attached to a publishing batch.
+ * Metadata describes the immutable creation identity of the batch plus
+ * bounded operational information.
  *
- * @param {Object} options
- * @returns {Object}
+ * It intentionally does NOT accept arbitrary objects from callers.
+ * ============================================================================
  */
-function buildBatchMetadata(options = {}) {
-    const size = normalizeNonNegativeInteger(
-        options.size,
-        DEFAULT_BATCH_SIZE
-    );
 
-    const retryAttempt = normalizeNonNegativeInteger(
-        options.retryAttempt,
-        DEFAULT_RETRY_ATTEMPT
-    );
+function buildBatchMetadata(
+    options = {}
+) {
+    if (
+        options === null ||
+        typeof options !== "object"
+    ) {
+        throw new TypeError(
+            "Batch metadata options must be an object"
+        );
+    }
+
+    const size =
+        normalizeNonNegativeInteger(
+            options.size,
+            DEFAULT_BATCH_SIZE
+        );
+
+    const retryAttempt =
+        normalizeNonNegativeInteger(
+            options.retryAttempt,
+            DEFAULT_RETRY_ATTEMPT
+        );
+
+    const sequence =
+        normalizeNonNegativeInteger(
+            options.sequence,
+            DEFAULT_SEQUENCE
+        );
 
     const priorityCandidate =
-        typeof options.priority === 'string'
-            ? options.priority.trim().toUpperCase()
+        typeof options.priority === "string"
+            ? options.priority
+                .trim()
+                .toUpperCase()
             : DEFAULT_PRIORITY;
 
-    const priority = PRIORITIES.includes(
-        priorityCandidate
-    )
-        ? priorityCandidate
-        : DEFAULT_PRIORITY;
+    if (
+        !PRIORITIES.includes(
+            priorityCandidate
+        )
+    ) {
+        throw new TypeError(
+            `Unsupported batch priority: ${priorityCandidate}`
+        );
+    }
 
-    const createdAt = options.createdAt instanceof Date
-        ? new Date(options.createdAt.getTime())
-        : new Date();
+    const createdAtValue =
+        options.createdAt instanceof Date
+            ? options.createdAt.getTime()
+            : Date.now();
+
+    if (
+        !Number.isFinite(
+            createdAtValue
+        ) ||
+        createdAtValue < 0
+    ) {
+        throw new TypeError(
+            "createdAt must be a valid timestamp"
+        );
+    }
+
+    const batchId =
+        options.batchId
+            ? assertBatchId(
+                options.batchId
+            )
+            : generateBatchId();
+
+    const publisherId =
+        options.publisherId
+            ? assertPublisherId(
+                options.publisherId
+            )
+            : null;
+
+    const tenantId =
+        normalizeOptionalIdentifier(
+            options.tenantId,
+            "tenantId",
+            MAX_TENANT_ID_LENGTH
+        );
+
+    const correlationId =
+        normalizeOptionalIdentifier(
+            options.correlationId,
+            "correlationId",
+            MAX_CORRELATION_ID_LENGTH
+        );
+
+    const partition =
+        normalizeOptionalIdentifier(
+            options.partition,
+            "partition",
+            MAX_PARTITION_LENGTH
+        );
+
+    const createdAt =
+        new Date(
+            createdAtValue
+        );
 
     const metadata = {
-        batchId:
-            options.batchId ||
-            generateBatchId(),
+        batchId,
 
-        publisherId:
-            options.publisherId || null,
+        publisherId,
 
         size,
 
         createdAt,
 
-        priority,
+        priority:
+            priorityCandidate,
 
         retryAttempt,
 
-        sequence:
-            normalizeNonNegativeInteger(
-                options.sequence,
-                0
-            ),
+        sequence,
 
-        partition:
-            options.partition ?? null,
+        partition,
 
-        tenantId:
-            options.tenantId || null,
+        tenantId,
 
-        correlationId:
-            options.correlationId || null
+        correlationId
     };
 
-    return Object.freeze(metadata);
+    /**
+     * Keep the metadata immutable.
+     *
+     * Return cloned Date values so callers cannot mutate the internal date.
+     */
+    const frozenDate =
+        new Date(
+            createdAt.getTime()
+        );
+
+    Object.defineProperty(
+        metadata,
+        "createdAt",
+        {
+            enumerable: true,
+
+            configurable: false,
+
+            get() {
+                return new Date(
+                    frozenDate.getTime()
+                );
+            }
+        }
+    );
+
+    return Object.freeze(
+        metadata
+    );
 }
 
 /**
  * ============================================================================
- * Validate Publisher Identity
+ * Validate Publisher ID
  * ============================================================================
- *
- * @param {*} value
- * @returns {boolean}
  */
-function validatePublisherId(value) {
-    if (!isNonEmptyString(value)) {
+
+function validatePublisherId(
+    value
+) {
+    if (
+        !isNonEmptyString(value)
+    ) {
         return false;
     }
 
-    /**
-     * Hostname:
-     *   alphanumeric / dot / dash
-     *
-     * PID:
-     *   numeric
-     *
-     * Timestamp:
-     *   base36
-     *
-     * Entropy:
-     *   hexadecimal
-     */
-    return /^pub_[a-z0-9.-]+_\d+_[a-z0-9]+_[a-f0-9]+$/i
-        .test(value.trim());
+    const candidate =
+        value.trim();
+
+    if (
+        candidate.length >
+        MAX_PUBLISHER_ID_LENGTH
+    ) {
+        return false;
+    }
+
+    const parts =
+        candidate.split("_");
+
+    if (
+        parts.length !== 5
+    ) {
+        return false;
+    }
+
+    const [
+        prefix,
+        hostname,
+        pid,
+        timestamp,
+        entropy
+    ] = parts;
+
+    if (
+        prefix !==
+        PUBLISHER_PREFIX
+    ) {
+        return false;
+    }
+
+    if (
+        !/^[a-z0-9.-]+$/i.test(
+            hostname
+        )
+    ) {
+        return false;
+    }
+
+    if (
+        !/^\d+$/.test(
+            pid
+        )
+    ) {
+        return false;
+    }
+
+    if (
+        !/^[a-z0-9]+$/i.test(
+            timestamp
+        )
+    ) {
+        return false;
+    }
+
+    if (
+        !/^[a-f0-9]+$/i.test(
+            entropy
+        )
+    ) {
+        return false;
+    }
+
+    try {
+        parseTimestampToken(
+            timestamp
+        );
+    }
+    catch {
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * ============================================================================
+ * Assert Batch ID
+ * ============================================================================
+ */
+
+function assertBatchId(
+    value
+) {
+    if (
+        !validateBatchId(
+            value
+        )
+    ) {
+        throw new TypeError(
+            "Invalid batch ID"
+        );
+    }
+
+    return value.trim();
 }
 
 /**
@@ -510,160 +1201,389 @@ function validatePublisherId(value) {
  * Validate Batch ID
  * ============================================================================
  *
- * Supports the default "batch" prefix as well as compatible custom prefixes.
- *
- * @param {*} value
- * @returns {boolean}
+ * Supports default and safe custom prefixes.
+ * ============================================================================
  */
-function validateBatchId(value) {
-    if (!isNonEmptyString(value)) {
+
+function validateBatchId(
+    value
+) {
+    if (
+        !isNonEmptyString(value)
+    ) {
         return false;
     }
 
-    return /^[a-z0-9.-]+_[a-z0-9]+_[a-f0-9]+$/i
-        .test(value.trim());
-}
+    const candidate =
+        value.trim();
 
-/**
- * ============================================================================
- * Sanitize Hostname
- * ============================================================================
- *
- * @param {*} value
- * @returns {string}
- */
-function sanitize(value) {
-    return normalizeComponent(
-        value,
-        'unknown-host',
-        MAX_HOSTNAME_LENGTH
-    );
-}
-
-/**
- * ============================================================================
- * Extract Batch Timestamp
- * ============================================================================
- *
- * @param {string} batchId
- * @returns {number}
- */
-function extractBatchTimestamp(batchId) {
-    if (!validateBatchId(batchId)) {
-        throw new TypeError(
-            'Invalid batch ID'
-        );
+    if (
+        candidate.length >
+        MAX_BATCH_ID_LENGTH
+    ) {
+        return false;
     }
 
-    const parts = batchId.split('_');
+    const parts =
+        candidate.split("_");
 
-    return parseInt(
-        parts[1],
-        36
-    );
-}
-
-/**
- * ============================================================================
- * Extract Publisher Metadata
- * ============================================================================
- *
- * @param {string} publisherId
- * @returns {Object}
- */
-function parsePublisherId(publisherId) {
-    if (!validatePublisherId(publisherId)) {
-        throw new TypeError(
-            'Invalid publisher ID'
-        );
+    if (
+        parts.length !== 3
+    ) {
+        return false;
     }
 
-    const parts = publisherId.split('_');
+    const [
+        prefix,
+        timestamp,
+        entropy
+    ] = parts;
 
-    return Object.freeze({
-        prefix: parts[0],
-        hostname: parts[1],
-        processId: Number(parts[2]),
-        timestamp: parseInt(parts[3], 36),
-        entropy: parts[4]
-    });
-}
-
-/**
- * ============================================================================
- * Extract Batch Metadata
- * ============================================================================
- *
- * @param {string} batchId
- * @returns {Object}
- */
-function parseBatchId(batchId) {
-    if (!validateBatchId(batchId)) {
-        throw new TypeError(
-            'Invalid batch ID'
-        );
+    if (
+        !SAFE_COMPONENT_PATTERN.test(
+            prefix
+        ) ||
+        prefix.length >
+            MAX_PREFIX_LENGTH
+    ) {
+        return false;
     }
 
-    const parts = batchId.split('_');
+    if (
+        !/^[a-z0-9]+$/i.test(
+            timestamp
+        )
+    ) {
+        return false;
+    }
 
-    return Object.freeze({
-        prefix: parts[0],
-        timestamp: parseInt(parts[1], 36),
-        entropy: parts[2]
-    });
+    if (
+        !/^[a-f0-9]+$/i.test(
+            entropy
+        )
+    ) {
+        return false;
+    }
+
+    try {
+        parseTimestampToken(
+            timestamp
+        );
+    }
+    catch {
+        return false;
+    }
+
+    return true;
 }
 
 /**
  * ============================================================================
  * Validate Publisher Identity Object
  * ============================================================================
- *
- * @param {Object} identity
- * @returns {boolean}
  */
-function isValidPublisherIdentity(identity) {
+
+function isValidPublisherIdentity(
+    identity
+) {
     if (
         !identity ||
-        typeof identity !== 'object'
+        typeof identity !== "object"
     ) {
         return false;
     }
 
-    return (
-        validatePublisherId(identity.publisherId) &&
-        isNonEmptyString(identity.hostname) &&
-        Number.isSafeInteger(identity.processId) &&
-        identity.processId >= 0
-    );
+    if (
+        !validatePublisherId(
+            identity.publisherId
+        )
+    ) {
+        return false;
+    }
+
+    if (
+        !isNonEmptyString(
+            identity.hostname
+        )
+    ) {
+        return false;
+    }
+
+    if (
+        !Number.isSafeInteger(
+            identity.processId
+        ) ||
+        identity.processId < 0
+    ) {
+        return false;
+    }
+
+    if (
+        identity.instanceToken !==
+            undefined &&
+        !/^[a-f0-9]+$/i.test(
+            identity.instanceToken
+        )
+    ) {
+        return false;
+    }
+
+    return true;
 }
 
 /**
  * ============================================================================
  * Validate Batch Metadata
  * ============================================================================
- *
- * @param {Object} metadata
- * @returns {boolean}
  */
-function isValidBatchMetadata(metadata) {
+
+function isValidBatchMetadata(
+    metadata
+) {
     if (
         !metadata ||
-        typeof metadata !== 'object'
+        typeof metadata !== "object"
     ) {
         return false;
     }
 
-    return (
-        validateBatchId(metadata.batchId) &&
-        (
-            metadata.publisherId === null ||
-            metadata.publisherId === undefined ||
-            validatePublisherId(metadata.publisherId)
-        ) &&
-        Number.isSafeInteger(metadata.size) &&
-        metadata.size >= 0 &&
-        Number.isSafeInteger(metadata.retryAttempt) &&
-        metadata.retryAttempt >= 0
+    if (
+        !validateBatchId(
+            metadata.batchId
+        )
+    ) {
+        return false;
+    }
+
+    if (
+        metadata.publisherId !==
+            null &&
+        metadata.publisherId !==
+            undefined &&
+        !validatePublisherId(
+            metadata.publisherId
+        )
+    ) {
+        return false;
+    }
+
+    if (
+        !Number.isSafeInteger(
+            metadata.size
+        ) ||
+        metadata.size < 0
+    ) {
+        return false;
+    }
+
+    if (
+        !Number.isSafeInteger(
+            metadata.retryAttempt
+        ) ||
+        metadata.retryAttempt < 0
+    ) {
+        return false;
+    }
+
+    if (
+        !Number.isSafeInteger(
+            metadata.sequence
+        ) ||
+        metadata.sequence < 0
+    ) {
+        return false;
+    }
+
+    if (
+        metadata.priority !==
+        undefined &&
+        !PRIORITIES.includes(
+            metadata.priority
+        )
+    ) {
+        return false;
+    }
+
+    if (
+        metadata.tenantId !==
+            null &&
+        metadata.tenantId !==
+            undefined &&
+        !isNonEmptyString(
+            metadata.tenantId
+        )
+    ) {
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * ============================================================================
+ * Extract Batch Timestamp
+ * ============================================================================
+ */
+
+function extractBatchTimestamp(
+    batchId
+) {
+    const parsed =
+        parseBatchId(
+            batchId
+        );
+
+    return parsed.timestamp;
+}
+
+/**
+ * ============================================================================
+ * Parse Publisher ID
+ * ============================================================================
+ */
+
+function parsePublisherId(
+    publisherId
+) {
+    assertPublisherId(
+        publisherId
+    );
+
+    const parts =
+        publisherId
+            .trim()
+            .split("_");
+
+    const timestamp =
+        parseTimestampToken(
+            parts[3]
+        );
+
+    return Object.freeze({
+        prefix: parts[0],
+
+        hostname: parts[1],
+
+        processId:
+            Number(parts[2]),
+
+        timestamp,
+
+        entropy: parts[4]
+    });
+}
+
+/**
+ * ============================================================================
+ * Parse Batch ID
+ * ============================================================================
+ */
+
+function parseBatchId(
+    batchId
+) {
+    assertBatchId(
+        batchId
+    );
+
+    const parts =
+        batchId
+            .trim()
+            .split("_");
+
+    const timestamp =
+        parseTimestampToken(
+            parts[1]
+        );
+
+    return Object.freeze({
+        prefix: parts[0],
+
+        timestamp,
+
+        entropy: parts[2]
+    });
+}
+
+/**
+ * ============================================================================
+ * Stable Serialization
+ * ============================================================================
+ */
+
+function stableSerialize(
+    value
+) {
+    if (
+        value === null ||
+        value === undefined
+    ) {
+        return JSON.stringify(
+            value
+        );
+    }
+
+    if (
+        value instanceof Date
+    ) {
+        return JSON.stringify(
+            value.toISOString()
+        );
+    }
+
+    if (
+        Array.isArray(value)
+    ) {
+        return `[${value
+            .map(
+                stableSerialize
+            )
+            .join(",")}]`;
+    }
+
+    if (
+        typeof value ===
+        "object"
+    ) {
+        return `{${Object.keys(
+            value
+        )
+            .sort()
+            .map(
+                key =>
+                    `${JSON.stringify(
+                        key
+                    )}:${stableSerialize(
+                        value[key]
+                    )}`
+            )
+            .join(",")}}`;
+    }
+
+    return JSON.stringify(
+        value
+    );
+}
+
+/**
+ * ============================================================================
+ * Sanitize
+ * ============================================================================
+ *
+ * Backward-compatible sanitization helper.
+ *
+ * This remains normalization-oriented rather than identity-authoritative.
+ * For identity material, callers should use strict generators/validators.
+ * ============================================================================
+ */
+
+function sanitize(
+    value
+) {
+    return normalizeComponent(
+        value,
+        "unknown-host",
+        MAX_HOSTNAME_LENGTH
     );
 }
 
@@ -675,26 +1595,38 @@ function isValidBatchMetadata(metadata) {
 
 module.exports = {
     BATCH_PREFIX,
+
     PUBLISHER_PREFIX,
+
     PRIORITIES,
 
     generateBatchId,
+
     generatePublisherId,
 
     createPublisherIdentity,
+
     buildBatchMetadata,
 
     validatePublisherId,
+
     validateBatchId,
 
     extractBatchTimestamp,
+
     parseBatchId,
+
     parsePublisherId,
 
     isValidPublisherIdentity,
+
     isValidBatchMetadata,
 
+    createIdentityFingerprint,
+
     sanitize,
+
     randomToken,
+
     timestampToken
 };
