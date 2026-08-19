@@ -1,11 +1,49 @@
-// backend/errors/BadRequestError.js
-'use strict';
+"use strict";
 
-const ApiError = require('./ApiError');
+/**
+ * =============================================================================
+ * TITech Community Capital LTD
+ * African Community Finance Operating System (ACFOS)
+ * =============================================================================
+ *
+ * File:
+ *   backend/errors/BadRequestError.js
+ *
+ * Purpose:
+ *   Represents a client request that cannot be processed because the request
+ *   is malformed, invalid, or otherwise unacceptable at the HTTP boundary.
+ *
+ * Hierarchy:
+ *
+ *   Error
+ *      └── AppError
+ *          └── BadRequestError
+ *
+ * =============================================================================
+ */
 
-class BadRequestError extends ApiError {
-  constructor(message = 'Bad Request', details = null) {
-    super(message, 400, 'BAD_REQUEST', details);
+const AppError = require("./AppError");
+
+class BadRequestError extends AppError {
+  /**
+   * @param {string} [message="Bad Request"]
+   * @param {object} [details]
+   * @param {Error} [cause]
+   */
+  constructor(
+    message = "Bad Request",
+    details,
+    cause
+  ) {
+    super(message, {
+      statusCode: 400,
+      code: "BAD_REQUEST",
+      type: "BadRequestError",
+      isOperational: true,
+      retryable: false,
+      details,
+      cause,
+    });
   }
 }
 

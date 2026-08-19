@@ -8,72 +8,80 @@ const { Schema } = mongoose;
 /**
  * ============================================================================
  * TITech Community Capital LTD
- * LoanAudit.js
+ * African Community Finance Operating System (ACFOS)
  * ============================================================================
- *
- * Enterprise Immutable Loan Audit Model
  *
  * File:
- *   backend/modules/loans/models/LoanAudit.js
+ *   backend/modules/loans/models/loanAudit.model.js
  *
- * Purpose
- * ----------------------------------------------------------------------------
- * Durable, append-only, tenant-isolated audit evidence for the complete
- * lifecycle of a loan.
+ * Purpose:
+ *   Enterprise immutable, tenant-isolated, tamper-evident loan audit
+ *   evidence model.
  *
- * Tracks
- * ----------------------------------------------------------------------------
- * - Eligibility assessments
- * - Applications
- * - Application updates
- * - Approvals
- * - Rejections
- * - Cancellations
- * - Disbursements
- * - Repayments
- * - Defaults
- * - Write-offs
- * - Restructuring
- * - Administrative overrides
- * - Custom workflow events
+ * Architectural boundary:
  *
- * Enterprise Guarantees
- * ----------------------------------------------------------------------------
- * - Multi-tenant isolation
- * - Append-only persistence semantics
- * - Document immutability
- * - Query mutation protection
- * - Delete protection
- * - Idempotent event recording
- * - Duplicate-key race recovery
- * - Correlation tracing
- * - Deterministic canonical hashing
- * - Tamper-evident integrity verification
- * - Optional per-loan hash-chain support
- * - ObjectId validation
- * - Query-safe pagination
- * - Query-friendly compound indexes
- * - Regulatory reporting support
+ *   Loan Service
+ *        │
+ *        ├── Authorization
+ *        ├── Workflow
+ *        ├── Financial Posting
+ *        ├── Payment Execution
+ *        └── External Side Effects
+ *                    │
+ *                    ▼
+ *              LoanAudit.recordEvent()
+ *                    │
+ *                    ▼
+ *             Immutable Evidence
  *
- * Important
- * ----------------------------------------------------------------------------
- * This model is intentionally NOT responsible for:
+ * This model records evidence.
  *
- * - Loan authorization
- * - Loan workflow transitions
- * - Financial posting
- * - Ledger mutation
- * - Payment execution
- * - External side-effect orchestration
+ * It does NOT:
  *
- * The audit model records evidence. It does not execute business operations.
+ *   - authorize loans
+ *   - approve transactions
+ *   - mutate loan balances
+ *   - post ledger entries
+ *   - execute mobile-money payments
+ *   - perform external side effects
+ *   - resolve business workflow
  *
- * ============================================================================
- */
-
-/**
- * ============================================================================
- * Constants
+ * Enterprise guarantees:
+ *
+ *   ✓ Multi-tenant isolation
+ *   ✓ Append-only persistence
+ *   ✓ Query mutation protection
+ *   ✓ insertMany protection
+ *   ✓ bulkWrite protection
+ *   ✓ Delete protection
+ *   ✓ Idempotent event recording
+ *   ✓ Idempotency payload conflict detection
+ *   ✓ Duplicate-key race recovery
+ *   ✓ Deterministic canonical hashing
+ *   ✓ SHA-256 integrity verification
+ *   ✓ Per-loan hash chain
+ *   ✓ Monotonic per-loan sequence
+ *   ✓ Decimal128 financial snapshots
+ *   ✓ Metadata size/depth protection
+ *   ✓ MongoDB field/operator protection
+ *   ✓ Tenant-safe queries
+ *   ✓ Bounded pagination
+ *   ✓ Cursor pagination
+ *   ✓ Correlation tracing
+ *   ✓ Regulatory reporting indexes
+ *
+ * Important:
+ *
+ *   Application-level immutability is NOT equivalent to database-level WORM.
+ *   Production compliance should additionally use:
+ *
+ *   - database RBAC
+ *   - restricted administrative privileges
+ *   - backups
+ *   - immutable/WORM retention
+ *   - external integrity anchoring
+ *   - security monitoring
+ *
  * ============================================================================
  */
 
@@ -112,14 +120,43 @@ const PROVIDERS = Object.freeze([
 
 const DEFAULT_CURRENCY = "UGX";
 
+const HASH_ALGORITHM = "sha256";
+
+const INTEGRITY_VERSION = 1;
+
 const MAX_PAGE_SIZE = 500;
 
 const DEFAULT_PAGE_SIZE = 100;
 
+const MAX_SKIP = 100000;
+
+const MAX_SEQUENCE_RETRIES = 8;
+
 const MAX_METADATA_BYTES = 256 * 1024;
+
+const MAX_METADATA_DEPTH = 20;
+
+const MAX_REASON_LENGTH = 5000;
+
+const MAX_REMARKS_LENGTH = 5000;
+
+const MAX_TRANSACTION_ID_LENGTH = 512;
+
+const MAX_CORRELATION_ID_LENGTH = 256;
+
+const MAX_IDEMPOTENCY_KEY_LENGTH = 256;
 
 const IMMUTABLE_ERROR =
     "Loan audit records are immutable and cannot be modified or deleted";
+
+const INSERT_MANY_ERROR =
+    "Direct insertMany() is prohibited; use LoanAudit.recordEvent()";
+
+const BULK_WRITE_ERROR =
+    "Direct bulkWrite() is prohibited; use LoanAudit.recordEvent()";
+
+const IDEMPOTENCY_CONFLICT_ERROR =
+    "Idempotency key already exists for a different audit event payload";
 
 const INVALID_OBJECT_ID_ERROR =
     "Invalid MongoDB ObjectId";
@@ -142,17 +179,10 @@ const ALLOWED_COUNT_FILTER_FIELDS = Object.freeze([
 
 /**
  * ============================================================================
- * Utility Helpers
+ * Utility helpers
  * ============================================================================
  */
 
-/**
- * Ensure a required non-empty string.
- *
- * @param {unknown} value
- * @param {string} fieldName
- * @returns {string}
- */
 function requireNonEmptyString(value, fieldName) {
     if (
         typeof value !== "string" ||
@@ -164,30 +194,54 @@ function requireNonEmptyString(value, fieldName) {
     return value.trim();
 }
 
-/**
- * Normalize an ObjectId-compatible value.
- *
- * @param {unknown} value
- * @param {string} fieldName
- * @returns {mongoose.Types.ObjectId}
- */
-function requireObjectId(value, fieldName) {
-    if (!mongoose.isValidObjectId(value)) {
+function normalizeOptionalString(
+    value,
+    fieldName,
+    maxLength
+) {
+    if (
+        value === undefined ||
+        value === null ||
+        value === ""
+    ) {
+        return null;
+    }
+
+    const normalized =
+        requireNonEmptyString(
+            value,
+            fieldName
+        );
+
+    if (
+        maxLength &&
+        normalized.length > maxLength
+    ) {
+        throw new Error(
+            `${fieldName} exceeds maximum length of ${maxLength}`
+        );
+    }
+
+    return normalized;
+}
+
+function requireObjectId(
+    value,
+    fieldName
+) {
+    if (
+        !mongoose.isValidObjectId(value)
+    ) {
         throw new Error(
             `${fieldName}: ${INVALID_OBJECT_ID_ERROR}`
         );
     }
 
-    return new mongoose.Types.ObjectId(value);
+    return new mongoose.Types.ObjectId(
+        value
+    );
 }
 
-/**
- * Normalize an optional ObjectId-compatible value.
- *
- * @param {unknown} value
- * @param {string} fieldName
- * @returns {mongoose.Types.ObjectId|null}
- */
 function normalizeOptionalObjectId(
     value,
     fieldName
@@ -206,13 +260,6 @@ function normalizeOptionalObjectId(
     );
 }
 
-/**
- * Ensure a plain object.
- *
- * @param {unknown} value
- * @param {string} fieldName
- * @returns {Object}
- */
 function requirePlainObject(
     value,
     fieldName
@@ -223,7 +270,19 @@ function requirePlainObject(
         Array.isArray(value)
     ) {
         throw new Error(
-            `${fieldName} must be an object`
+            `${fieldName} must be a plain object`
+        );
+    }
+
+    const prototype =
+        Object.getPrototypeOf(value);
+
+    if (
+        prototype !== Object.prototype &&
+        prototype !== null
+    ) {
+        throw new Error(
+            `${fieldName} must be a plain object`
         );
     }
 
@@ -231,20 +290,139 @@ function requirePlainObject(
 }
 
 /**
- * Convert arbitrary values into deterministic canonical structures.
+ * Protect metadata from:
  *
- * Object keys are sorted recursively so logically identical metadata
- * produces the same integrity hash regardless of insertion order.
- *
- * @param {unknown} value
- * @returns {unknown}
+ *   - excessive nesting
+ *   - MongoDB operators
+ *   - dotted paths
+ *   - unsupported values
+ *   - non-finite numbers
  */
+function validateSafeObject(
+    value,
+    depth = 0,
+    path = "metadata"
+) {
+    if (
+        depth > MAX_METADATA_DEPTH
+    ) {
+        throw new Error(
+            `${path} exceeds maximum nesting depth`
+        );
+    }
+
+    if (
+        value === null ||
+        value === undefined
+    ) {
+        return;
+    }
+
+    if (
+        typeof value === "string" ||
+        typeof value === "boolean"
+    ) {
+        return;
+    }
+
+    if (
+        typeof value === "number"
+    ) {
+        if (
+            !Number.isFinite(value)
+        ) {
+            throw new Error(
+                `${path} contains a non-finite number`
+            );
+        }
+
+        return;
+    }
+
+    if (
+        typeof value === "bigint"
+    ) {
+        return;
+    }
+
+    if (
+        value instanceof Date
+    ) {
+        if (
+            Number.isNaN(
+                value.getTime()
+            )
+        ) {
+            throw new Error(
+                `${path} contains an invalid date`
+            );
+        }
+
+        return;
+    }
+
+    if (
+        Buffer.isBuffer(value)
+    ) {
+        return;
+    }
+
+    if (
+        Array.isArray(value)
+    ) {
+        value.forEach(
+            (item, index) => {
+                validateSafeObject(
+                    item,
+                    depth + 1,
+                    `${path}[${index}]`
+                );
+            }
+        );
+
+        return;
+    }
+
+    if (
+        typeof value === "object"
+    ) {
+        requirePlainObject(
+            value,
+            path
+        );
+
+        Object.keys(value)
+            .forEach((key) => {
+                if (
+                    key.startsWith("$") ||
+                    key.includes(".")
+                ) {
+                    throw new Error(
+                        `${path}.${key} contains a prohibited MongoDB field name`
+                    );
+                }
+
+                validateSafeObject(
+                    value[key],
+                    depth + 1,
+                    `${path}.${key}`
+                );
+            });
+
+        return;
+    }
+
+    throw new Error(
+        `${path} contains an unsupported value type`
+    );
+}
+
 function canonicalize(value) {
     if (
         value === null ||
         value === undefined
     ) {
-        return value ?? null;
+        return null;
     }
 
     if (
@@ -254,31 +432,39 @@ function canonicalize(value) {
         return value;
     }
 
-    if (typeof value === "number") {
-        if (!Number.isFinite(value)) {
+    if (
+        typeof value === "number"
+    ) {
+        if (
+            !Number.isFinite(value)
+        ) {
             throw new Error(
-                "Audit integrity payload contains a non-finite number"
+                "Integrity payload contains a non-finite number"
             );
         }
 
         return value;
     }
 
-    if (typeof value === "bigint") {
+    if (
+        typeof value === "bigint"
+    ) {
         return {
             __type: "bigint",
             value: value.toString()
         };
     }
 
-    if (value instanceof Date) {
+    if (
+        value instanceof Date
+    ) {
         if (
             Number.isNaN(
                 value.getTime()
             )
         ) {
             throw new Error(
-                "Audit integrity payload contains an invalid date"
+                "Integrity payload contains an invalid date"
             );
         }
 
@@ -297,25 +483,44 @@ function canonicalize(value) {
         };
     }
 
-    if (Buffer.isBuffer(value)) {
+    if (
+        value instanceof mongoose.Types.Decimal128
+    ) {
+        return {
+            __type: "decimal128",
+            value: value.toString()
+        };
+    }
+
+    if (
+        Buffer.isBuffer(value)
+    ) {
         return {
             __type: "buffer",
             value: value.toString("base64")
         };
     }
 
-    if (Array.isArray(value)) {
-        return value.map(canonicalize);
+    if (
+        Array.isArray(value)
+    ) {
+        return value.map(
+            canonicalize
+        );
     }
 
-    if (typeof value === "object") {
+    if (
+        typeof value === "object"
+    ) {
         const normalized = {};
 
         Object.keys(value)
             .sort()
             .forEach((key) => {
                 normalized[key] =
-                    canonicalize(value[key]);
+                    canonicalize(
+                        value[key]
+                    );
             });
 
         return normalized;
@@ -324,24 +529,12 @@ function canonicalize(value) {
     return String(value);
 }
 
-/**
- * Safely serialize an object using deterministic key ordering.
- *
- * @param {unknown} value
- * @returns {string}
- */
 function stableStringify(value) {
     return JSON.stringify(
         canonicalize(value)
     );
 }
 
-/**
- * Calculate approximate serialized object size.
- *
- * @param {unknown} value
- * @returns {number}
- */
 function serializedByteLength(value) {
     return Buffer.byteLength(
         stableStringify(value),
@@ -349,11 +542,6 @@ function serializedByteLength(value) {
     );
 }
 
-/**
- * Validate metadata size before persistence.
- *
- * @param {unknown} metadata
- */
 function validateMetadata(metadata) {
     if (
         metadata === null ||
@@ -367,24 +555,26 @@ function validateMetadata(metadata) {
         "metadata"
     );
 
+    validateSafeObject(
+        metadata,
+        0,
+        "metadata"
+    );
+
     const size =
-        serializedByteLength(metadata);
+        serializedByteLength(
+            metadata
+        );
 
     if (
         size > MAX_METADATA_BYTES
     ) {
         throw new Error(
-            `metadata exceeds the maximum allowed size of ${MAX_METADATA_BYTES} bytes`
+            `metadata exceeds maximum size of ${MAX_METADATA_BYTES} bytes`
         );
     }
 }
 
-/**
- * Normalize pagination options.
- *
- * @param {Object} [options={}]
- * @returns {{limit:number,skip:number}}
- */
 function normalizePagination(
     options = {}
 ) {
@@ -399,26 +589,35 @@ function normalizePagination(
             options.skip ?? 0
         );
 
-    const limit = Number.isFinite(
-        requestedLimit
-    )
-        ? Math.max(
-            1,
-            Math.min(
-                Math.floor(requestedLimit),
-                MAX_PAGE_SIZE
+    const limit =
+        Number.isFinite(
+            requestedLimit
+        )
+            ? Math.max(
+                1,
+                Math.min(
+                    Math.floor(
+                        requestedLimit
+                    ),
+                    MAX_PAGE_SIZE
+                )
             )
-        )
-        : DEFAULT_PAGE_SIZE;
+            : DEFAULT_PAGE_SIZE;
 
-    const skip = Number.isFinite(
-        requestedSkip
-    )
-        ? Math.max(
-            0,
-            Math.floor(requestedSkip)
+    const skip =
+        Number.isFinite(
+            requestedSkip
         )
-        : 0;
+            ? Math.max(
+                0,
+                Math.min(
+                    Math.floor(
+                        requestedSkip
+                    ),
+                    MAX_SKIP
+                )
+            )
+            : 0;
 
     return {
         limit,
@@ -426,44 +625,116 @@ function normalizePagination(
     };
 }
 
-/**
- * Extract only explicitly supported count filters.
- *
- * Prevents callers from injecting arbitrary MongoDB operators into
- * tenant-scoped count queries.
- *
- * @param {Object} filter
- * @returns {Object}
- */
-function sanitizeCountFilter(
-    filter = {}
+function normalizeSequence(
+    value
+) {
+    const sequence =
+        Number(value);
+
+    if (
+        !Number.isSafeInteger(
+            sequence
+        ) ||
+        sequence < 1
+    ) {
+        throw new Error(
+            "Sequence must be a positive safe integer"
+        );
+    }
+
+    return sequence;
+}
+
+function isDuplicateKey(error) {
+    return Boolean(
+        error &&
+        error.code === 11000
+    );
+}
+
+function duplicateIndexName(error) {
+    if (!error) {
+        return "";
+    }
+
+    return String(
+        error.index ||
+        error.message ||
+        ""
+    );
+}
+
+function isDuplicateSequenceError(
+    error
 ) {
     if (
-        !filter ||
-        typeof filter !== "object" ||
-        Array.isArray(filter)
+        !isDuplicateKey(error)
     ) {
-        return {};
+        return false;
     }
 
-    const sanitized = {};
+    const index =
+        duplicateIndexName(error);
 
-    for (
-        const field of
-        ALLOWED_COUNT_FILTER_FIELDS
+    return (
+        index.includes(
+            "uq_loan_audit_tenant_loan_sequence"
+        ) ||
+        index.includes(
+            "tenantId_1_loanId_1_sequence_1"
+        )
+    );
+}
+
+function isDuplicateIdempotencyError(
+    error
+) {
+    if (
+        !isDuplicateKey(error)
     ) {
-        if (
-            Object.prototype.hasOwnProperty.call(
-                filter,
-                field
-            )
-        ) {
-            sanitized[field] =
-                filter[field];
-        }
+        return false;
     }
 
-    return sanitized;
+    const index =
+        duplicateIndexName(error);
+
+    return (
+        index.includes(
+            "uq_loan_audit_idempotency"
+        ) ||
+        index.includes(
+            "tenantId_1_idempotencyKey_1"
+        )
+    );
+}
+
+function timingSafeEqual(
+    expected,
+    actual
+) {
+    const expectedBuffer =
+        Buffer.from(
+            String(expected),
+            "utf8"
+        );
+
+    const actualBuffer =
+        Buffer.from(
+            String(actual),
+            "utf8"
+        );
+
+    if (
+        expectedBuffer.length !==
+        actualBuffer.length
+    ) {
+        return false;
+    }
+
+    return crypto.timingSafeEqual(
+        expectedBuffer,
+        actualBuffer
+    );
 }
 
 /**
@@ -472,414 +743,357 @@ function sanitizeCountFilter(
  * ============================================================================
  */
 
-const LoanAuditSchema = new Schema(
-    {
-        /**
-         * ---------------------------------------------------------------------
-         * Multi-Tenant Isolation
-         * ---------------------------------------------------------------------
-         */
+const LoanAuditSchema =
+    new Schema(
+        {
+            tenantId: {
+                type: String,
+                required: true,
+                trim: true,
+                immutable: true,
+                index: true,
+                maxlength: 256
+            },
 
-        tenantId: {
-            type: String,
-            required: true,
-            trim: true,
-            immutable: true,
-            index: true,
-            maxlength: 256
-        },
+            groupId: {
+                type: Schema.Types.ObjectId,
+                ref: "Group",
+                default: null,
+                immutable: true
+            },
 
-        /**
-         * ---------------------------------------------------------------------
-         * SACCO / Group
-         * ---------------------------------------------------------------------
-         */
+            memberId: {
+                type: Schema.Types.ObjectId,
+                ref: "User",
+                required: true,
+                immutable: true,
+                index: true
+            },
 
-        groupId: {
-            type: Schema.Types.ObjectId,
-            ref: "Group",
-            default: null,
-            immutable: true
-        },
+            loanId: {
+                type: Schema.Types.ObjectId,
+                ref: "Loan",
+                required: true,
+                immutable: true,
+                index: true
+            },
 
-        /**
-         * ---------------------------------------------------------------------
-         * Member
-         * ---------------------------------------------------------------------
-         */
+            actorId: {
+                type: Schema.Types.ObjectId,
+                ref: "User",
+                default: null,
+                immutable: true
+            },
 
-        memberId: {
-            type: Schema.Types.ObjectId,
-            ref: "User",
-            required: true,
-            immutable: true,
-            index: true
-        },
+            actorType: {
+                type: String,
+                enum: ACTOR_TYPES,
+                default: "SYSTEM",
+                immutable: true
+            },
 
-        /**
-         * ---------------------------------------------------------------------
-         * Loan
-         * ---------------------------------------------------------------------
-         */
+            eventType: {
+                type: String,
+                required: true,
+                enum: EVENT_TYPES,
+                immutable: true,
+                index: true
+            },
 
-        loanId: {
-            type: Schema.Types.ObjectId,
-            ref: "Loan",
-            required: true,
-            immutable: true,
-            index: true
-        },
-
-        /**
-         * ---------------------------------------------------------------------
-         * Actor
-         * ---------------------------------------------------------------------
-         */
-
-        actorId: {
-            type: Schema.Types.ObjectId,
-            ref: "User",
-            default: null,
-            immutable: true
-        },
-
-        actorType: {
-            type: String,
-            enum: ACTOR_TYPES,
-            default: "SYSTEM",
-            immutable: true
-        },
-
-        /**
-         * ---------------------------------------------------------------------
-         * Event Type
-         * ---------------------------------------------------------------------
-         */
-
-        eventType: {
-            type: String,
-            required: true,
-            enum: EVENT_TYPES,
-            immutable: true,
-            index: true
-        },
-
-        /**
-         * ---------------------------------------------------------------------
-         * Risk Assessment Snapshot
-         * ---------------------------------------------------------------------
-         */
-
-        score: {
-            type: Number,
-            default: null,
-            min: 0,
-            immutable: true,
-            validate: {
-                validator(value) {
-                    return (
-                        value === null ||
-                        value === undefined ||
-                        Number.isFinite(value)
-                    );
-                },
-                message:
-                    "Audit score must be a finite number"
-            }
-        },
-
-        eligible: {
-            type: Boolean,
-            default: null,
-            immutable: true
-        },
-
-        breakdown: {
-            type: Schema.Types.Mixed,
-            default: null,
-            immutable: true
-        },
-
-        /**
-         * ---------------------------------------------------------------------
-         * Financial Snapshot
-         * ---------------------------------------------------------------------
-         */
-
-        amount: {
-            type: Number,
-            default: null,
-            min: 0,
-            immutable: true,
-            validate: {
-                validator(value) {
-                    return (
-                        value === null ||
-                        value === undefined ||
-                        Number.isFinite(value)
-                    );
-                },
-                message:
-                    "Audit amount must be a finite number"
-            }
-        },
-
-        currency: {
-            type: String,
-            default: DEFAULT_CURRENCY,
-            uppercase: true,
-            trim: true,
-            minlength: 3,
-            maxlength: 3,
-            match: /^[A-Z]{3}$/,
-            immutable: true
-        },
-
-        interestRate: {
-            type: Number,
-            default: null,
-            min: 0,
-            immutable: true,
-            validate: {
-                validator(value) {
-                    return (
-                        value === null ||
-                        value === undefined ||
-                        Number.isFinite(value)
-                    );
-                },
-                message:
-                    "Audit interestRate must be a finite number"
-            }
-        },
-
-        /**
-         * ---------------------------------------------------------------------
-         * External / Financial Transaction Reference
-         * ---------------------------------------------------------------------
-         */
-
-        transactionId: {
-            type: String,
-            trim: true,
-            default: null,
-            immutable: true,
-            maxlength: 512,
-            index: true
-        },
-
-        provider: {
-            type: String,
-            enum: PROVIDERS,
-            default: "OTHER",
-            immutable: true
-        },
-
-        /**
-         * ---------------------------------------------------------------------
-         * State Transition Snapshot
-         * ---------------------------------------------------------------------
-         */
-
-        previousStatus: {
-            type: String,
-            trim: true,
-            default: null,
-            immutable: true,
-            maxlength: 256
-        },
-
-        currentStatus: {
-            type: String,
-            trim: true,
-            default: null,
-            immutable: true,
-            maxlength: 256
-        },
-
-        /**
-         * ---------------------------------------------------------------------
-         * Human-Readable Reasoning
-         * ---------------------------------------------------------------------
-         */
-
-        reason: {
-            type: String,
-            maxlength: 5000,
-            trim: true,
-            default: null,
-            immutable: true
-        },
-
-        remarks: {
-            type: String,
-            maxlength: 5000,
-            trim: true,
-            default: null,
-            immutable: true
-        },
-
-        /**
-         * ---------------------------------------------------------------------
-         * Request / Security Context
-         * ---------------------------------------------------------------------
-         */
-
-        ipAddress: {
-            type: String,
-            maxlength: 128,
-            trim: true,
-            default: null,
-            immutable: true
-        },
-
-        userAgent: {
-            type: String,
-            maxlength: 2048,
-            trim: true,
-            default: null,
-            immutable: true
-        },
-
-        correlationId: {
-            type: String,
-            maxlength: 256,
-            trim: true,
-            default: null,
-            immutable: true,
-            index: true
-        },
-
-        /**
-         * ---------------------------------------------------------------------
-         * Idempotency
-         * ---------------------------------------------------------------------
-         */
-
-        idempotencyKey: {
-            type: String,
-            trim: true,
-            maxlength: 256,
-            default: null,
-            immutable: true
-        },
-
-        /**
-         * ---------------------------------------------------------------------
-         * Arbitrary Audit Metadata
-         * ---------------------------------------------------------------------
-         */
-
-        metadata: {
-            type: Schema.Types.Mixed,
-            default: {},
-            immutable: true,
-            validate: {
-                validator(value) {
-                    try {
-                        validateMetadata(
-                            value
+            score: {
+                type: Number,
+                default: null,
+                min: 0,
+                immutable: true,
+                validate: {
+                    validator(value) {
+                        return (
+                            value === null ||
+                            value === undefined ||
+                            Number.isFinite(value)
                         );
+                    },
+                    message:
+                        "Audit score must be finite"
+                }
+            },
 
-                        return true;
-                    } catch (error) {
-                        return false;
-                    }
-                },
-                message:
-                    "Audit metadata is invalid or exceeds the maximum allowed size"
+            eligible: {
+                type: Boolean,
+                default: null,
+                immutable: true
+            },
+
+            breakdown: {
+                type: Schema.Types.Mixed,
+                default: null,
+                immutable: true,
+                validate: {
+                    validator(value) {
+                        if (
+                            value === null ||
+                            value === undefined
+                        ) {
+                            return true;
+                        }
+
+                        try {
+                            validateSafeObject(
+                                value,
+                                0,
+                                "breakdown"
+                            );
+
+                            return true;
+                        } catch (_) {
+                            return false;
+                        }
+                    },
+                    message:
+                        "Audit breakdown is invalid"
+                }
+            },
+
+            /**
+             * Decimal128 is deliberately used for monetary values.
+             *
+             * Financial amounts should not be represented with JavaScript
+             * floating-point Number values.
+             */
+            amount: {
+                type: Schema.Types.Decimal128,
+                default: null,
+                min: 0,
+                immutable: true
+            },
+
+            currency: {
+                type: String,
+                default: DEFAULT_CURRENCY,
+                uppercase: true,
+                trim: true,
+                minlength: 3,
+                maxlength: 3,
+                match: /^[A-Z]{3}$/,
+                immutable: true
+            },
+
+            interestRate: {
+                type: Schema.Types.Decimal128,
+                default: null,
+                min: 0,
+                immutable: true
+            },
+
+            transactionId: {
+                type: String,
+                trim: true,
+                default: null,
+                immutable: true,
+                maxlength: MAX_TRANSACTION_ID_LENGTH,
+                index: true
+            },
+
+            provider: {
+                type: String,
+                enum: PROVIDERS,
+                default: "OTHER",
+                immutable: true
+            },
+
+            previousStatus: {
+                type: String,
+                trim: true,
+                default: null,
+                immutable: true,
+                maxlength: 256
+            },
+
+            currentStatus: {
+                type: String,
+                trim: true,
+                default: null,
+                immutable: true,
+                maxlength: 256
+            },
+
+            reason: {
+                type: String,
+                trim: true,
+                default: null,
+                maxlength: MAX_REASON_LENGTH,
+                immutable: true
+            },
+
+            remarks: {
+                type: String,
+                trim: true,
+                default: null,
+                maxlength: MAX_REMARKS_LENGTH,
+                immutable: true
+            },
+
+            ipAddress: {
+                type: String,
+                trim: true,
+                default: null,
+                maxlength: 128,
+                immutable: true
+            },
+
+            userAgent: {
+                type: String,
+                trim: true,
+                default: null,
+                maxlength: 2048,
+                immutable: true
+            },
+
+            correlationId: {
+                type: String,
+                trim: true,
+                default: null,
+                maxlength: MAX_CORRELATION_ID_LENGTH,
+                immutable: true,
+                index: true
+            },
+
+            idempotencyKey: {
+                type: String,
+                trim: true,
+                default: null,
+                maxlength: MAX_IDEMPOTENCY_KEY_LENGTH,
+                immutable: true
+            },
+
+            /**
+             * Fingerprint of the logical business/audit request.
+             *
+             * This allows the same idempotency key to safely return the
+             * original event while rejecting reuse with different data.
+             */
+            idempotencyFingerprint: {
+                type: String,
+                trim: true,
+                default: null,
+                immutable: true,
+                minlength: 64,
+                maxlength: 64,
+                match: /^[a-f0-9]{64}$/
+            },
+
+            metadata: {
+                type: Schema.Types.Mixed,
+                default: () => ({}),
+                immutable: true,
+                validate: {
+                    validator(value) {
+                        try {
+                            validateMetadata(value);
+                            return true;
+                        } catch (_) {
+                            return false;
+                        }
+                    },
+                    message:
+                        "Audit metadata is invalid or exceeds limits"
+                }
+            },
+
+            /**
+             * Monotonic sequence per tenant + loan.
+             */
+            sequence: {
+                type: Number,
+                required: true,
+                immutable: true,
+                min: 1,
+                validate: {
+                    validator(value) {
+                        return (
+                            Number.isSafeInteger(
+                                value
+                            ) &&
+                            value >= 1
+                        );
+                    },
+                    message:
+                        "Audit sequence must be a positive safe integer"
+                }
+            },
+
+            /**
+             * SHA-256 hash of immediately preceding event.
+             */
+            previousHash: {
+                type: String,
+                default: null,
+                immutable: true,
+                minlength: 64,
+                maxlength: 64,
+                match: /^[a-f0-9]{64}$/
+            },
+
+            integrityVersion: {
+                type: Number,
+                required: true,
+                immutable: true,
+                enum: [
+                    INTEGRITY_VERSION
+                ]
+            },
+
+            hashAlgorithm: {
+                type: String,
+                required: true,
+                immutable: true,
+                enum: [
+                    HASH_ALGORITHM
+                ]
+            },
+
+            /**
+             * Deterministic SHA-256 hash of the immutable audit payload.
+             */
+            immutableHash: {
+                type: String,
+                required: true,
+                trim: true,
+                immutable: true,
+                minlength: 64,
+                maxlength: 64,
+                match: /^[a-f0-9]{64}$/
+            },
+
+            /**
+             * Business event time.
+             */
+            eventOccurredAt: {
+                type: Date,
+                default: Date.now,
+                immutable: true,
+                index: true
             }
         },
+        {
+            timestamps: true,
 
-        /**
-         * ---------------------------------------------------------------------
-         * Hash Chain
-         * ---------------------------------------------------------------------
-         *
-         * sequence is allocated monotonically per tenant + loan.
-         *
-         * previousHash references the immediately preceding audit event for the
-         * same loan where available.
-         *
-         * This strengthens tamper evidence but does not replace:
-         *
-         * - database access controls
-         * - backups
-         * - WORM storage
-         * - external audit replication
-         */
+            versionKey: false,
 
-        sequence: {
-            type: Number,
-            required: true,
-            immutable: true,
-            min: 1
-        },
+            collection: "loan_audits",
 
-        previousHash: {
-            type: String,
-            default: null,
-            immutable: true,
-            minlength: 64,
-            maxlength: 64,
-            match: /^[a-f0-9]{64}$/
-        },
+            minimize: false,
 
-        /**
-         * ---------------------------------------------------------------------
-         * Tamper-Evident Integrity
-         * ---------------------------------------------------------------------
-         */
-
-        immutableHash: {
-            type: String,
-            trim: true,
-            required: true,
-            immutable: true,
-            minlength: 64,
-            maxlength: 64,
-            match: /^[a-f0-9]{64}$/
-        },
-
-        /**
-         * ---------------------------------------------------------------------
-         * Event Time
-         * ---------------------------------------------------------------------
-         *
-         * eventOccurredAt represents when the business event occurred.
-         *
-         * createdAt represents when the audit evidence was persisted.
-         */
-
-        eventOccurredAt: {
-            type: Date,
-            default: Date.now,
-            immutable: true,
-            index: true
+            strict: true
         }
-    },
-    {
-        timestamps: true,
-
-        versionKey: false,
-
-        collection: "loan_audits",
-
-        minimize: false,
-
-        strict: true
-    }
-);
+    );
 
 /**
  * ============================================================================
- * Compound Indexes
+ * Compound indexes
  * ============================================================================
  */
 
-/**
- * Tenant + loan timeline.
- */
 LoanAuditSchema.index(
     {
         tenantId: 1,
@@ -893,9 +1107,6 @@ LoanAuditSchema.index(
     }
 );
 
-/**
- * Operational chronological timeline.
- */
 LoanAuditSchema.index(
     {
         tenantId: 1,
@@ -908,9 +1119,6 @@ LoanAuditSchema.index(
     }
 );
 
-/**
- * Business event timeline.
- */
 LoanAuditSchema.index(
     {
         tenantId: 1,
@@ -923,9 +1131,6 @@ LoanAuditSchema.index(
     }
 );
 
-/**
- * Tenant member history.
- */
 LoanAuditSchema.index(
     {
         tenantId: 1,
@@ -938,9 +1143,6 @@ LoanAuditSchema.index(
     }
 );
 
-/**
- * Tenant event analytics.
- */
 LoanAuditSchema.index(
     {
         tenantId: 1,
@@ -953,9 +1155,6 @@ LoanAuditSchema.index(
     }
 );
 
-/**
- * Regulatory reporting.
- */
 LoanAuditSchema.index(
     {
         tenantId: 1,
@@ -968,9 +1167,6 @@ LoanAuditSchema.index(
     }
 );
 
-/**
- * Transaction audit lookup.
- */
 LoanAuditSchema.index(
     {
         tenantId: 1,
@@ -983,9 +1179,6 @@ LoanAuditSchema.index(
     }
 );
 
-/**
- * Provider transaction lookup.
- */
 LoanAuditSchema.index(
     {
         tenantId: 1,
@@ -998,9 +1191,6 @@ LoanAuditSchema.index(
     }
 );
 
-/**
- * Correlation tracing.
- */
 LoanAuditSchema.index(
     {
         tenantId: 1,
@@ -1013,9 +1203,6 @@ LoanAuditSchema.index(
     }
 );
 
-/**
- * Tenant-wide chronological reporting.
- */
 LoanAuditSchema.index(
     {
         tenantId: 1,
@@ -1028,10 +1215,9 @@ LoanAuditSchema.index(
 );
 
 /**
- * Idempotency protection.
+ * Tenant-scoped idempotency uniqueness.
  *
- * Null values are excluded so multiple audit events may legitimately omit an
- * idempotency key.
+ * Partial index means multiple records may have null/missing idempotencyKey.
  */
 LoanAuditSchema.index(
     {
@@ -1039,9 +1225,9 @@ LoanAuditSchema.index(
         idempotencyKey: 1
     },
     {
+        unique: true,
         name:
             "uq_loan_audit_idempotency",
-        unique: true,
         partialFilterExpression: {
             idempotencyKey: {
                 $type: "string"
@@ -1052,18 +1238,20 @@ LoanAuditSchema.index(
 
 /**
  * ============================================================================
- * Integrity Helpers
+ * Integrity payload
  * ============================================================================
  */
 
-/**
- * Build the canonical immutable payload.
- *
- * @param {Object} doc
- * @returns {Object}
- */
 function buildIntegrityPayload(doc) {
     return {
+        integrityVersion:
+            doc.integrityVersion ??
+            INTEGRITY_VERSION,
+
+        hashAlgorithm:
+            doc.hashAlgorithm ||
+            HASH_ALGORITHM,
+
         tenantId:
             doc.tenantId || null,
 
@@ -1141,6 +1329,9 @@ function buildIntegrityPayload(doc) {
         idempotencyKey:
             doc.idempotencyKey || null,
 
+        idempotencyFingerprint:
+            doc.idempotencyFingerprint || null,
+
         metadata:
             doc.metadata || {},
 
@@ -1166,18 +1357,16 @@ function buildIntegrityPayload(doc) {
     };
 }
 
-/**
- * Generate deterministic SHA-256 integrity hash.
- *
- * @param {Object} doc
- * @returns {string}
- */
 function generateIntegrityHash(doc) {
     return crypto
-        .createHash("sha256")
+        .createHash(
+            HASH_ALGORITHM
+        )
         .update(
             stableStringify(
-                buildIntegrityPayload(doc)
+                buildIntegrityPayload(
+                    doc
+                )
             ),
             "utf8"
         )
@@ -1186,214 +1375,382 @@ function generateIntegrityHash(doc) {
 
 /**
  * ============================================================================
- * Creation Validation
+ * Idempotency fingerprint
+ * ============================================================================
+ *
+ * Persistence-generated values are deliberately excluded:
+ *
+ *   - sequence
+ *   - previousHash
+ *   - immutableHash
+ *   - integrityVersion
+ *   - hashAlgorithm
+ *   - createdAt
+ *   - updatedAt
+ *
+ * The fingerprint represents the logical request.
+ */
+
+function buildIdempotencyPayload(
+    payload
+) {
+    return {
+        tenantId:
+            payload.tenantId || null,
+
+        groupId:
+            payload.groupId
+                ? String(
+                    payload.groupId
+                )
+                : null,
+
+        memberId:
+            payload.memberId
+                ? String(
+                    payload.memberId
+                )
+                : null,
+
+        loanId:
+            payload.loanId
+                ? String(
+                    payload.loanId
+                )
+                : null,
+
+        actorId:
+            payload.actorId
+                ? String(
+                    payload.actorId
+                )
+                : null,
+
+        actorType:
+            payload.actorType ||
+            "SYSTEM",
+
+        eventType:
+            payload.eventType ||
+            null,
+
+        score:
+            payload.score ?? null,
+
+        eligible:
+            payload.eligible ?? null,
+
+        breakdown:
+            payload.breakdown ?? null,
+
+        amount:
+            payload.amount ?? null,
+
+        currency:
+            payload.currency ||
+            DEFAULT_CURRENCY,
+
+        interestRate:
+            payload.interestRate ??
+            null,
+
+        transactionId:
+            payload.transactionId ||
+            null,
+
+        provider:
+            payload.provider ||
+            "OTHER",
+
+        previousStatus:
+            payload.previousStatus ||
+            null,
+
+        currentStatus:
+            payload.currentStatus ||
+            null,
+
+        reason:
+            payload.reason ||
+            null,
+
+        remarks:
+            payload.remarks ||
+            null,
+
+        ipAddress:
+            payload.ipAddress ||
+            null,
+
+        userAgent:
+            payload.userAgent ||
+            null,
+
+        correlationId:
+            payload.correlationId ||
+            null,
+
+        idempotencyKey:
+            payload.idempotencyKey ||
+            null,
+
+        metadata:
+            payload.metadata ||
+            {}
+    };
+}
+
+function generateIdempotencyFingerprint(
+    payload
+) {
+    return crypto
+        .createHash(
+            HASH_ALGORITHM
+        )
+        .update(
+            stableStringify(
+                buildIdempotencyPayload(
+                    payload
+                )
+            ),
+            "utf8"
+        )
+        .digest("hex");
+}
+
+/**
+ * ============================================================================
+ * Creation validation
  * ============================================================================
  */
 
 LoanAuditSchema.pre(
     "validate",
-    function(next) {
-        try {
-            if (!this.isNew) {
-                return next();
-            }
+    function () {
+        if (!this.isNew) {
+            return;
+        }
 
-            requireNonEmptyString(
-                this.tenantId,
-                "tenantId"
+        requireNonEmptyString(
+            this.tenantId,
+            "tenantId"
+        );
+
+        requireObjectId(
+            this.loanId,
+            "loanId"
+        );
+
+        requireObjectId(
+            this.memberId,
+            "memberId"
+        );
+
+        normalizeOptionalObjectId(
+            this.groupId,
+            "groupId"
+        );
+
+        normalizeOptionalObjectId(
+            this.actorId,
+            "actorId"
+        );
+
+        if (
+            !EVENT_TYPES.includes(
+                this.eventType
+            )
+        ) {
+            throw new Error(
+                "eventType is invalid"
             );
+        }
 
-            requireObjectId(
-                this.loanId,
-                "loanId"
+        if (
+            !ACTOR_TYPES.includes(
+                this.actorType
+            )
+        ) {
+            throw new Error(
+                "actorType is invalid"
             );
+        }
 
-            requireObjectId(
-                this.memberId,
-                "memberId"
+        if (
+            !PROVIDERS.includes(
+                this.provider
+            )
+        ) {
+            throw new Error(
+                "provider is invalid"
             );
+        }
 
-            normalizeOptionalObjectId(
-                this.groupId,
-                "groupId"
+        if (
+            this.actorType !== "SYSTEM" &&
+            !this.actorId
+        ) {
+            throw new Error(
+                "actorId is required for non-SYSTEM actors"
             );
+        }
 
-            normalizeOptionalObjectId(
-                this.actorId,
-                "actorId"
+        validateMetadata(
+            this.metadata
+        );
+
+        if (
+            this.breakdown !== null &&
+            this.breakdown !== undefined
+        ) {
+            validateSafeObject(
+                this.breakdown,
+                0,
+                "breakdown"
             );
+        }
 
-            if (
-                !EVENT_TYPES.includes(
-                    this.eventType
-                )
-            ) {
-                throw new Error(
-                    "eventType is invalid"
-                );
-            }
-
-            if (
-                !ACTOR_TYPES.includes(
-                    this.actorType
-                )
-            ) {
-                throw new Error(
-                    "actorType is invalid"
-                );
-            }
-
-            if (
-                !PROVIDERS.includes(
-                    this.provider
-                )
-            ) {
-                throw new Error(
-                    "provider is invalid"
-                );
-            }
-
-            validateMetadata(
-                this.metadata
+        if (
+            this.idempotencyKey
+        ) {
+            normalizeOptionalString(
+                this.idempotencyKey,
+                "idempotencyKey",
+                MAX_IDEMPOTENCY_KEY_LENGTH
             );
-
-            if (
-                this.breakdown !== null &&
-                this.breakdown !== undefined &&
-                typeof this.breakdown !==
-                    "object"
-            ) {
-                throw new Error(
-                    "breakdown must be an object when provided"
-                );
-            }
-
-            next();
-        } catch (error) {
-            next(error);
         }
     }
 );
 
 /**
  * ============================================================================
- * Sequence / Hash Chain Allocation
+ * Sequence + previous hash allocation
  * ============================================================================
  *
- * This allocation is performed immediately before saving a new document.
+ * The unique database index remains the final concurrency authority.
  *
- * The unique (tenantId, loanId, sequence) index is the final concurrency
- * authority. recordEvent() retries duplicate sequence collisions.
+ * Two concurrent writers may temporarily observe the same previous sequence.
+ * One wins. The losing writer receives E11000 and recordEvent() retries.
+ * ============================================================================
  */
 
 LoanAuditSchema.pre(
     "save",
-    async function(next) {
-        try {
-            if (!this.isNew) {
-                return next();
-            }
+    async function () {
+        if (!this.isNew) {
+            return;
+        }
 
-            if (
-                !this.sequence ||
-                this.sequence < 1
-            ) {
-                const previous =
-                    await this.constructor
-                        .findOne({
-                            tenantId:
-                                this.tenantId,
-                            loanId:
-                                this.loanId
-                        })
-                        .sort({
-                            sequence: -1
-                        })
-                        .select({
-                            sequence: 1,
-                            immutableHash: 1
-                        })
-                        .lean();
+        if (
+            this.sequence &&
+            this.sequence >= 1
+        ) {
+            return;
+        }
 
-                this.sequence =
-                    previous
-                        ? previous.sequence + 1
-                        : 1;
+        const previous =
+            await this.constructor
+                .findOne({
+                    tenantId:
+                        this.tenantId,
 
-                this.previousHash =
-                    previous
-                        ? previous.immutableHash
-                        : null;
-            }
+                    loanId:
+                        this.loanId
+                })
+                .sort({
+                    sequence: -1
+                })
+                .select({
+                    sequence: 1,
+                    immutableHash: 1
+                })
+                .lean();
 
-            next();
-        } catch (error) {
-            next(error);
+        this.sequence =
+            previous
+                ? normalizeSequence(
+                    previous.sequence + 1
+                )
+                : 1;
+
+        this.previousHash =
+            previous
+                ? previous.immutableHash
+                : null;
+    }
+);
+
+/**
+ * ============================================================================
+ * Pre-save integrity generation
+ * ============================================================================
+ *
+ * Mongoose validation executes before save middleware. Timestamps are applied
+ * by Mongoose's save lifecycle. We explicitly guarantee all integrity metadata
+ * before hashing.
+ * ============================================================================
+ */
+
+LoanAuditSchema.pre(
+    "save",
+    function () {
+        if (!this.isNew) {
+            return;
+        }
+
+        this.integrityVersion =
+            INTEGRITY_VERSION;
+
+        this.hashAlgorithm =
+            HASH_ALGORITHM;
+
+        if (
+            this.idempotencyKey &&
+            !this.idempotencyFingerprint
+        ) {
+            this.idempotencyFingerprint =
+                generateIdempotencyFingerprint(
+                    this.toObject()
+                );
+        }
+
+        if (
+            !this.immutableHash
+        ) {
+            this.immutableHash =
+                generateIntegrityHash(
+                    this
+                );
         }
     }
 );
 
 /**
  * ============================================================================
- * Pre-Save Integrity Hash
+ * Existing document save protection
  * ============================================================================
  */
 
 LoanAuditSchema.pre(
     "save",
-    function(next) {
-        try {
-            if (
-                this.isNew &&
-                !this.immutableHash
-            ) {
-                /**
-                 * Mongoose timestamps have already populated createdAt by this
-                 * point in the save lifecycle.
-                 */
-                this.immutableHash =
-                    generateIntegrityHash(
-                        this
-                    );
-            }
-
-            next();
-        } catch (error) {
-            next(error);
-        }
-    }
-);
-
-/**
- * ============================================================================
- * Immutability Enforcement
- * ============================================================================
- */
-
-/**
- * Prevent existing documents from being re-saved.
- */
-LoanAuditSchema.pre(
-    "save",
-    function(next) {
+    function () {
         if (
             !this.isNew &&
             this.isModified()
         ) {
-            return next(
-                new Error(
-                    IMMUTABLE_ERROR
-                )
+            throw new Error(
+                IMMUTABLE_ERROR
             );
         }
-
-        return next();
     }
 );
 
 /**
- * Query-level mutation and deletion protection.
+ * ============================================================================
+ * Query mutation protection
+ * ============================================================================
  */
+
 [
     "update",
     "updateOne",
@@ -1406,21 +1763,21 @@ LoanAuditSchema.pre(
     "findByIdAndDelete",
     "deleteOne",
     "deleteMany"
-].forEach((method) => {
-    LoanAuditSchema.pre(
-        method,
-        function(next) {
-            next(
-                new Error(
+].forEach(
+    (method) => {
+        LoanAuditSchema.pre(
+            method,
+            function () {
+                throw new Error(
                     IMMUTABLE_ERROR
-                )
-            );
-        }
-    );
-});
+                );
+            }
+        );
+    }
+);
 
 /**
- * Document-level delete protection.
+ * Document delete protection.
  */
 LoanAuditSchema.pre(
     "deleteOne",
@@ -1428,727 +1785,1167 @@ LoanAuditSchema.pre(
         document: true,
         query: false
     },
-    function(next) {
-        next(
-            new Error(
-                IMMUTABLE_ERROR
-            )
+    function () {
+        throw new Error(
+            IMMUTABLE_ERROR
         );
     }
 );
 
 /**
  * ============================================================================
- * Static: Verify Integrity
+ * Model-level direct insertion protection
  * ============================================================================
  *
- * @param {Object} auditDocument
- * @returns {boolean}
+ * insertMany() and bulkWrite() can bypass save middleware. Current Mongoose
+ * exposes model middleware for these operations, so block them explicitly.
+ * ============================================================================
  */
-LoanAuditSchema.statics.verifyIntegrity =
-function verifyIntegrity(
-    auditDocument
-) {
-    if (
-        !auditDocument ||
-        !auditDocument.immutableHash
-    ) {
-        return false;
+
+LoanAuditSchema.pre(
+    "insertMany",
+    function () {
+        throw new Error(
+            INSERT_MANY_ERROR
+        );
     }
+);
 
-    try {
-        const expectedHash =
-            generateIntegrityHash(
-                auditDocument
-            );
+LoanAuditSchema.pre(
+    "bulkWrite",
+    function () {
+        throw new Error(
+            BULK_WRITE_ERROR
+        );
+    }
+);
 
-        const actualHash =
-            String(
-                auditDocument.immutableHash
-            );
+/**
+ * ============================================================================
+ * Integrity verification
+ * ============================================================================
+ */
 
-        const expectedBuffer =
-            Buffer.from(
-                expectedHash,
-                "utf8"
-            );
-
-        const actualBuffer =
-            Buffer.from(
-                actualHash,
-                "utf8"
-            );
-
+LoanAuditSchema.statics.verifyIntegrity =
+    function verifyIntegrity(
+        auditDocument
+    ) {
         if (
-            expectedBuffer.length !==
-            actualBuffer.length
+            !auditDocument ||
+            !auditDocument.immutableHash
         ) {
             return false;
         }
 
-        return crypto.timingSafeEqual(
-            expectedBuffer,
-            actualBuffer
-        );
-    } catch (error) {
-        return false;
-    }
-};
+        try {
+            if (
+                Number(
+                    auditDocument.integrityVersion
+                ) !== INTEGRITY_VERSION
+            ) {
+                return false;
+            }
+
+            if (
+                String(
+                    auditDocument.hashAlgorithm
+                ) !== HASH_ALGORITHM
+            ) {
+                return false;
+            }
+
+            const expectedHash =
+                generateIntegrityHash(
+                    auditDocument
+                );
+
+            return timingSafeEqual(
+                expectedHash,
+                auditDocument.immutableHash
+            );
+        } catch (_) {
+            return false;
+        }
+    };
 
 /**
  * ============================================================================
- * Static: Verify Loan Hash Chain
+ * Verify complete loan hash chain
  * ============================================================================
- *
- * @param {string|ObjectId} loanId
- * @param {string} tenantId
- * @returns {Promise<{
- *   valid: boolean,
- *   checked: number,
- *   failure: Object|null
- * }>}
  */
+
 LoanAuditSchema.statics.verifyLoanHashChain =
-async function verifyLoanHashChain(
-    loanId,
-    tenantId
-) {
-    const normalizedTenantId =
-        requireNonEmptyString(
-            tenantId,
-            "tenantId"
-        );
+    async function verifyLoanHashChain(
+        loanId,
+        tenantId
+    ) {
+        const normalizedTenantId =
+            requireNonEmptyString(
+                tenantId,
+                "tenantId"
+            );
 
-    const normalizedLoanId =
-        requireObjectId(
-            loanId,
-            "loanId"
-        );
+        const normalizedLoanId =
+            requireObjectId(
+                loanId,
+                "loanId"
+            );
 
-    const events =
-        await this.find({
+        const events =
+            await this.find({
+                tenantId:
+                    normalizedTenantId,
+
+                loanId:
+                    normalizedLoanId
+            })
+                .sort({
+                    sequence: 1
+                })
+                .lean();
+
+        let previousHash = null;
+
+        for (
+            let index = 0;
+            index < events.length;
+            index += 1
+        ) {
+            const event =
+                events[index];
+
+            const expectedSequence =
+                index + 1;
+
+            if (
+                event.sequence !==
+                expectedSequence
+            ) {
+                return {
+                    valid: false,
+
+                    checked: index,
+
+                    failure: {
+                        reason:
+                            "SEQUENCE_MISMATCH",
+
+                        expected:
+                            expectedSequence,
+
+                        actual:
+                            event.sequence,
+
+                        auditId:
+                            String(
+                                event._id
+                            )
+                    }
+                };
+            }
+
+            if (
+                event.previousHash !==
+                previousHash
+            ) {
+                return {
+                    valid: false,
+
+                    checked: index,
+
+                    failure: {
+                        reason:
+                            "PREVIOUS_HASH_MISMATCH",
+
+                        expected:
+                            previousHash,
+
+                        actual:
+                            event.previousHash,
+
+                        auditId:
+                            String(
+                                event._id
+                            )
+                    }
+                };
+            }
+
+            if (
+                !this.verifyIntegrity(
+                    event
+                )
+            ) {
+                return {
+                    valid: false,
+
+                    checked: index,
+
+                    failure: {
+                        reason:
+                            "INTEGRITY_HASH_MISMATCH",
+
+                        auditId:
+                            String(
+                                event._id
+                            )
+                    }
+                };
+            }
+
+            previousHash =
+                event.immutableHash;
+        }
+
+        return {
+            valid: true,
+            checked: events.length,
+            failure: null
+        };
+    };
+
+/**
+ * ============================================================================
+ * Loan timeline - offset pagination
+ * ============================================================================
+ */
+
+LoanAuditSchema.statics.getLoanTimeline =
+    function getLoanTimeline(
+        loanId,
+        tenantId,
+        options = {}
+    ) {
+        const normalizedTenantId =
+            requireNonEmptyString(
+                tenantId,
+                "tenantId"
+            );
+
+        const normalizedLoanId =
+            requireObjectId(
+                loanId,
+                "loanId"
+            );
+
+        const {
+            limit,
+            skip
+        } =
+            normalizePagination(
+                options
+            );
+
+        return this.find({
             tenantId:
                 normalizedTenantId,
+
             loanId:
                 normalizedLoanId
         })
             .sort({
                 sequence: 1
             })
+            .skip(skip)
+            .limit(limit)
             .lean();
+    };
 
-    let previousHash = null;
+/**
+ * ============================================================================
+ * Loan timeline - cursor pagination
+ * ============================================================================
+ *
+ * Cursor is sequence-based and therefore stable for an immutable chain.
+ */
 
-    for (
-        let index = 0;
-        index < events.length;
-        index++
+LoanAuditSchema.statics.getLoanTimelineAfterSequence =
+    async function getLoanTimelineAfterSequence(
+        loanId,
+        tenantId,
+        afterSequence = 0,
+        options = {}
     ) {
-        const event =
-            events[index];
+        const normalizedTenantId =
+            requireNonEmptyString(
+                tenantId,
+                "tenantId"
+            );
 
-        const expectedSequence =
-            index + 1;
+        const normalizedLoanId =
+            requireObjectId(
+                loanId,
+                "loanId"
+            );
+
+        const normalizedSequence =
+            Number(afterSequence);
 
         if (
-            event.sequence !==
-            expectedSequence
+            !Number.isSafeInteger(
+                normalizedSequence
+            ) ||
+            normalizedSequence < 0
         ) {
-            return {
-                valid: false,
-                checked: index,
-                failure: {
-                    reason:
-                        "SEQUENCE_MISMATCH",
-                    expected:
-                        expectedSequence,
-                    actual:
-                        event.sequence,
-                    auditId:
-                        String(event._id)
-                }
-            };
+            throw new Error(
+                "afterSequence must be a non-negative safe integer"
+            );
         }
 
-        if (
-            event.previousHash !==
-            previousHash
-        ) {
-            return {
-                valid: false,
-                checked: index,
-                failure: {
-                    reason:
-                        "PREVIOUS_HASH_MISMATCH",
-                    expected:
-                        previousHash,
-                    actual:
-                        event.previousHash,
-                    auditId:
-                        String(event._id)
-                }
-            };
-        }
+        const requestedLimit =
+            Number(
+                options.limit ??
+                DEFAULT_PAGE_SIZE
+            );
 
-        if (
-            !this.verifyIntegrity(
-                event
+        const limit =
+            Number.isFinite(
+                requestedLimit
             )
-        ) {
-            return {
-                valid: false,
-                checked: index,
-                failure: {
-                    reason:
-                        "INTEGRITY_HASH_MISMATCH",
-                    auditId:
-                        String(event._id)
-                }
-            };
-        }
+                ? Math.max(
+                    1,
+                    Math.min(
+                        Math.floor(
+                            requestedLimit
+                        ),
+                        MAX_PAGE_SIZE
+                    )
+                )
+                : DEFAULT_PAGE_SIZE;
 
-        previousHash =
-            event.immutableHash;
-    }
-
-    return {
-        valid: true,
-        checked: events.length,
-        failure: null
-    };
-};
-
-/**
- * ============================================================================
- * Static: Get Loan Timeline
- * ============================================================================
- *
- * @param {string|ObjectId} loanId
- * @param {string} tenantId
- * @param {Object} [options]
- * @returns {Promise<Array>}
- */
-LoanAuditSchema.statics.getLoanTimeline =
-function getLoanTimeline(
-    loanId,
-    tenantId,
-    options = {}
-) {
-    const normalizedTenantId =
-        requireNonEmptyString(
-            tenantId,
-            "tenantId"
-        );
-
-    const normalizedLoanId =
-        requireObjectId(
-            loanId,
-            "loanId"
-        );
-
-    const {
-        limit,
-        skip
-    } = normalizePagination(
-        options
-    );
-
-    return this.find({
-        tenantId:
-            normalizedTenantId,
-        loanId:
-            normalizedLoanId
-    })
-        .sort({
-            sequence: 1
-        })
-        .skip(skip)
-        .limit(limit)
-        .lean();
-};
-
-/**
- * ============================================================================
- * Static: Get Member History
- * ============================================================================
- *
- * @param {string|ObjectId} memberId
- * @param {string} tenantId
- * @param {Object} [options]
- * @returns {Promise<Array>}
- */
-LoanAuditSchema.statics.getMemberHistory =
-function getMemberHistory(
-    memberId,
-    tenantId,
-    options = {}
-) {
-    const normalizedTenantId =
-        requireNonEmptyString(
-            tenantId,
-            "tenantId"
-        );
-
-    const normalizedMemberId =
-        requireObjectId(
-            memberId,
-            "memberId"
-        );
-
-    const {
-        limit,
-        skip
-    } = normalizePagination(
-        options
-    );
-
-    return this.find({
-        tenantId:
-            normalizedTenantId,
-        memberId:
-            normalizedMemberId
-    })
-        .sort({
-            createdAt: -1
-        })
-        .skip(skip)
-        .limit(limit)
-        .lean();
-};
-
-/**
- * ============================================================================
- * Static: Get Event Summary
- * ============================================================================
- *
- * @param {string} tenantId
- * @returns {Promise<Array>}
- */
-LoanAuditSchema.statics.getEventSummary =
-function getEventSummary(
-    tenantId
-) {
-    const normalizedTenantId =
-        requireNonEmptyString(
-            tenantId,
-            "tenantId"
-        );
-
-    return this.aggregate([
-        {
-            $match: {
+        const events =
+            await this.find({
                 tenantId:
-                    normalizedTenantId
-            }
-        },
-        {
-            $group: {
-                _id:
-                    "$eventType",
-                total: {
-                    $sum: 1
+                    normalizedTenantId,
+
+                loanId:
+                    normalizedLoanId,
+
+                sequence: {
+                    $gt:
+                        normalizedSequence
                 }
-            }
-        },
-        {
-            $sort: {
-                total: -1,
-                _id: 1
-            }
-        }
-    ]);
-};
+            })
+                .sort({
+                    sequence: 1
+                })
+                .limit(
+                    limit + 1
+                )
+                .lean();
 
-/**
- * ============================================================================
- * Static: Find By Transaction
- * ============================================================================
- *
- * @param {string} transactionId
- * @param {string} tenantId
- * @param {Object} [options]
- * @returns {Promise<Array>}
- */
-LoanAuditSchema.statics.findByTransaction =
-function findByTransaction(
-    transactionId,
-    tenantId,
-    options = {}
-) {
-    const normalizedTransactionId =
-        requireNonEmptyString(
-            transactionId,
-            "transactionId"
-        );
+        const hasMore =
+            events.length >
+            limit;
 
-    const normalizedTenantId =
-        requireNonEmptyString(
-            tenantId,
-            "tenantId"
-        );
+        const items =
+            hasMore
+                ? events.slice(
+                    0,
+                    limit
+                )
+                : events;
 
-    const {
-        limit,
-        skip
-    } = normalizePagination(
-        options
-    );
+        return {
+            items,
 
-    return this.find({
-        tenantId:
-            normalizedTenantId,
-        transactionId:
-            normalizedTransactionId
-    })
-        .sort({
-            createdAt: -1
-        })
-        .skip(skip)
-        .limit(limit)
-        .lean();
-};
+            hasMore,
 
-/**
- * ============================================================================
- * Static: Find By Correlation
- * ============================================================================
- *
- * @param {string} correlationId
- * @param {string} tenantId
- * @param {Object} [options]
- * @returns {Promise<Array>}
- */
-LoanAuditSchema.statics.findByCorrelation =
-function findByCorrelation(
-    correlationId,
-    tenantId,
-    options = {}
-) {
-    const normalizedCorrelationId =
-        requireNonEmptyString(
-            correlationId,
-            "correlationId"
-        );
-
-    const normalizedTenantId =
-        requireNonEmptyString(
-            tenantId,
-            "tenantId"
-        );
-
-    const {
-        limit,
-        skip
-    } = normalizePagination(
-        options
-    );
-
-    return this.find({
-        tenantId:
-            normalizedTenantId,
-        correlationId:
-            normalizedCorrelationId
-    })
-        .sort({
-            sequence: 1
-        })
-        .skip(skip)
-        .limit(limit)
-        .lean();
-};
-
-/**
- * ============================================================================
- * Static: Find By Idempotency Key
- * ============================================================================
- *
- * @param {string} idempotencyKey
- * @param {string} tenantId
- * @returns {Promise<Object|null>}
- */
-LoanAuditSchema.statics.findByIdempotencyKey =
-function findByIdempotencyKey(
-    idempotencyKey,
-    tenantId
-) {
-    const normalizedIdempotencyKey =
-        requireNonEmptyString(
-            idempotencyKey,
-            "idempotencyKey"
-        );
-
-    const normalizedTenantId =
-        requireNonEmptyString(
-            tenantId,
-            "tenantId"
-        );
-
-    return this.findOne({
-        tenantId:
-            normalizedTenantId,
-        idempotencyKey:
-            normalizedIdempotencyKey
-    }).lean();
-};
-
-/**
- * ============================================================================
- * Static: Create Audit Event
- * ============================================================================
- *
- * Idempotent and concurrency-aware event creation.
- *
- * The idempotency unique index remains the final authority.
- *
- * Sequence collisions can occur when multiple audit events for the same loan
- * are inserted concurrently. These are retried and the sequence/hash chain is
- * recalculated on the next attempt.
- *
- * @param {Object} payload
- * @returns {Promise<Object>}
- */
-LoanAuditSchema.statics.recordEvent =
-async function recordEvent(
-    payload
-) {
-    if (
-        !payload ||
-        typeof payload !== "object" ||
-        Array.isArray(payload)
-    ) {
-        throw new Error(
-            "Audit event payload is required"
-        );
-    }
-
-    const normalizedPayload = {
-        ...payload
+            nextSequence:
+                items.length > 0
+                    ? items[
+                        items.length - 1
+                    ].sequence
+                    : normalizedSequence
+        };
     };
 
-    normalizedPayload.tenantId =
-        requireNonEmptyString(
-            normalizedPayload.tenantId,
-            "tenantId"
-        );
+/**
+ * ============================================================================
+ * Member history
+ * ============================================================================
+ */
 
-    normalizedPayload.loanId =
-        requireObjectId(
-            normalizedPayload.loanId,
-            "loanId"
-        );
-
-    normalizedPayload.memberId =
-        requireObjectId(
-            normalizedPayload.memberId,
-            "memberId"
-        );
-
-    if (
-        normalizedPayload.groupId !==
-        undefined
+LoanAuditSchema.statics.getMemberHistory =
+    function getMemberHistory(
+        memberId,
+        tenantId,
+        options = {}
     ) {
+        const normalizedTenantId =
+            requireNonEmptyString(
+                tenantId,
+                "tenantId"
+            );
+
+        const normalizedMemberId =
+            requireObjectId(
+                memberId,
+                "memberId"
+            );
+
+        const {
+            limit,
+            skip
+        } =
+            normalizePagination(
+                options
+            );
+
+        return this.find({
+            tenantId:
+                normalizedTenantId,
+
+            memberId:
+                normalizedMemberId
+        })
+            .sort({
+                createdAt: -1
+            })
+            .skip(skip)
+            .limit(limit)
+            .lean();
+    };
+
+/**
+ * ============================================================================
+ * Event summary
+ * ============================================================================
+ */
+
+LoanAuditSchema.statics.getEventSummary =
+    function getEventSummary(
+        tenantId
+    ) {
+        const normalizedTenantId =
+            requireNonEmptyString(
+                tenantId,
+                "tenantId"
+            );
+
+        return this.aggregate([
+            {
+                $match: {
+                    tenantId:
+                        normalizedTenantId
+                }
+            },
+
+            {
+                $group: {
+                    _id:
+                        "$eventType",
+
+                    total: {
+                        $sum: 1
+                    }
+                }
+            },
+
+            {
+                $sort: {
+                    total: -1,
+                    _id: 1
+                }
+            }
+        ]);
+    };
+
+/**
+ * ============================================================================
+ * Transaction lookup
+ * ============================================================================
+ */
+
+LoanAuditSchema.statics.findByTransaction =
+    function findByTransaction(
+        transactionId,
+        tenantId,
+        options = {}
+    ) {
+        const normalizedTransactionId =
+            requireNonEmptyString(
+                transactionId,
+                "transactionId"
+            );
+
+        const normalizedTenantId =
+            requireNonEmptyString(
+                tenantId,
+                "tenantId"
+            );
+
+        const {
+            limit,
+            skip
+        } =
+            normalizePagination(
+                options
+            );
+
+        return this.find({
+            tenantId:
+                normalizedTenantId,
+
+            transactionId:
+                normalizedTransactionId
+        })
+            .sort({
+                createdAt: -1
+            })
+            .skip(skip)
+            .limit(limit)
+            .lean();
+    };
+
+/**
+ * ============================================================================
+ * Correlation lookup
+ * ============================================================================
+ */
+
+LoanAuditSchema.statics.findByCorrelation =
+    function findByCorrelation(
+        correlationId,
+        tenantId,
+        options = {}
+    ) {
+        const normalizedCorrelationId =
+            requireNonEmptyString(
+                correlationId,
+                "correlationId"
+            );
+
+        const normalizedTenantId =
+            requireNonEmptyString(
+                tenantId,
+                "tenantId"
+            );
+
+        const {
+            limit,
+            skip
+        } =
+            normalizePagination(
+                options
+            );
+
+        return this.find({
+            tenantId:
+                normalizedTenantId,
+
+            correlationId:
+                normalizedCorrelationId
+        })
+            .sort({
+                sequence: 1
+            })
+            .skip(skip)
+            .limit(limit)
+            .lean();
+    };
+
+/**
+ * ============================================================================
+ * Idempotency lookup
+ * ============================================================================
+ */
+
+LoanAuditSchema.statics.findByIdempotencyKey =
+    function findByIdempotencyKey(
+        idempotencyKey,
+        tenantId
+    ) {
+        const normalizedKey =
+            requireNonEmptyString(
+                idempotencyKey,
+                "idempotencyKey"
+            );
+
+        const normalizedTenantId =
+            requireNonEmptyString(
+                tenantId,
+                "tenantId"
+            );
+
+        return this.findOne({
+            tenantId:
+                normalizedTenantId,
+
+            idempotencyKey:
+                normalizedKey
+        }).lean();
+    };
+
+/**
+ * ============================================================================
+ * Record audit event
+ * ============================================================================
+ *
+ * This is the PRIMARY write API.
+ *
+ * It provides:
+ *
+ *   1. Tenant normalization
+ *   2. ObjectId normalization
+ *   3. Event validation
+ *   4. Metadata validation
+ *   5. Idempotency lookup
+ *   6. Idempotency fingerprint protection
+ *   7. Sequence allocation
+ *   8. Hash-chain creation
+ *   9. Duplicate-key race recovery
+ *
+ * IMPORTANT:
+ *
+ * This method is NOT a substitute for a database transaction around the
+ * financial business operation itself.
+ *
+ * The financial transaction boundary should live in the service/repository
+ * layer that performs the business operation and writes the corresponding
+ * ledger state.
+ */
+
+LoanAuditSchema.statics.recordEvent =
+    async function recordEvent(
+        payload
+    ) {
+        if (
+            !payload ||
+            typeof payload !== "object" ||
+            Array.isArray(payload)
+        ) {
+            throw new Error(
+                "Audit event payload is required"
+            );
+        }
+
+        const normalizedPayload = {
+            ...payload
+        };
+
+        normalizedPayload.tenantId =
+            requireNonEmptyString(
+                normalizedPayload.tenantId,
+                "tenantId"
+            );
+
+        normalizedPayload.loanId =
+            requireObjectId(
+                normalizedPayload.loanId,
+                "loanId"
+            );
+
+        normalizedPayload.memberId =
+            requireObjectId(
+                normalizedPayload.memberId,
+                "memberId"
+            );
+
         normalizedPayload.groupId =
             normalizeOptionalObjectId(
                 normalizedPayload.groupId,
                 "groupId"
             );
-    }
 
-    if (
-        normalizedPayload.actorId !==
-        undefined
-    ) {
         normalizedPayload.actorId =
             normalizeOptionalObjectId(
                 normalizedPayload.actorId,
                 "actorId"
             );
-    }
 
-    if (
-        !EVENT_TYPES.includes(
-            normalizedPayload.eventType
-        )
-    ) {
-        throw new Error(
-            "eventType is required and must be valid"
-        );
-    }
+        normalizedPayload.actorType =
+            normalizedPayload.actorType ||
+            "SYSTEM";
 
-    validateMetadata(
-        normalizedPayload.metadata ??
-        {}
-    );
+        normalizedPayload.provider =
+            normalizedPayload.provider ||
+            "OTHER";
 
-    if (
-        normalizedPayload.idempotencyKey
-    ) {
-        normalizedPayload.idempotencyKey =
-            requireNonEmptyString(
-                normalizedPayload.idempotencyKey,
-                "idempotencyKey"
+        if (
+            !EVENT_TYPES.includes(
+                normalizedPayload.eventType
+            )
+        ) {
+            throw new Error(
+                "eventType is required and must be valid"
             );
-
-        const existing =
-            await this.findOne({
-                tenantId:
-                    normalizedPayload.tenantId,
-                idempotencyKey:
-                    normalizedPayload.idempotencyKey
-            });
-
-        if (existing) {
-            return existing;
         }
-    }
 
-    /**
-     * Sequence conflicts are retried because concurrent writers may observe
-     * the same latest sequence.
-     */
-    const maxAttempts = 5;
+        if (
+            !ACTOR_TYPES.includes(
+                normalizedPayload.actorType
+            )
+        ) {
+            throw new Error(
+                "actorType is invalid"
+            );
+        }
 
-    for (
-        let attempt = 1;
-        attempt <= maxAttempts;
-        attempt++
-    ) {
-        try {
-            /**
-             * Explicit sequence/hash values supplied by callers are ignored.
-             * The model owns chain allocation.
-             */
-            delete normalizedPayload.sequence;
-            delete normalizedPayload.previousHash;
-            delete normalizedPayload.immutableHash;
-            delete normalizedPayload._id;
+        if (
+            !PROVIDERS.includes(
+                normalizedPayload.provider
+            )
+        ) {
+            throw new Error(
+                "provider is invalid"
+            );
+        }
 
-            const document =
-                new this(
+        if (
+            normalizedPayload.actorType !==
+                "SYSTEM" &&
+            !normalizedPayload.actorId
+        ) {
+            throw new Error(
+                "actorId is required for non-SYSTEM actors"
+            );
+        }
+
+        validateMetadata(
+            normalizedPayload.metadata ??
+            {}
+        );
+
+        if (
+            normalizedPayload.breakdown !==
+                null &&
+            normalizedPayload.breakdown !==
+                undefined
+        ) {
+            validateSafeObject(
+                normalizedPayload.breakdown,
+                0,
+                "breakdown"
+            );
+        }
+
+        if (
+            normalizedPayload.transactionId !==
+                undefined &&
+            normalizedPayload.transactionId !==
+                null
+        ) {
+            normalizedPayload.transactionId =
+                normalizeOptionalString(
+                    normalizedPayload.transactionId,
+                    "transactionId",
+                    MAX_TRANSACTION_ID_LENGTH
+                );
+        }
+
+        if (
+            normalizedPayload.correlationId !==
+                undefined &&
+            normalizedPayload.correlationId !==
+                null
+        ) {
+            normalizedPayload.correlationId =
+                normalizeOptionalString(
+                    normalizedPayload.correlationId,
+                    "correlationId",
+                    MAX_CORRELATION_ID_LENGTH
+                );
+        }
+
+        if (
+            normalizedPayload.idempotencyKey !==
+                undefined &&
+            normalizedPayload.idempotencyKey !==
+                null
+        ) {
+            normalizedPayload.idempotencyKey =
+                normalizeOptionalString(
+                    normalizedPayload.idempotencyKey,
+                    "idempotencyKey",
+                    MAX_IDEMPOTENCY_KEY_LENGTH
+                );
+        }
+
+        const requestedFingerprint =
+            normalizedPayload.idempotencyKey
+                ? generateIdempotencyFingerprint(
                     normalizedPayload
-                );
+                )
+                : null;
 
-            return await document.save();
-        } catch (error) {
-            /**
-             * Duplicate idempotency race.
-             */
-            if (
-                error &&
-                error.code === 11000 &&
-                normalizedPayload.idempotencyKey
-            ) {
-                const existing =
-                    await this.findOne({
-                        tenantId:
-                            normalizedPayload.tenantId,
-                        idempotencyKey:
-                            normalizedPayload.idempotencyKey
-                    });
+        /**
+         * Fast idempotency path.
+         */
+        if (
+            normalizedPayload.idempotencyKey
+        ) {
+            const existing =
+                await this.findOne({
+                    tenantId:
+                        normalizedPayload.tenantId,
 
-                if (existing) {
-                    return existing;
+                    idempotencyKey:
+                        normalizedPayload.idempotencyKey
+                }).lean();
+
+            if (existing) {
+                if (
+                    existing.idempotencyFingerprint !==
+                    requestedFingerprint
+                ) {
+                    throw new Error(
+                        IDEMPOTENCY_CONFLICT_ERROR
+                    );
                 }
+
+                return existing;
             }
-
-            /**
-             * Duplicate sequence race.
-             */
-            const duplicateSequence =
-                error &&
-                error.code === 11000 &&
-                (
-                    String(
-                        error.message || ""
-                    ).includes(
-                        "uq_loan_audit_tenant_loan_sequence"
-                    ) ||
-                    String(
-                        error.message || ""
-                    ).includes(
-                        "tenantId_1_loanId_1_sequence_1"
-                    )
-                );
-
-            if (
-                duplicateSequence &&
-                attempt < maxAttempts
-            ) {
-                continue;
-            }
-
-            throw error;
         }
-    }
 
-    throw new Error(
-        "Unable to allocate a unique audit sequence"
-    );
-};
+        /**
+         * These fields belong exclusively to the audit model.
+         *
+         * Never allow external callers to manufacture chain state.
+         */
+        delete normalizedPayload._id;
+
+        delete normalizedPayload.sequence;
+
+        delete normalizedPayload.previousHash;
+
+        delete normalizedPayload.immutableHash;
+
+        delete normalizedPayload.integrityVersion;
+
+        delete normalizedPayload.hashAlgorithm;
+
+        delete normalizedPayload.idempotencyFingerprint;
+
+        delete normalizedPayload.createdAt;
+
+        delete normalizedPayload.updatedAt;
+
+        for (
+            let attempt = 1;
+            attempt <= MAX_SEQUENCE_RETRIES;
+            attempt += 1
+        ) {
+            try {
+                const document =
+                    new this(
+                        normalizedPayload
+                    );
+
+                return await document.save();
+            } catch (error) {
+                /**
+                 * Idempotency race:
+                 *
+                 * Another request won the unique idempotency index.
+                 */
+                if (
+                    normalizedPayload.idempotencyKey &&
+                    isDuplicateIdempotencyError(
+                        error
+                    )
+                ) {
+                    const existing =
+                        await this.findOne({
+                            tenantId:
+                                normalizedPayload.tenantId,
+
+                            idempotencyKey:
+                                normalizedPayload.idempotencyKey
+                        }).lean();
+
+                    if (existing) {
+                        if (
+                            existing.idempotencyFingerprint !==
+                            requestedFingerprint
+                        ) {
+                            throw new Error(
+                                IDEMPOTENCY_CONFLICT_ERROR
+                            );
+                        }
+
+                        return existing;
+                    }
+                }
+
+                /**
+                 * Sequence race:
+                 *
+                 * Concurrent audit writers for the same loan may have read the
+                 * same previous sequence. The unique index rejects the loser.
+                 * Retry causes a fresh previous-event lookup.
+                 */
+                if (
+                    isDuplicateSequenceError(
+                        error
+                    ) &&
+                    attempt <
+                        MAX_SEQUENCE_RETRIES
+                ) {
+                    continue;
+                }
+
+                throw error;
+            }
+        }
+
+        throw new Error(
+            "Unable to allocate a unique audit sequence"
+        );
+    };
 
 /**
  * ============================================================================
- * Static: Count Tenant Events
+ * Count tenant events
  * ============================================================================
- *
- * @param {string} tenantId
- * @param {Object} filter
- * @returns {Promise<number>}
  */
-LoanAuditSchema.statics.countTenantEvents =
-function countTenantEvents(
-    tenantId,
+
+function sanitizeCountFilter(
     filter = {}
 ) {
-    const normalizedTenantId =
-        requireNonEmptyString(
-            tenantId,
-            "tenantId"
-        );
-
-    const sanitizedFilter =
-        sanitizeCountFilter(
-            filter
-        );
-
-    return this.countDocuments({
-        tenantId:
-            normalizedTenantId,
-        ...sanitizedFilter
-    });
-};
-
-/**
- * ============================================================================
- * Static: Assert Audit Record Integrity
- * ============================================================================
- *
- * Throws instead of returning false, making it suitable for compliance and
- * operational verification flows.
- *
- * @param {Object} auditDocument
- * @returns {true}
- */
-LoanAuditSchema.statics.assertIntegrity =
-function assertIntegrity(
-    auditDocument
-) {
     if (
-        !this.verifyIntegrity(
-            auditDocument
-        )
+        !filter ||
+        typeof filter !== "object" ||
+        Array.isArray(filter)
     ) {
-        throw new Error(
-            "Loan audit integrity verification failed"
-        );
+        return {};
     }
 
-    return true;
-};
+    const sanitized = {};
+
+    for (
+        const field of
+        ALLOWED_COUNT_FILTER_FIELDS
+    ) {
+        if (
+            !Object.prototype.hasOwnProperty.call(
+                filter,
+                field
+            )
+        ) {
+            continue;
+        }
+
+        const value =
+            filter[field];
+
+        switch (field) {
+            case "loanId":
+            case "memberId":
+            case "groupId":
+            case "actorId":
+                sanitized[field] =
+                    normalizeOptionalObjectId(
+                        value,
+                        field
+                    );
+                break;
+
+            case "actorType":
+                if (
+                    !ACTOR_TYPES.includes(
+                        value
+                    )
+                ) {
+                    throw new Error(
+                        `${field} is invalid`
+                    );
+                }
+
+                sanitized[field] =
+                    value;
+
+                break;
+
+            case "eventType":
+                if (
+                    !EVENT_TYPES.includes(
+                        value
+                    )
+                ) {
+                    throw new Error(
+                        `${field} is invalid`
+                    );
+                }
+
+                sanitized[field] =
+                    value;
+
+                break;
+
+            case "provider":
+                if (
+                    !PROVIDERS.includes(
+                        value
+                    )
+                ) {
+                    throw new Error(
+                        `${field} is invalid`
+                    );
+                }
+
+                sanitized[field] =
+                    value;
+
+                break;
+
+            case "transactionId":
+            case "correlationId":
+            case "idempotencyKey":
+            case "previousStatus":
+            case "currentStatus":
+                sanitized[field] =
+                    requireNonEmptyString(
+                        value,
+                        field
+                    );
+                break;
+
+            case "createdAt": {
+                const date =
+                    value instanceof Date
+                        ? value
+                        : new Date(
+                            value
+                        );
+
+                if (
+                    Number.isNaN(
+                        date.getTime()
+                    )
+                ) {
+                    throw new Error(
+                        "createdAt is invalid"
+                    );
+                }
+
+                sanitized.createdAt =
+                    date;
+
+                break;
+            }
+
+            default:
+                break;
+        }
+    }
+
+    return sanitized;
+}
+
+LoanAuditSchema.statics.countTenantEvents =
+    function countTenantEvents(
+        tenantId,
+        filter = {}
+    ) {
+        const normalizedTenantId =
+            requireNonEmptyString(
+                tenantId,
+                "tenantId"
+            );
+
+        const sanitizedFilter =
+            sanitizeCountFilter(
+                filter
+            );
+
+        return this.countDocuments({
+            tenantId:
+                normalizedTenantId,
+
+            ...sanitizedFilter
+        });
+    };
 
 /**
  * ============================================================================
- * JSON Serialization
+ * Assert integrity
+ * ============================================================================
+ */
+
+LoanAuditSchema.statics.assertIntegrity =
+    function assertIntegrity(
+        auditDocument
+    ) {
+        if (
+            !this.verifyIntegrity(
+                auditDocument
+            )
+        ) {
+            throw new Error(
+                "Loan audit integrity verification failed"
+            );
+        }
+
+        return true;
+    };
+
+/**
+ * ============================================================================
+ * Verify a single event against the chain predecessor
+ * ============================================================================
+ */
+
+LoanAuditSchema.statics.assertChainPosition =
+    function assertChainPosition(
+        auditDocument,
+        previousDocument = null
+    ) {
+        if (
+            !auditDocument
+        ) {
+            throw new Error(
+                "Audit document is required"
+            );
+        }
+
+        if (
+            !this.verifyIntegrity(
+                auditDocument
+            )
+        ) {
+            throw new Error(
+                "Loan audit integrity verification failed"
+            );
+        }
+
+        const expectedSequence =
+            previousDocument
+                ? Number(
+                    previousDocument.sequence
+                ) + 1
+                : 1;
+
+        const expectedPreviousHash =
+            previousDocument
+                ? previousDocument.immutableHash
+                : null;
+
+        if (
+            Number(
+                auditDocument.sequence
+            ) !== expectedSequence
+        ) {
+            throw new Error(
+                "Loan audit sequence verification failed"
+            );
+        }
+
+        if (
+            auditDocument.previousHash !==
+            expectedPreviousHash
+        ) {
+            throw new Error(
+                "Loan audit previous-hash verification failed"
+            );
+        }
+
+        return true;
+    };
+
+/**
+ * ============================================================================
+ * JSON serialization
  * ============================================================================
  */
 
@@ -2170,7 +2967,7 @@ LoanAuditSchema.set(
 
 /**
  * ============================================================================
- * Model Export
+ * Model export
  * ============================================================================
  */
 
@@ -2181,11 +2978,14 @@ const LoanAudit =
         LoanAuditSchema
     );
 
-module.exports = LoanAudit;
+module.exports = LoanAudit.model;
 
 /**
- * Domain vocabulary exports.
+ * ============================================================================
+ * Domain vocabulary exports
+ * ============================================================================
  */
+
 module.exports.ACTOR_TYPES =
     ACTOR_TYPES;
 
@@ -2196,16 +2996,22 @@ module.exports.PROVIDERS =
     PROVIDERS;
 
 /**
- * Optional testing and integrity helpers.
- *
- * These are intentionally non-persistence helpers and do not expose mutation
- * capabilities.
+ * ============================================================================
+ * Integrity/testing helpers
+ * ============================================================================
  */
+
 module.exports.buildIntegrityPayload =
     buildIntegrityPayload;
 
 module.exports.generateIntegrityHash =
     generateIntegrityHash;
+
+module.exports.buildIdempotencyPayload =
+    buildIdempotencyPayload;
+
+module.exports.generateIdempotencyFingerprint =
+    generateIdempotencyFingerprint;
 
 module.exports.stableStringify =
     stableStringify;
@@ -2215,3 +3021,15 @@ module.exports.MAX_PAGE_SIZE =
 
 module.exports.DEFAULT_PAGE_SIZE =
     DEFAULT_PAGE_SIZE;
+
+module.exports.MAX_METADATA_BYTES =
+    MAX_METADATA_BYTES;
+
+module.exports.MAX_METADATA_DEPTH =
+    MAX_METADATA_DEPTH;
+
+module.exports.INTEGRITY_VERSION =
+    INTEGRITY_VERSION;
+
+module.exports.HASH_ALGORITHM =
+    HASH_ALGORITHM;

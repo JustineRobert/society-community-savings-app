@@ -1,81 +1,514 @@
-// config/index.js
-// Centralized configuration with validation and sensible defaults.
+"use strict";
 
-'use strict';
+/**
+ * =============================================================================
+ * TITech Community Capital LTD
+ * African Community Finance Operating System (ACFOS)
+ * =============================================================================
+ *
+ * File:
+ *   backend/routes/index.js
+ *
+ * Purpose:
+ *   Central enterprise HTTP route registration boundary.
+ *
+ * Architectural Position:
+ *
+ *   backend/bootstrap/app.js
+ *             │
+ *             ▼
+ *       registerRoutes(app)
+ *             │
+ *      ┌──────┴───────┐
+ *      ▼              ▼
+ *   API Routes     Runtime Routes
+ *
+ * Responsibilities
+ * =============================================================================
+ *
+ *   ✓ Register application API routes.
+ *   ✓ Register health/readiness/liveness endpoints.
+ *   ✓ Preserve centralized route prefixes.
+ *   ✓ Keep route registration separate from middleware.
+ *   ✓ Keep route registration separate from controllers.
+ *   ✓ Keep route registration separate from business services.
+ *   ✓ Provide one route-registration entry point for bootstrap.
+ *
+ * NOT INCLUDED
+ * =============================================================================
+ *
+ *   ✗ Database initialization
+ *   ✗ Redis initialization
+ *   ✗ Queue initialization
+ *   ✗ Socket.IO initialization
+ *   ✗ Business logic
+ *   ✗ Financial transaction orchestration
+ *   ✗ Middleware registration
+ *   ✗ HTTP server startup
+ *
+ * =============================================================================
+ */
 
-const path = require('path');
-const dotenv = require('dotenv');
-const Joi = require('joi');
+const {
+    getApplicationState,
+    getHealthState,
+    isReady,
+    isLive
+} = require(
+    "../runtime/state"
+);
 
-dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+// =============================================================================
+// Route Registration Helpers
+// =============================================================================
 
-const schema = Joi.object({
-  NODE_ENV: Joi.string().valid('development', 'production', 'test').default('development'),
-  PORT: Joi.number().default(5000),
-  MONGO_URI: Joi.string().allow('').optional(),
-  MONGO_URI_FALLBACK: Joi.string().default('mongodb://127.0.0.1:27017/community_savings'),
-  REDIS_URI: Joi.string().default('redis://127.0.0.1:6379'),
-  JWT_SECRET: Joi.string().required(),
-  ACCESS_TOKEN_SECRET: Joi.string().optional(),
-  RATE_LIMIT_MAX: Joi.number().default(100),
-  BODY_LIMIT: Joi.string().default('1mb'),
-  MTN_MOMO_BASE_URL: Joi.string().optional(),
-  MTN_TOKEN: Joi.string().optional(),
-  CASH_ACCOUNT_ID: Joi.string().optional(),
-  USER_WALLET_ACCOUNT_ID: Joi.string().optional(),
-  KEEP_ALIVE_TIMEOUT_MS: Joi.number().default(5000),
-  HEADERS_TIMEOUT_MS: Joi.number().default(6500),
-  REQUEST_TIMEOUT_MS: Joi.number().default(30000),
-  SHUTDOWN_TIMEOUT_MS: Joi.number().default(10000),
-  CORS_ORIGINS: Joi.string().default('http://localhost:3000'),
-  ADMIN_MAX_RANGE_DAYS: Joi.number().default(90),
-  SKIP_DB_CHECKS: Joi.boolean().truthy('true').falsy('false').default(false),
-  GRACEFUL_STARTUP: Joi.boolean().truthy('true').falsy('false').default(false),
-}).unknown(true);
+function registerApiRoutes(
+    app
+) {
 
-const { value: env, error } = schema.validate(process.env, { abortEarly: false });
+    // =========================================================================
+    // Authentication
+    // =========================================================================
 
-if (error) {
-  // Fail fast in non-test environments
-  if (env.NODE_ENV !== 'test') {
-    // eslint-disable-next-line no-console
-    console.error('Environment validation error:', error.details.map((d) => d.message).join(', '));
-    process.exit(1);
-  }
+    const authRoutes =
+        require(
+            "./auth"
+        );
+
+    app.use(
+        "/api/auth",
+        authRoutes
+    );
+
+    // =========================================================================
+    // Legal
+    // =========================================================================
+
+    const legalRoutes =
+        require(
+            "./legal.routes"
+        );
+
+    app.use(
+        "/api/legal",
+        legalRoutes
+    );
+
+    // =========================================================================
+    // Email
+    // =========================================================================
+
+    const emailRoutes =
+        require(
+            "./email"
+        );
+
+    app.use(
+        "/api/email",
+        emailRoutes
+    );
+
 }
 
-const config = {
-  env: env.NODE_ENV,
-  port: Number(env.PORT),
-  mongoUri: env.MONGO_URI && env.MONGO_URI.trim() ? env.MONGO_URI.trim() : env.MONGO_URI_FALLBACK,
-  mongoUriFallback: env.MONGO_URI_FALLBACK,
-  redisUri: env.REDIS_URI,
-  jwtSecret: env.JWT_SECRET,
-  accessTokenSecret: env.ACCESS_TOKEN_SECRET || env.JWT_SECRET,
-  rateLimitMax: Number(env.RATE_LIMIT_MAX),
-  bodyLimit: env.BODY_LIMIT,
-  mtn: {
-    baseUrl: env.MTN_MOMO_BASE_URL,
-    token: env.MTN_TOKEN,
-  },
-  accounts: {
-    cashAccountId: env.CASH_ACCOUNT_ID,
-    userWalletAccountId: env.USER_WALLET_ACCOUNT_ID,
-  },
-  timeouts: {
-    keepAlive: Number(env.KEEP_ALIVE_TIMEOUT_MS),
-    headers: Number(env.HEADERS_TIMEOUT_MS),
-    request: Number(env.REQUEST_TIMEOUT_MS),
-    shutdown: Number(env.SHUTDOWN_TIMEOUT_MS),
-  },
-  corsOrigins: env.CORS_ORIGINS,
-  admin: {
-    maxRangeDays: Number(env.ADMIN_MAX_RANGE_DAYS),
-  },
-  flags: {
-    skipDbChecks: env.SKIP_DB_CHECKS,
-    gracefulStartup: env.GRACEFUL_STARTUP,
-  },
-};
+// =============================================================================
+// Health
+// =============================================================================
 
-module.exports = config;
+function registerHealthRoutes(
+    app
+) {
+
+    /*
+     * -------------------------------------------------------------------------
+     * Liveness
+     * -------------------------------------------------------------------------
+     *
+     * Liveness must remain lightweight.
+     *
+     * It should answer whether the Node.js process is alive, without requiring
+     * MongoDB, Redis, queues, or other external dependencies to be available.
+     */
+
+    app.get(
+        "/live",
+        (
+            req,
+            res
+        ) => {
+
+            const live =
+                isLive();
+
+            return res
+                .status(
+                    live
+                        ? 200
+                        : 503
+                )
+                .json({
+
+                    success:
+                        live,
+
+                    alive:
+                        live,
+
+                    status:
+                        live
+                            ? "live"
+                            : "stopped",
+
+                    timestamp:
+                        new Date()
+                            .toISOString()
+
+                });
+
+        }
+    );
+
+    /*
+     * -------------------------------------------------------------------------
+     * Readiness
+     * -------------------------------------------------------------------------
+     *
+     * Readiness means the application has completed its startup pipeline and
+     * is prepared to accept traffic.
+     */
+
+    app.get(
+        "/ready",
+        (
+            req,
+            res
+        ) => {
+
+            const ready =
+                isReady();
+
+            const health =
+                getHealthState();
+
+            return res
+                .status(
+                    ready
+                        ? 200
+                        : 503
+                )
+                .json({
+
+                    success:
+                        ready,
+
+                    ready,
+
+                    status:
+                        ready
+                            ? "ready"
+                            : "not_ready",
+
+                    phase:
+                        health.phase,
+
+                    healthy:
+                        health.healthy,
+
+                    started:
+                        health.started,
+
+                    shuttingDown:
+                        health.shuttingDown,
+
+                    failed:
+                        health.failed,
+
+                    timestamp:
+                        new Date()
+                            .toISOString()
+
+                });
+
+        }
+    );
+
+    /*
+     * -------------------------------------------------------------------------
+     * General Health
+     * -------------------------------------------------------------------------
+     *
+     * Health provides broader runtime information than liveness.
+     */
+
+    app.get(
+        "/health",
+        (
+            req,
+            res
+        ) => {
+
+            const health =
+                getHealthState();
+
+            const healthy =
+                health.healthy &&
+                !health.failed;
+
+            return res
+                .status(
+                    healthy
+                        ? 200
+                        : 503
+                )
+                .json({
+
+                    success:
+                        healthy,
+
+                    status:
+                        healthy
+                            ? "healthy"
+                            : "degraded",
+
+                    live:
+                        health.live,
+
+                    ready:
+                        health.ready,
+
+                    healthy:
+                        health.healthy,
+
+                    started:
+                        health.started,
+
+                    starting:
+                        health.starting,
+
+                    shuttingDown:
+                        health.shuttingDown,
+
+                    stopped:
+                        health.stopped,
+
+                    failed:
+                        health.failed,
+
+                    phase:
+                        health.phase,
+
+                    lastHealthCheck:
+                        health.lastHealthCheck,
+
+                    timestamp:
+                        new Date()
+                            .toISOString(),
+
+                    uptime:
+                        process.uptime()
+
+                });
+
+        }
+    );
+
+}
+
+// =============================================================================
+// Internal Diagnostics
+// =============================================================================
+//
+// This endpoint is deliberately development/test focused.
+//
+// Do not expose internal runtime diagnostics publicly in production without
+// authentication/authorization or network-level restriction.
+// =============================================================================
+
+function registerDiagnosticRoutes(
+    app
+) {
+
+    app.get(
+        "/health/diagnostics",
+        (
+            req,
+            res
+        ) => {
+
+            /*
+             * Keep the production surface intentionally hidden.
+             *
+             * This should later be replaced by an authenticated internal
+             * diagnostics endpoint if operational access is required.
+             */
+
+            const configuration =
+                app.getConfiguration
+                    ? app.getConfiguration()
+                    : null;
+
+            if (
+                configuration?.production
+            ) {
+
+                return res
+                    .status(404)
+                    .json({
+
+                        success:
+                            false,
+
+                        code:
+                            "NOT_FOUND",
+
+                        message:
+                            "Not found."
+
+                    });
+
+            }
+
+            const state =
+                getApplicationState();
+
+            const snapshot = {
+
+                success:
+                    true,
+
+                timestamp:
+                    new Date()
+                        .toISOString(),
+
+                state
+
+            };
+
+            return res
+                .status(200)
+                .json(
+                    snapshot
+                );
+
+        }
+    );
+
+}
+
+// =============================================================================
+// Route Not Found
+// =============================================================================
+
+function registerNotFoundHandler(
+    app
+) {
+
+    app.use(
+        (
+            req,
+            res,
+            next
+        ) => {
+
+            /*
+             * Leave actual error formatting to the centralized error handler.
+             *
+             * If the error middleware runs after this handler, it will receive
+             * a normalized 404 error.
+             */
+
+            const error =
+                new Error(
+                    `Route not found: ${req.method} ${req.originalUrl}`
+                );
+
+            error.status =
+                404;
+
+            error.statusCode =
+                404;
+
+            error.code =
+                "ROUTE_NOT_FOUND";
+
+            next(
+                error
+            );
+
+        }
+    );
+
+}
+
+// =============================================================================
+// Register Routes
+// =============================================================================
+
+function registerRoutes(
+    app
+) {
+
+    if (
+        !app ||
+        typeof app.use !==
+            "function"
+    ) {
+
+        throw new Error(
+            "Express application instance is required."
+        );
+
+    }
+
+    /*
+     * API routes.
+     */
+
+    registerApiRoutes(
+        app
+    );
+
+    /*
+     * Runtime health routes.
+     */
+
+    registerHealthRoutes(
+        app
+    );
+
+    /*
+     * Internal diagnostics.
+     */
+
+    registerDiagnosticRoutes(
+        app
+    );
+
+    /*
+     * Route-not-found handler MUST be registered after all normal routes.
+     */
+
+    registerNotFoundHandler(
+        app
+    );
+
+    return app;
+
+}
+
+// =============================================================================
+// Exports
+// =============================================================================
+
+module.exports = {
+
+    registerRoutes,
+
+    registerApiRoutes,
+
+    registerHealthRoutes,
+
+    registerDiagnosticRoutes,
+
+    registerNotFoundHandler
+
+};

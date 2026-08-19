@@ -1,181 +1,757 @@
-// middleware/idempotency.js
-// ============================================================================
-// Idempotency Middleware
-// Prevents duplicate processing of identical requests
-// ============================================================================
-
-const crypto = require('crypto');
-const logger = require('../utils/logger');
-
-// In-memory cache (replace with Redis for production)
-const idempotencyCache = new Map();
-
-const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-const CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // Clean up every hour
+"use strict";
 
 /**
- * Cleanup expired idempotency keys
+ * =============================================================================
+ * TITech Community Capital LTD
+ * ACFOS Financial Idempotency Middleware
+ * =============================================================================
+ *
+ * File:
+ *   backend/middleware/idempotency.js
+ *
+ * Purpose:
+ *   Enforce HTTP idempotency at financial-operation boundaries.
+ *
+ * Architecture:
+ *
+ *   Request Context
+ *        ↓
+ *   Authentication
+ *        ↓
+ *   Tenant Authorization
+ *        ↓
+ *   Idempotency Middleware
+ *        ↓
+ *   Financial Controller
+ *        ↓
+ *   Financial Transaction Service
+ *        ↓
+ *   Ledger / Balance Mutation
+ *
+ * Required upstream middleware:
+ *
+ *   1. Request context
+ *   2. Authentication
+ *   3. Tenant authorization
+ *
+ * Required downstream behavior:
+ *
+ *   Financial controller/service must call:
+ *
+ *       await req.idempotency.complete(...)
+ *
+ *   or:
+ *
+ *       await req.idempotency.fail(...)
+ *
+ * IMPORTANT:
+ *
+ *   This middleware does NOT maintain an in-memory cache.
+ *
+ *   Persistent idempotency state is delegated to:
+ *
+ *       backend/services/idempotency/idempotency.service.js
+ *
+ *   This allows idempotency to survive:
+ *
+ *       - process restarts
+ *       - horizontal scaling
+ *       - multiple API instances
+ *       - worker execution
+ *       - retries
+ *       - network failures
+ *
+ * =============================================================================
  */
-function startCleanupJob() {
-  setInterval(() => {
-    const now = Date.now();
-    let cleaned = 0;
 
-    for (const [key, entry] of idempotencyCache.entries()) {
-      if (now - entry.timestamp > IDEMPOTENCY_TTL_MS) {
-        idempotencyCache.delete(key);
-        cleaned++;
-      }
-    }
+const {
+    beginOperation,
+    completeOperation,
+    failOperation,
+    IdempotencyError
+} = require(
+    "../services/idempotency/idempotency.service"
+);
 
-    if (cleaned > 0) {
-      logger.debug(`[Idempotency] Cleaned up ${cleaned} expired entries`);
-    }
-  }, CLEANUP_INTERVAL_MS);
-}
+// =============================================================================
+// Constants
+// =============================================================================
 
-// Start cleanup on first load
-startCleanupJob();
+const IDEMPOTENT_METHODS =
+    new Set([
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE"
+    ]);
+
+const IDEMPOTENCY_HEADER =
+    "Idempotency-Key";
+
+const MAX_IDEMPOTENCY_KEY_LENGTH =
+    255;
+
+// =============================================================================
+// Helpers
+// =============================================================================
 
 /**
- * Extract idempotency key from request
+ * Normalize an incoming idempotency key.
+ *
+ * We deliberately do NOT generate a key from the request body.
+ *
+ * Why?
+ *
+ * Financial operations must have an explicit operation identity.
+ *
+ * Automatically deriving a key from:
+ *
+ *     method + path + body
+ *
+ * can incorrectly merge two legitimate financial operations that happen to
+ * contain identical payloads.
+ *
+ * Example:
+ *
+ *     POST /savings/deposit
+ *     { amount: 10000 }
+ *
+ * Two legitimate deposits of 10,000 UGX could have identical bodies but
+ * represent two completely different business operations.
  */
 function getIdempotencyKey(req) {
-  // Try custom headers
-  let key = req.get('Idempotency-Key') || req.get('X-Idempotency-Key');
 
-  if (!key) {
-    // Generate from method, path, and body
-    const bodyStr = JSON.stringify(req.body || {});
-    const bodyHash = crypto.createHash('sha256').update(bodyStr).digest('hex').substring(0, 16);
+    const rawKey =
+        req.get(
+            IDEMPOTENCY_HEADER
+        ) ||
+        req.get(
+            "X-Idempotency-Key"
+        ) ||
+        req.idempotencyKey ||
+        null;
 
-    key = `${req.method}:${req.path}:${bodyHash}`;
-  }
-
-  return key;
-}
-
-/**
- * Idempotency middleware
- * - Prevents duplicate processing
- * - Returns cached response if request is retried
- * - Only applies to POST/PUT/PATCH/DELETE
- */
-function idempotencyMiddleware(req, res, next) {
-  // Only apply to mutation methods
-  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
-    return next();
-  }
-
-  const key = getIdempotencyKey(req);
-
-  // Check cache
-  const cached = idempotencyCache.get(key);
-  if (cached && Date.now() - cached.timestamp < IDEMPOTENCY_TTL_MS) {
-    logger.debug(`[Idempotency] Cache hit for key: ${key}`);
-
-    res.set('Idempotency-Replayed', 'true');
-
-    if (cached.status) {
-      return res.status(cached.status).json(cached.response);
+    if (
+        rawKey === null ||
+        rawKey === undefined
+    ) {
+        return null;
     }
 
-    if (cached.error) {
-      return res.status(cached.errorStatus || 500).json({
-        message: cached.error,
-        idempotencyKey: key,
-      });
-    }
-  }
+    const key =
+        String(
+            rawKey
+        ).trim();
 
-  // Store original response methods
-  const originalJson = res.json.bind(res);
-  const originalStatus = res.status.bind(res);
-
-  let statusCode = 200;
-
-  // Override res.status to capture status code
-  res.status = function (code) {
-    statusCode = code;
-    return originalStatus(code);
-  };
-
-  // Override res.json to cache response
-  res.json = function (data) {
-    // Cache successful response
-    if (statusCode >= 200 && statusCode < 300) {
-      idempotencyCache.set(key, {
-        status: statusCode,
-        response: data,
-        timestamp: Date.now(),
-      });
-
-      logger.debug(`[Idempotency] Cached response for key: ${key}`);
+    if (!key) {
+        return null;
     }
 
-    return originalJson(data);
-  };
-
-  // Store key in request for later use
-  req.idempotencyKey = key;
-
-  next();
+    return key;
 }
 
 /**
- * Idempotency error handler
- * Caches error responses too (to prevent retry storms)
+ * Validate the idempotency key.
+ *
+ * The persistent service may perform additional validation, but validating
+ * here gives the API an early and deterministic failure.
  */
-function idempotencyErrorHandler(err, req, res, next) {
-  if (!req.idempotencyKey || !['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
-    return next(err);
-  }
+function validateIdempotencyKey(
+    key
+) {
 
-  const statusCode = err.statusCode || err.status || 500;
-  const errorMessage = err.message || 'Internal server error';
+    if (!key) {
 
-  // Cache error
-  idempotencyCache.set(req.idempotencyKey, {
-    error: errorMessage,
-    errorStatus: statusCode,
-    timestamp: Date.now(),
-  });
+        throw new IdempotencyError(
+            "The Idempotency-Key header is required for this financial operation.",
+            "IDEMPOTENCY_KEY_REQUIRED",
+            400
+        );
+    }
 
-  logger.debug(`[Idempotency] Cached error for key: ${req.idempotencyKey}`);
+    if (
+        key.length >
+        MAX_IDEMPOTENCY_KEY_LENGTH
+    ) {
 
-  next(err);
+        throw new IdempotencyError(
+            `The Idempotency-Key must not exceed ${MAX_IDEMPOTENCY_KEY_LENGTH} characters.`,
+            "IDEMPOTENCY_KEY_TOO_LONG",
+            400
+        );
+    }
+
+    return true;
 }
 
 /**
- * Clear idempotency cache (for testing/admin)
+ * Resolve the authenticated principal.
+ *
+ * Supports the current ACFOS authentication shapes while keeping the
+ * middleware independent from the authentication implementation.
  */
-function clearIdempotencyCache(key = null) {
-  if (key) {
-    idempotencyCache.delete(key);
-  } else {
-    idempotencyCache.clear();
-  }
+function resolvePrincipalId(
+    req
+) {
+
+    const principalId =
+        req.user?.id ||
+        req.user?._id ||
+        req.auth?.userId ||
+        req.auth?.principalId ||
+        null;
+
+    return principalId
+        ? String(
+            principalId
+        )
+        : null;
 }
 
 /**
- * Get idempotency cache statistics
+ * Resolve tenant identity.
  */
-function getIdempotencyCacheStats() {
-  return {
-    size: idempotencyCache.size,
-    entries: Array.from(idempotencyCache.entries()).map(([key, entry]) => ({
-      key,
-      status: entry.status,
-      error: entry.error,
-      age: Date.now() - entry.timestamp,
-    })),
-  };
+function resolveTenantId(
+    req
+) {
+
+    const tenantId =
+        req.tenantId ||
+        req.auth?.tenantId ||
+        req.user?.tenantId ||
+        null;
+
+    return tenantId
+        ? String(
+            tenantId
+        )
+        : null;
 }
+
+/**
+ * Resolve device identity.
+ *
+ * Device identity is useful for offline-first ACFOS workflows because the
+ * same logical operation may originate from a specific registered device.
+ */
+function resolveDeviceId(
+    req
+) {
+
+    const deviceId =
+        req.deviceId ||
+        req.headers[
+            "x-device-id"
+        ] ||
+        null;
+
+    return deviceId
+        ? String(
+            deviceId
+        )
+        : null;
+}
+
+/**
+ * Resolve transaction identity when one has already been established by
+ * an upstream request/financial transaction layer.
+ */
+function resolveTransactionId(
+    req
+) {
+
+    const transactionId =
+        req.transactionId ||
+        req.headers[
+            "x-transaction-id"
+        ] ||
+        null;
+
+    return transactionId
+        ? String(
+            transactionId
+        )
+        : null;
+}
+
+/**
+ * Resolve a stable operation name.
+ */
+function resolveOperation(
+    req,
+    operation
+) {
+
+    if (operation) {
+        return String(
+            operation
+        );
+    }
+
+    const method =
+        String(
+            req.method ||
+            ""
+        ).toUpperCase();
+
+    return (
+        `${method}:${req.baseUrl || ""}${req.path || ""}`
+    );
+}
+
+/**
+ * Resolve a stable resource identifier.
+ */
+function resolveResource(
+    req,
+    resource
+) {
+
+    if (resource) {
+        return String(
+            resource
+        );
+    }
+
+    return (
+        `${req.baseUrl || ""}${req.path || ""}`
+    );
+}
+
+// =============================================================================
+// Middleware Factory
+// =============================================================================
+
+/**
+ * Create idempotency middleware.
+ *
+ * Example:
+ *
+ *     router.post(
+ *         "/deposit",
+ *         idempotency({
+ *             operation: "SAVINGS_DEPOSIT",
+ *             resource: "savings-account"
+ *         }),
+ *         depositController
+ *     );
+ *
+ * Options:
+ *
+ *     operation
+ *         Stable business-operation name.
+ *
+ *     resource
+ *         Logical resource being mutated.
+ *
+ *     required
+ *         Whether the Idempotency-Key is mandatory.
+ *
+ *         Defaults to true.
+ */
+function idempotency(
+    options = {}
+) {
+
+    const operation =
+        options.operation ||
+        null;
+
+    const resource =
+        options.resource ||
+        null;
+
+    const required =
+        options.required !== false;
+
+    return async function idempotencyMiddleware(
+        req,
+        res,
+        next
+    ) {
+
+        const method =
+            String(
+                req.method ||
+                ""
+            ).toUpperCase();
+
+        // =====================================================================
+        // Ignore read-only HTTP methods
+        // =====================================================================
+
+        if (
+            !IDEMPOTENT_METHODS.has(
+                method
+            )
+        ) {
+
+            return next();
+        }
+
+        // =====================================================================
+        // Extract key
+        // =====================================================================
+
+        const idempotencyKey =
+            getIdempotencyKey(
+                req
+            );
+
+        // =====================================================================
+        // Optional idempotency
+        // =====================================================================
+
+        if (
+            !idempotencyKey &&
+            !required
+        ) {
+
+            return next();
+        }
+
+        try {
+
+            // =================================================================
+            // Required key validation
+            // =================================================================
+
+            validateIdempotencyKey(
+                idempotencyKey
+            );
+
+            // =================================================================
+            // Resolve security / tenancy context
+            // =================================================================
+
+            const principalId =
+                resolvePrincipalId(
+                    req
+                );
+
+            const tenantId =
+                resolveTenantId(
+                    req
+                );
+
+            const deviceId =
+                resolveDeviceId(
+                    req
+                );
+
+            const transactionId =
+                resolveTransactionId(
+                    req
+                );
+
+            // =================================================================
+            // Persistent idempotency operation
+            // =================================================================
+
+            const result =
+                await beginOperation({
+
+                    tenantId,
+
+                    principalId,
+
+                    deviceId,
+
+                    idempotencyKey,
+
+                    operation:
+                        resolveOperation(
+                            req,
+                            operation
+                        ),
+
+                    resource:
+                        resolveResource(
+                            req,
+                            resource
+                        ),
+
+                    transactionId,
+
+                    body:
+                        req.body || {}
+
+                });
+
+            // =================================================================
+            // NEW OPERATION
+            // =================================================================
+
+            if (
+                result.state ===
+                "NEW"
+            ) {
+
+                const recordId =
+                    result.record &&
+                    result.record._id;
+
+                if (!recordId) {
+
+                    throw new IdempotencyError(
+                        "Idempotency operation was created without a persistent record identifier.",
+                        "IDEMPOTENCY_RECORD_ID_MISSING",
+                        500
+                    );
+                }
+
+                /**
+                 * Expose the operation boundary to the financial controller.
+                 *
+                 * The controller is responsible for calling complete() or
+                 * fail() after the business operation has reached a
+                 * deterministic outcome.
+                 */
+                req.idempotency = {
+
+                    state:
+                        "NEW",
+
+                    recordId,
+
+                    key:
+                        idempotencyKey,
+
+                    fingerprint:
+                        result.requestFingerprint,
+
+                    complete:
+                        async ({
+                            statusCode = 200,
+                            body = {},
+                            resultType = "SUCCESS",
+                            errorCode = null
+                        } = {}) => {
+
+                            return completeOperation({
+
+                                recordId,
+
+                                httpStatus:
+                                    statusCode,
+
+                                responseBody:
+                                    body,
+
+                                resultType,
+
+                                errorCode
+
+                            });
+                        },
+
+                    fail:
+                        async ({
+                            statusCode = 500,
+                            body = {},
+                            errorCode =
+                                "FINANCIAL_OPERATION_FAILED"
+                        } = {}) => {
+
+                            return failOperation({
+
+                                recordId,
+
+                                httpStatus:
+                                    statusCode,
+
+                                responseBody:
+                                    body,
+
+                                errorCode
+
+                            });
+                        }
+
+                };
+
+                // Useful for downstream logging/tracing.
+                req.idempotencyKey =
+                    idempotencyKey;
+
+                return next();
+            }
+
+            // =================================================================
+            // REPLAY
+            // =================================================================
+
+            if (
+                result.state ===
+                "REPLAY"
+            ) {
+
+                const record =
+                    result.record;
+
+                if (!record) {
+
+                    throw new IdempotencyError(
+                        "Idempotency replay was requested but no persistent operation record was returned.",
+                        "IDEMPOTENCY_REPLAY_RECORD_MISSING",
+                        500
+                    );
+                }
+
+                /**
+                 * Tell clients that the response came from a previous
+                 * completed operation.
+                 */
+                res.setHeader(
+                    "X-Idempotent-Replay",
+                    "true"
+                );
+
+                /**
+                 * Preserve transaction identity when available.
+                 */
+                if (
+                    record.transactionId
+                ) {
+
+                    res.setHeader(
+                        "X-Transaction-Id",
+                        String(
+                            record.transactionId
+                        )
+                    );
+                }
+
+                /**
+                 * Preserve the original HTTP response status.
+                 */
+                res.status(
+                    record.httpStatus ||
+                    200
+                );
+
+                /**
+                 * Return the persisted response body.
+                 *
+                 * The financial controller is NOT executed again.
+                 */
+                return res.json(
+                    record.responseBody || {
+                        success:
+                            record.status ===
+                            "COMPLETED"
+                    }
+                );
+            }
+
+            // =================================================================
+            // RECOVERY
+            // =================================================================
+
+            if (
+                result.state ===
+                "RETRY_AFTER_RECOVERY"
+            ) {
+
+                /**
+                 * A previous process acquired the operation but failed to
+                 * complete it.
+                 *
+                 * We intentionally do not execute the financial operation
+                 * automatically.
+                 *
+                 * Automatic replay of financial mutations can create
+                 * double-spend / double-credit / duplicate-ledger-entry
+                 * scenarios when the original process actually committed
+                 * before crashing.
+                 */
+                res.status(
+                    409
+                );
+
+                return res.json({
+
+                    success:
+                        false,
+
+                    code:
+                        "IDEMPOTENCY_OPERATION_RECOVERED",
+
+                    message:
+                        "The previous financial operation did not complete. Please retry the operation.",
+
+                    requestId:
+                        req.requestId,
+
+                    correlationId:
+                        req.correlationId
+
+                });
+            }
+
+            // =================================================================
+            // INVALID STATE
+            // =================================================================
+
+            throw new IdempotencyError(
+                "Invalid idempotency state.",
+                "IDEMPOTENCY_INVALID_STATE",
+                500
+            );
+
+        } catch (error) {
+
+            // ================================================================
+            // Expected idempotency errors
+            // ================================================================
+
+            if (
+                error instanceof
+                IdempotencyError
+            ) {
+
+                res.status(
+                    error.statusCode ||
+                    500
+                );
+
+                return res.json({
+
+                    success:
+                        false,
+
+                    code:
+                        error.code,
+
+                    message:
+                        error.message,
+
+                    requestId:
+                        req.requestId,
+
+                    correlationId:
+                        req.correlationId
+
+                });
+            }
+
+            // ================================================================
+            // Unexpected errors
+            // ================================================================
+
+            return next(
+                error
+            );
+        }
+    };
+}
+
+// =============================================================================
+// Exports
+// =============================================================================
 
 module.exports = {
-  idempotencyMiddleware,
-  idempotencyErrorHandler,
-  clearIdempotencyCache,
-  getIdempotencyCacheStats,
-  getIdempotencyKey,
+    idempotency,
+    getIdempotencyKey,
+    validateIdempotencyKey
 };

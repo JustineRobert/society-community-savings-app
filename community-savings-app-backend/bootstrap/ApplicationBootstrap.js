@@ -1,3 +1,5 @@
+
+// backend/bootstrap/ApplicationBootstrap.js
 const DependencyRegistry =
 require("./dependencyRegistry");
 

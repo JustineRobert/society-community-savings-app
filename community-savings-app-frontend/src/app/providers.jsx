@@ -1,176 +1,435 @@
 // ============================================================================
 // TITech Community Capital
 // Application Providers
-// File: frontend/src/app/providers.jsx
+//
+// File:
+// frontend/src/app/providers.jsx
+//
 // Production Grade
+// Secure Authentication Boundary | Service Worker | Redux Persistence
+// Multi-Tenant | Offline Ready | Error Isolation | StrictMode Safe
+//
+// RESPONSIBILITY
+//
+// This component owns APPLICATION infrastructure.
+//
+// Authentication lifecycle is owned exclusively by:
+//     ../context/AuthContext.jsx
+//
+// AuthContext owns:
+//     - Access token
+//     - HttpOnly refresh-cookie session
+//     - Login
+//     - Register
+//     - Refresh
+//     - Logout
+//     - /me hydration
+//     - Tenant synchronization
+//     - Socket lifecycle
+//
+// This file intentionally does NOT:
+//     - read authentication tokens
+//     - refresh authentication
+//     - connect/disconnect sockets
+//     - perform /auth/me
+//     - perform /auth/refresh
 // ============================================================================
 
 import React, {
   StrictMode,
   Suspense,
+  useCallback,
   useEffect,
   useState,
 } from "react";
 
 import PropTypes from "prop-types";
-import { Provider } from "react-redux";
-import { PersistGate } from "redux-persist/integration/react";
-import { BrowserRouter } from "react-router-dom";
+
+import {
+  Provider,
+} from "react-redux";
+
+import {
+  PersistGate,
+} from "redux-persist/integration/react";
+
+import {
+  BrowserRouter,
+} from "react-router-dom";
 
 import {
   store,
   persistor,
 } from "./store";
 
-import { AuthProvider } from "../context/AuthContext";
+import {
+  AuthProvider,
+} from "../context/AuthContext";
 
 import ErrorBoundary from "../components/ui/ErrorBoundary";
+
 import LoadingScreen from "../components/ui/LoadingScreen";
+
 import NotificationProvider from "../components/ui/NotificationProvider";
 
-import socket, {
-  connectSocket,
-} from "../services/socket";
+import {
+  onNetworkStateChange,
+} from "../services/api";
 
 // ============================================================================
 // Environment Flags
 // ============================================================================
 
-const ENABLE_SOCKET =
-  import.meta.env.VITE_ENABLE_SOCKET !== "false";
-
 const ENABLE_SERVICE_WORKER =
-  import.meta.env.VITE_ENABLE_SW === "true";
+  import.meta.env.VITE_ENABLE_SW ===
+  "true";
 
 const IS_DEV =
   import.meta.env.DEV;
 
 // ============================================================================
-// Bootstrap
+// Application Bootstrap State
+// ============================================================================
+//
+// A module-level promise prevents duplicate initialization if React StrictMode
+// mounts/unmounts the component during development.
+//
+// Authentication is intentionally NOT included here.
 // ============================================================================
 
-function Bootstrap({ children }) {
-  const [initialized, setInitialized] =
-    useState(false);
+let applicationBootstrapPromise =
+  null;
 
-  useEffect(() => {
-    let mounted = true;
+// ============================================================================
+// Application Bootstrap
+// ============================================================================
+//
+// Initializes non-authentication application infrastructure.
+//
+// Authentication belongs to AuthContext.
+// ============================================================================
 
-    async function initializeApplication() {
-      try {
-        // ============================================================
-        // Socket Initialization
-        // ============================================================
+async function initializeApplication() {
+  if (
+    applicationBootstrapPromise
+  ) {
+    return applicationBootstrapPromise;
+  }
 
-        const token =
-          localStorage.getItem("token");
+  applicationBootstrapPromise =
+    (async () => {
+      // ======================================================================
+      // Service Worker
+      // ======================================================================
 
-        if (
-          ENABLE_SOCKET &&
-          token
-        ) {
-          try {
-            connectSocket();
-          } catch (error) {
-            console.error(
-              "Socket initialization failed",
-              error
-            );
-          }
-        }
-
-        // ============================================================
-        // Service Worker
-        // ============================================================
-
-        if (
-          ENABLE_SERVICE_WORKER &&
-          "serviceWorker" in navigator
-        ) {
-          try {
+      if (
+        ENABLE_SERVICE_WORKER &&
+        typeof navigator !==
+          "undefined" &&
+        "serviceWorker" in
+          navigator
+      ) {
+        try {
+          const registration =
             await navigator.serviceWorker.register(
-              "/sw.js"
+              "/sw.js",
+              {
+                scope: "/",
+              }
             );
 
-            if (IS_DEV) {
-              console.info(
-                "Service Worker Registered"
-              );
-            }
-          } catch (error) {
-            console.error(
-              "SW registration failed",
-              error
+          if (IS_DEV) {
+            console.info(
+              "[BOOTSTRAP] Service Worker registered",
+              {
+                scope:
+                  registration.scope,
+              }
             );
           }
+
+          // --------------------------------------------------------------
+          // Detect newly installed worker
+          // --------------------------------------------------------------
+
+          if (
+            registration.waiting &&
+            IS_DEV
+          ) {
+            console.info(
+              "[BOOTSTRAP] Service Worker waiting for activation"
+            );
+          }
+
+          // --------------------------------------------------------------
+          // Detect updates
+          // --------------------------------------------------------------
+
+          registration.addEventListener(
+            "updatefound",
+            () => {
+              if (IS_DEV) {
+                console.info(
+                  "[BOOTSTRAP] Service Worker update found"
+                );
+              }
+            }
+          );
+        } catch (
+          error
+        ) {
+          // Service worker failure must never prevent the application
+          // from loading.
+          console.error(
+            "[BOOTSTRAP] Service Worker registration failed",
+            error
+          );
         }
+      }
 
-        // ============================================================
-        // Initialize Feature Flags
-        // ============================================================
+      // ======================================================================
+      // Feature Flags
+      // ======================================================================
 
+      try {
         store.dispatch({
           type:
             "featureFlags/initializeFeatureFlags",
         });
+      } catch (
+        error
+      ) {
+        console.error(
+          "[BOOTSTRAP] Feature flags initialization failed",
+          error
+        );
+      }
 
-        // ============================================================
-        // Initialize Settings
-        // ============================================================
+      // ======================================================================
+      // Settings
+      // ======================================================================
 
+      try {
         store.dispatch({
           type:
             "settings/initializeSettings",
         });
+      } catch (
+        error
+      ) {
+        console.error(
+          "[BOOTSTRAP] Settings initialization failed",
+          error
+        );
+      }
 
-        // ============================================================
-        // Initialize Audit Module
-        // ============================================================
+      // ======================================================================
+      // Audit
+      // ======================================================================
 
+      try {
         store.dispatch({
           type:
             "audit/initializeAudit",
         });
-
-        if (mounted) {
-          setInitialized(true);
-        }
-      } catch (error) {
+      } catch (
+        error
+      ) {
         console.error(
-          "Application bootstrap failed",
+          "[BOOTSTRAP] Audit initialization failed",
           error
         );
-
-        if (mounted) {
-          setInitialized(true);
-        }
       }
-    }
 
-    initializeApplication();
+      // ======================================================================
+      // Application Bootstrap Complete
+      // ======================================================================
+
+      return {
+        initialized: true,
+      };
+    })();
+
+  try {
+    return await applicationBootstrapPromise;
+  } finally {
+    applicationBootstrapPromise =
+      null;
+  }
+}
+
+// ============================================================================
+// Bootstrap Component
+// ============================================================================
+
+function Bootstrap({
+  children,
+}) {
+  const [
+    initialized,
+    setInitialized,
+  ] = useState(false);
+
+  const [
+    online,
+    setOnline,
+  ] = useState(() =>
+    typeof navigator ===
+      "undefined"
+      ? true
+      : navigator.onLine
+  );
+
+  // ========================================================================
+  // Network State
+  // ========================================================================
+  //
+  // This is application-level network awareness.
+  //
+  // Authentication refresh behavior remains owned by AuthContext/api.js.
+  // ========================================================================
+
+  useEffect(() => {
+    let mounted = true;
+
+    let unsubscribe =
+      null;
+
+    try {
+      unsubscribe =
+        onNetworkStateChange(
+          ({
+            online:
+              nextOnline,
+          }) => {
+            if (!mounted) {
+              return;
+            }
+
+            setOnline(
+              Boolean(
+                nextOnline
+              )
+            );
+
+            if (IS_DEV) {
+              console.info(
+                "[NETWORK]",
+                nextOnline
+                  ? "Online"
+                  : "Offline"
+              );
+            }
+          }
+        );
+    } catch (
+      error
+    ) {
+      console.error(
+        "[NETWORK] Failed to initialize network listener",
+        error
+      );
+    }
 
     return () => {
       mounted = false;
 
-      try {
-        socket.disconnect();
-      } catch (_) {}
+      if (
+        typeof unsubscribe ===
+        "function"
+      ) {
+        try {
+          unsubscribe();
+        } catch (
+          error
+        ) {
+          if (IS_DEV) {
+            console.warn(
+              "[NETWORK] Failed to remove network listener",
+              error
+            );
+          }
+        }
+      }
     };
   }, []);
+
+  // ========================================================================
+  // Application Initialization
+  // ========================================================================
+
+  const initialize =
+    useCallback(
+      async () => {
+        try {
+          await initializeApplication();
+        } catch (
+          error
+        ) {
+          // Application shell should still be allowed to render.
+          console.error(
+            "[BOOTSTRAP] Application initialization failed",
+            error
+          );
+        } finally {
+          setInitialized(
+            true
+          );
+        }
+      },
+      []
+    );
+
+  // ========================================================================
+  // Bootstrap Lifecycle
+  // ========================================================================
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function run() {
+      await initialize();
+
+      if (!mounted) {
+        return;
+      }
+    }
+
+    run();
+
+    return () => {
+      mounted = false;
+    };
+  }, [
+    initialize,
+  ]);
+
+  // ========================================================================
+  // Loading State
+  // ========================================================================
 
   if (!initialized) {
     return (
       <LoadingScreen
-        message="Initializing application..."
+        message={
+          online
+            ? "Initializing application..."
+            : "Preparing offline application..."
+        }
       />
     );
   }
+
+  // ========================================================================
+  // Application
+  // ========================================================================
 
   return children;
 }
 
 Bootstrap.propTypes = {
-  children: PropTypes.node,
+  children:
+    PropTypes.node.isRequired,
 };
 
 // ============================================================================
@@ -180,7 +439,7 @@ Bootstrap.propTypes = {
 function PersistLoader() {
   return (
     <LoadingScreen
-      message="Restoring session..."
+      message="Restoring application state..."
     />
   );
 }
@@ -188,20 +447,60 @@ function PersistLoader() {
 // ============================================================================
 // Global Error Handlers
 // ============================================================================
+//
+// This layer provides a last-resort diagnostic boundary.
+//
+// It intentionally does not attempt to recover authentication or redirect
+// users. Authentication recovery belongs to AuthContext/api.js.
+// ============================================================================
 
 function GlobalListeners() {
   useEffect(() => {
-    function handleError(event) {
+    // ========================================================================
+    // Uncaught JavaScript Error
+    // ========================================================================
+
+    function handleError(
+      event
+    ) {
+      if (IS_DEV) {
+        console.error(
+          "[GLOBAL ERROR]",
+          event.error ||
+            event.message
+        );
+
+        return;
+      }
+
       console.error(
-        "Global Error:",
-        event.error
+        "[GLOBAL ERROR]",
+        event.message ||
+          "Unknown application error"
       );
     }
 
-    function handleRejection(event) {
+    // ========================================================================
+    // Unhandled Promise Rejection
+    // ========================================================================
+
+    function handleRejection(
+      event
+    ) {
+      if (IS_DEV) {
+        console.error(
+          "[UNHANDLED PROMISE REJECTION]",
+          event.reason
+        );
+
+        return;
+      }
+
       console.error(
-        "Unhandled Promise Rejection:",
+        "[UNHANDLED PROMISE REJECTION]",
         event.reason
+          ?.message ||
+          "Unhandled promise rejection"
       );
     }
 
@@ -241,10 +540,16 @@ export default function Providers({
   return (
     <StrictMode>
       <ErrorBoundary>
-        <Provider store={store}>
+        <Provider
+          store={store}
+        >
           <PersistGate
-            persistor={persistor}
-            loading={<PersistLoader />}
+            persistor={
+              persistor
+            }
+            loading={
+              <PersistLoader />
+            }
           >
             <BrowserRouter>
               <AuthProvider>
@@ -272,6 +577,11 @@ export default function Providers({
   );
 }
 
+// ============================================================================
+// PropTypes
+// ============================================================================
+
 Providers.propTypes = {
-  children: PropTypes.node,
+  children:
+    PropTypes.node.isRequired,
 };
