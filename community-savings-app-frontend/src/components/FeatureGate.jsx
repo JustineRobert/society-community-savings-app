@@ -1,103 +1,372 @@
-// ============================================================================
-// TITech Community Capital
-// Enterprise Feature Gate
-// File: src/components/FeatureGate.jsx
-// Production Grade
-// Multi-Tenant | SaaS | Feature Flags | Licensing | A/B Testing
-// ============================================================================
+'use strict';
+
+/**
+ * ============================================================================
+ * TITech Community Capital Ltd
+ * Enterprise Feature Gate
+ * ============================================================================
+ *
+ * File:
+ *   frontend/src/components/FeatureGate.jsx
+ *
+ * Purpose:
+ *   Production-grade feature-flag / entitlement presentation boundary for
+ *   TITech frontend applications.
+ *
+ * Capabilities
+ * ----------------------------------------------------------------------------
+ * ✓ Feature registry
+ * ✓ Single-feature checks
+ * ✓ Multi-feature checks
+ * ✓ requireAll / requireAny semantics
+ * ✓ Inverted gates
+ * ✓ Loading state support
+ * ✓ Tenant-aware context
+ * ✓ Environment awareness
+ * ✓ Safe normalization
+ * ✓ Duplicate feature elimination
+ * ✓ Declarative fallback rendering
+ * ✓ Allow / deny lifecycle callbacks
+ * ✓ Optional development audit diagnostics
+ * ✓ Static utility helpers
+ * ✓ Feature filtering
+ * ✓ HOC support
+ * ✓ React.memo optimization
+ * ✓ Stable display names
+ * ✓ PropTypes validation
+ * ✓ Defensive malformed-input handling
+ * ✓ Accessibility-friendly presentation hooks
+ * ✓ TITech branding consistency
+ *
+ * SECURITY BOUNDARY
+ * ----------------------------------------------------------------------------
+ * FeatureGate is a UI presentation mechanism.
+ *
+ * It MUST NOT be used as:
+ *   - an authorization boundary
+ *   - a tenant-isolation boundary
+ *   - a financial security control
+ *   - an API security mechanism
+ *   - an entitlement enforcement mechanism on the backend
+ *
+ * Backend APIs MUST independently validate:
+ *   authentication
+ *   authorization
+ *   tenant isolation
+ *   licensing / entitlements
+ *   financial permissions
+ *   regulatory permissions
+ *
+ * ============================================================================
+ */
 
 import React, {
   createContext,
+  memo,
   useCallback,
   useContext,
   useEffect,
   useMemo,
   useRef,
-} from "react";
+} from 'react';
 
-import PropTypes from "prop-types";
+import PropTypes from 'prop-types';
 
-// ============================================================================
-// Constants
-// ============================================================================
+/* ============================================================================
+ * Constants
+ * ========================================================================== */
 
 export const FEATURES = Object.freeze({
-  DASHBOARD: "dashboard",
-  MEMBERS: "members",
-  SAVINGS: "savings",
-  LOANS: "loans",
-  TRANSACTIONS: "transactions",
-  REPORTS: "reports",
-  BILLING: "billing",
-  KYC: "kyc",
-  AML: "aml",
-  USSD: "ussd",
-  MOBILE_MONEY: "mobile_money",
-  TREASURY: "treasury",
-  EXECUTIVE_DASHBOARD:
-    "executive_dashboard",
-  FRAUD_DETECTION:
-    "fraud_detection",
-  REGULATORY_REPORTING:
-    "regulatory_reporting",
-  TENANT_MANAGEMENT:
-    "tenant_management",
-  API_ACCESS: "api_access",
+  DASHBOARD: 'dashboard',
+  MEMBERS: 'members',
+  SAVINGS: 'savings',
+  LOANS: 'loans',
+  TRANSACTIONS: 'transactions',
+  REPORTS: 'reports',
+  BILLING: 'billing',
+  KYC: 'kyc',
+  AML: 'aml',
+  USSD: 'ussd',
+  MOBILE_MONEY: 'mobile_money',
+  TREASURY: 'treasury',
+  EXECUTIVE_DASHBOARD: 'executive_dashboard',
+  FRAUD_DETECTION: 'fraud_detection',
+  REGULATORY_REPORTING: 'regulatory_reporting',
+  TENANT_MANAGEMENT: 'tenant_management',
+  API_ACCESS: 'api_access',
 });
 
-// ============================================================================
-// Context
-// ============================================================================
+export const FEATURE_GATE_STATES = Object.freeze({
+  LOADING: 'loading',
+  ALLOWED: 'allowed',
+  DENIED: 'denied',
+});
 
-const FeatureContext =
-  createContext({
-    features: [],
-    loading: false,
-    tenantId: null,
-    environment:
-      process.env.NODE_ENV,
-  });
+const DEFAULT_ENVIRONMENT =
+  typeof process !== 'undefined' &&
+  process?.env?.NODE_ENV
+    ? process.env.NODE_ENV
+    : 'production';
 
-// ============================================================================
-// Provider
-// ============================================================================
+const DEVELOPMENT_ENVIRONMENT = 'development';
 
+const EMPTY_FEATURES = Object.freeze([]);
+
+const DEFAULT_FEATURE_CONTEXT = Object.freeze({
+  features: EMPTY_FEATURES,
+  loading: false,
+  tenantId: null,
+  environment: DEFAULT_ENVIRONMENT,
+});
+
+/* ============================================================================
+ * Utility Helpers
+ * ========================================================================== */
+
+/**
+ * Safely normalize a feature identifier.
+ *
+ * Feature identifiers are intentionally normalized to lowercase strings so
+ * that values coming from configuration, APIs, or local state remain
+ * consistent.
+ */
+export function normalizeFeature(feature) {
+  if (
+    feature === null ||
+    feature === undefined
+  ) {
+    return '';
+  }
+
+  try {
+    return String(feature)
+      .trim()
+      .toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Convert a feature input into an array.
+ */
+export function toFeatureArray(features) {
+  if (
+    features === null ||
+    features === undefined
+  ) {
+    return [];
+  }
+
+  if (Array.isArray(features)) {
+    return features;
+  }
+
+  return [features];
+}
+
+/**
+ * Normalize and deduplicate a feature collection.
+ */
+export function normalizeFeatures(features) {
+  return Array.from(
+    new Set(
+      toFeatureArray(features)
+        .map(normalizeFeature)
+        .filter(Boolean),
+    ),
+  );
+}
+
+/**
+ * Determine whether a feature collection contains a feature.
+ */
+export function hasFeature(
+  feature,
+  enabledFeatures = EMPTY_FEATURES,
+) {
+  const normalizedFeature =
+    normalizeFeature(feature);
+
+  if (!normalizedFeature) {
+    return false;
+  }
+
+  return normalizeFeatures(
+    enabledFeatures,
+  ).includes(normalizedFeature);
+}
+
+/**
+ * Determine whether a collection satisfies a feature requirement.
+ */
+export function hasFeatures(
+  features,
+  enabledFeatures = EMPTY_FEATURES,
+  options = {},
+) {
+  const requested =
+    normalizeFeatures(features);
+
+  const available =
+    normalizeFeatures(
+      enabledFeatures,
+    );
+
+  const requireAll =
+    options?.requireAll === true;
+
+  /*
+   * An empty requirement represents no feature restriction.
+   *
+   * This is useful for reusable components/HOCs where the feature condition
+   * may be configured dynamically.
+   */
+  if (requested.length === 0) {
+    return true;
+  }
+
+  if (requireAll) {
+    return requested.every(
+      (feature) =>
+        available.includes(feature),
+    );
+  }
+
+  return requested.some(
+    (feature) =>
+      available.includes(feature),
+  );
+}
+
+/**
+ * Safely obtain the current runtime environment.
+ */
+export function getEnvironment() {
+  return DEFAULT_ENVIRONMENT;
+}
+
+/**
+ * Development-only diagnostic logging.
+ *
+ * Production environments intentionally do not expose audit payloads through
+ * console output.
+ */
+function developmentLog(
+  ...args
+) {
+  if (
+    getEnvironment() ===
+    DEVELOPMENT_ENVIRONMENT
+  ) {
+    // eslint-disable-next-line no-console
+    console.debug(...args);
+  }
+}
+
+/* ============================================================================
+ * Context
+ * ========================================================================== */
+
+export const FeatureContext =
+  createContext(
+    DEFAULT_FEATURE_CONTEXT,
+  );
+
+/* ============================================================================
+ * Feature Provider
+ * ========================================================================== */
+
+/**
+ * FeatureProvider
+ *
+ * Central feature configuration provider.
+ *
+ * Example:
+ *
+ * <FeatureProvider
+ *   tenantId={tenant.id}
+ *   features={[
+ *     FEATURES.DASHBOARD,
+ *     FEATURES.SAVINGS,
+ *   ]}
+ * >
+ *   <App />
+ * </FeatureProvider>
+ */
 export function FeatureProvider({
   children,
-  features = [],
+  features = EMPTY_FEATURES,
   tenantId = null,
   loading = false,
+  environment = getEnvironment(),
 }) {
-  const normalized =
+  const normalizedFeatures =
+    useMemo(
+      () =>
+        normalizeFeatures(
+          features,
+        ),
+      [features],
+    );
+
+  const normalizedTenantId =
     useMemo(() => {
-      return Array.from(
-        new Set(
-          (features || []).map(
-            feature =>
-              String(
-                feature
-              ).toLowerCase()
-          )
-        )
-      );
-    }, [features]);
+      if (
+        tenantId === null ||
+        tenantId === undefined
+      ) {
+        return null;
+      }
+
+      try {
+        const value =
+          String(
+            tenantId,
+          ).trim();
+
+        return value || null;
+      } catch {
+        return null;
+      }
+    }, [tenantId]);
+
+  const normalizedEnvironment =
+    useMemo(() => {
+      try {
+        return (
+          String(
+            environment ||
+              getEnvironment(),
+          ).trim() ||
+          getEnvironment()
+        );
+      } catch {
+        return getEnvironment();
+      }
+    }, [environment]);
 
   const value =
     useMemo(
       () => ({
         features:
-          normalized,
-        tenantId,
-        loading,
+          normalizedFeatures,
+
+        loading:
+          Boolean(loading),
+
+        tenantId:
+          normalizedTenantId,
+
         environment:
-          process.env
-            .NODE_ENV,
+          normalizedEnvironment,
       }),
       [
-        normalized,
-        tenantId,
+        normalizedFeatures,
         loading,
-      ]
+        normalizedTenantId,
+        normalizedEnvironment,
+      ],
     );
 
   return (
@@ -111,142 +380,132 @@ export function FeatureProvider({
 
 FeatureProvider.propTypes = {
   children:
-    PropTypes.node
-      .isRequired,
+    PropTypes.node.isRequired,
+
   features:
-    PropTypes.array,
+    PropTypes.oneOfType([
+      PropTypes.arrayOf(
+        PropTypes.string,
+      ),
+      PropTypes.string,
+    ]),
+
   tenantId:
-    PropTypes.string,
+    PropTypes.oneOfType([
+      PropTypes.string,
+      PropTypes.number,
+    ]),
+
   loading:
     PropTypes.bool,
+
+  environment:
+    PropTypes.string,
 };
 
-// ============================================================================
-// Helpers
-// ============================================================================
+FeatureProvider.defaultProps = {
+  features:
+    EMPTY_FEATURES,
 
-function normalize(
-  feature
-) {
-  return String(feature)
-    .trim()
-    .toLowerCase();
-}
+  tenantId:
+    null,
 
-function toArray(
-  features
-) {
-  if (!features) {
-    return [];
-  }
+  loading:
+    false,
 
-  if (
-    Array.isArray(features)
-  ) {
-    return features;
-  }
+  environment:
+    getEnvironment(),
+};
 
-  return [features];
-}
-
-// ============================================================================
-// Hooks
-// ============================================================================
+/* ============================================================================
+ * Context Hook
+ * ========================================================================== */
 
 export function useFeatureContext() {
   return useContext(
-    FeatureContext
+    FeatureContext,
   );
 }
 
+/* ============================================================================
+ * Feature Hooks
+ * ========================================================================== */
+
+/**
+ * Check one feature.
+ */
 export function useFeature(
   feature,
-  enabledFeatures
+  enabledFeatures,
 ) {
   const context =
     useFeatureContext();
 
   const available =
-    enabledFeatures ||
-    context.features;
+    enabledFeatures !==
+    undefined
+      ? enabledFeatures
+      : context.features;
 
-  return useMemo(() => {
-    return (
-      available || []
-    )
-      .map(normalize)
-      .includes(
-        normalize(
-          feature
-        )
-      );
-  }, [
-    feature,
-    available,
-  ]);
+  return useMemo(
+    () =>
+      hasFeature(
+        feature,
+        available,
+      ),
+    [
+      feature,
+      available,
+    ],
+  );
 }
 
+/**
+ * Check one or more features.
+ *
+ * By default:
+ *   ANY requested feature must be enabled.
+ *
+ * With requireAll=true:
+ *   ALL requested features must be enabled.
+ */
 export function useFeatures(
   features,
   enabledFeatures,
-  options = {}
+  options = {},
 ) {
   const context =
     useFeatureContext();
 
   const available =
-    enabledFeatures ||
-    context.features;
+    enabledFeatures !==
+    undefined
+      ? enabledFeatures
+      : context.features;
 
   const requireAll =
-    options.requireAll ===
-    true;
+    options?.requireAll === true;
 
-  return useMemo(() => {
-    const requested =
-      toArray(
-        features
-      ).map(
-        normalize
-      );
-
-    const enabled =
-      (available || []).map(
-        normalize
-      );
-
-    if (
-      requested.length ===
-      0
-    ) {
-      return true;
-    }
-
-    if (requireAll) {
-      return requested.every(
-        feature =>
-          enabled.includes(
-            feature
-          )
-      );
-    }
-
-    return requested.some(
-      feature =>
-        enabled.includes(
-          feature
-        )
-    );
-  }, [
-    features,
-    available,
-    requireAll,
-  ]);
+  return useMemo(
+    () =>
+      hasFeatures(
+        features,
+        available,
+        {
+          requireAll,
+        },
+      ),
+    [
+      features,
+      available,
+      requireAll,
+    ],
+  );
 }
 
-// ============================================================================
-// Main Component
-// ============================================================================
+/* ============================================================================
+ * Main Feature Gate
+ * ========================================================================== */
 
 function FeatureGate({
   children,
@@ -259,20 +518,29 @@ function FeatureGate({
   onAllow,
   onDeny,
   audit = false,
+  className = '',
+  testId = 'titech-feature-gate',
+  ...rest
 }) {
   const context =
     useFeatureContext();
 
-  const previous =
+  const previousState =
     useRef(null);
+
+  const availableFeatures =
+    enabledFeatures !==
+    undefined
+      ? enabledFeatures
+      : context.features;
 
   const allowed =
     useFeatures(
       features,
-      enabledFeatures,
+      availableFeatures,
       {
         requireAll,
-      }
+      },
     );
 
   const finalResult =
@@ -280,207 +548,331 @@ function FeatureGate({
       ? !allowed
       : allowed;
 
-  const currentFeatures =
-    enabledFeatures ||
-    context.features;
+  const state =
+    context.loading
+      ? FEATURE_GATE_STATES.LOADING
+      : finalResult
+        ? FEATURE_GATE_STATES.ALLOWED
+        : FEATURE_GATE_STATES.DENIED;
 
-  // ===========================================================
-  // Side Effects
-  // ===========================================================
+  const normalizedRequestedFeatures =
+    useMemo(
+      () =>
+        normalizeFeatures(
+          features,
+        ),
+      [features],
+    );
+
+  const invokeCallback =
+    useCallback(
+      async (
+        callback,
+      ) => {
+        if (
+          typeof callback !==
+          'function'
+        ) {
+          return;
+        }
+
+        try {
+          await callback({
+            features:
+              normalizedRequestedFeatures,
+
+            allowed:
+              finalResult,
+
+            state,
+
+            tenantId:
+              context.tenantId,
+
+            environment:
+              context.environment,
+          });
+        } catch (callbackError) {
+          /*
+           * Feature callbacks are observability / presentation hooks.
+           *
+           * They must never break rendering of the gated component.
+           */
+          developmentLog(
+            '[TITech FeatureGate] callback failed',
+            callbackError,
+          );
+        }
+      },
+      [
+        normalizedRequestedFeatures,
+        finalResult,
+        state,
+        context.tenantId,
+        context.environment,
+      ],
+    );
+
+  /* ==========================================================================
+   * Lifecycle / Audit
+   * ======================================================================== */
 
   useEffect(() => {
     if (
-      previous.current ===
-      finalResult
+      previousState.current ===
+      state
     ) {
       return;
     }
 
-    previous.current =
-      finalResult;
+    previousState.current =
+      state;
+
+    /*
+     * Do not fire allow/deny callbacks while feature configuration is still
+     * loading. This prevents transient deny events during application startup.
+     */
+    if (
+      state ===
+      FEATURE_GATE_STATES.LOADING
+    ) {
+      return;
+    }
 
     if (finalResult) {
-      onAllow?.();
+      void invokeCallback(
+        onAllow,
+      );
     } else {
-      onDeny?.();
+      void invokeCallback(
+        onDeny,
+      );
     }
 
     if (audit) {
-      const payload = {
-        features:
-          toArray(
-            features
-          ),
-        allowed:
-          finalResult,
-        tenantId:
-          context.tenantId,
-        timestamp:
-          new Date().toISOString(),
-      };
-
-      if (
-        process.env
-          .NODE_ENV !==
-        "production"
-      ) {
-        console.debug(
-          "[FeatureGate]",
-          payload
-        );
-      }
+      developmentLog(
+        '[TITech FeatureGate]',
+        {
+          state,
+          allowed:
+            finalResult,
+          features:
+            normalizedRequestedFeatures,
+          tenantId:
+            context.tenantId,
+          environment:
+            context.environment,
+          timestamp:
+            new Date().toISOString(),
+        },
+      );
     }
   }, [
+    state,
     finalResult,
-    features,
-    context.tenantId,
+    invokeCallback,
     onAllow,
     onDeny,
     audit,
+    normalizedRequestedFeatures,
+    context.tenantId,
+    context.environment,
   ]);
 
-  // ===========================================================
-  // Loading
-  // ===========================================================
+  /* ==========================================================================
+   * Loading
+   * ======================================================================== */
 
   if (
     context.loading
   ) {
     return (
-      loadingComponent ||
-      null
+      <div
+        {...rest}
+        className={className || undefined}
+        data-testid={`${testId}-loading`}
+        data-feature-state={
+          FEATURE_GATE_STATES.LOADING
+        }
+        aria-busy="true"
+        aria-live="polite"
+      >
+        {loadingComponent}
+      </div>
     );
   }
 
-  // ===========================================================
-  // Access Denied
-  // ===========================================================
+  /* ==========================================================================
+   * Denied
+   * ======================================================================== */
 
   if (!finalResult) {
-    return fallback;
+    return (
+      <div
+        {...rest}
+        className={className || undefined}
+        data-testid={`${testId}-denied`}
+        data-feature-state={
+          FEATURE_GATE_STATES.DENIED
+        }
+      >
+        {fallback}
+      </div>
+    );
   }
 
-  // ===========================================================
-  // Access Granted
-  // ===========================================================
+  /* ==========================================================================
+   * Allowed
+   * ======================================================================== */
 
   return (
-    <>
+    <div
+      {...rest}
+      className={className || undefined}
+      data-testid={testId}
+      data-feature-state={
+        FEATURE_GATE_STATES.ALLOWED
+      }
+    >
       {children}
-    </>
+    </div>
   );
 }
 
-// ============================================================================
-// Enterprise Utilities
-// ============================================================================
+FeatureGate.displayName =
+  'TITechFeatureGate';
+
+/* ============================================================================
+ * Static Enterprise Utilities
+ * ========================================================================== */
 
 FeatureGate.hasFeature =
-  (
-    feature,
-    enabledFeatures = []
-  ) => {
-    return (
-      enabledFeatures
-        .map(normalize)
-        .includes(
-          normalize(
-            feature
-          )
-        )
-    );
-  };
+  hasFeature;
 
 FeatureGate.hasFeatures =
-  (
-    features,
-    enabledFeatures = [],
-    options = {}
-  ) => {
-    const requested =
-      toArray(
-        features
-      ).map(
-        normalize
-      );
+  hasFeatures;
 
-    const available =
-      enabledFeatures.map(
-        normalize
-      );
+FeatureGate.normalize =
+  normalizeFeature;
 
-    const requireAll =
-      options.requireAll ===
-      true;
-
-    if (requireAll) {
-      return requested.every(
-        feature =>
-          available.includes(
-            feature
-          )
-      );
-    }
-
-    return requested.some(
-      feature =>
-        available.includes(
-          feature
-        )
-    );
-  };
+FeatureGate.normalizeFeatures =
+  normalizeFeatures;
 
 FeatureGate.filter =
   (
     items = [],
-    featureKey =
-      "feature",
-    enabledFeatures = []
+    featureKey = 'feature',
+    enabledFeatures = EMPTY_FEATURES,
   ) => {
+    if (
+      !Array.isArray(items)
+    ) {
+      return [];
+    }
+
     return items.filter(
-      item =>
-        !item[
-          featureKey
-        ] ||
-        FeatureGate.hasFeature(
+      (item) => {
+        if (
+          !item ||
+          typeof item !==
+            'object'
+        ) {
+          return false;
+        }
+
+        const requiredFeature =
           item[
             featureKey
-          ],
-          enabledFeatures
-        )
+          ];
+
+        /*
+         * Items without a feature requirement remain visible.
+         */
+        if (
+          requiredFeature ===
+            undefined ||
+          requiredFeature ===
+            null ||
+          requiredFeature ===
+            ''
+        ) {
+          return true;
+        }
+
+        return hasFeature(
+          requiredFeature,
+          enabledFeatures,
+        );
+      },
     );
   };
 
 FeatureGate.registry =
   FEATURES;
 
-// ============================================================================
-// HOC
-// ============================================================================
+FeatureGate.states =
+  FEATURE_GATE_STATES;
 
+/* ============================================================================
+ * Higher-Order Component
+ * ========================================================================== */
+
+/**
+ * Wrap a component with a feature requirement.
+ *
+ * Example:
+ *
+ * export default withFeature(
+ *   SavingsDashboard,
+ *   {
+ *     features: FEATURES.SAVINGS,
+ *   },
+ * );
+ */
 export function withFeature(
   WrappedComponent,
-  options = {}
+  options = {},
 ) {
+  if (
+    typeof WrappedComponent !==
+    'function'
+  ) {
+    throw new TypeError(
+      'withFeature requires a valid React component.',
+    );
+  }
+
   const {
     features,
-    requireAll,
-    fallback,
+    requireAll = false,
+    fallback = null,
+    loadingComponent = null,
+    invert = false,
+    enabledFeatures,
   } = options;
 
-  function Component(
-    props
+  function FeatureWrappedComponent(
+    props,
   ) {
     return (
       <FeatureGate
         features={
           features
         }
+        enabledFeatures={
+          enabledFeatures
+        }
         requireAll={
           requireAll
         }
         fallback={
           fallback
+        }
+        loadingComponent={
+          loadingComponent
+        }
+        invert={
+          invert
         }
       >
         <WrappedComponent
@@ -490,54 +882,122 @@ export function withFeature(
     );
   }
 
-  Component.displayName = `withFeature(${
+  const wrappedName =
     WrappedComponent.displayName ||
     WrappedComponent.name ||
-    "Component"
-  })`;
+    'Component';
 
-  return Component;
+  FeatureWrappedComponent.displayName =
+    `withFeature(${wrappedName})`;
+
+  return memo(
+    FeatureWrappedComponent,
+  );
 }
 
-// ============================================================================
-// PropTypes
-// ============================================================================
+/* ============================================================================
+ * PropTypes
+ * ========================================================================== */
 
 FeatureGate.propTypes = {
   children:
     PropTypes.node,
+
   features:
-    PropTypes.oneOfType(
-      [
+    PropTypes.oneOfType([
+      PropTypes.string,
+      PropTypes.arrayOf(
         PropTypes.string,
-        PropTypes.arrayOf(
-          PropTypes.string
-        ),
-      ]
-    )
-      .isRequired,
+      ),
+    ]).isRequired,
+
   enabledFeatures:
-    PropTypes.array,
+    PropTypes.oneOfType([
+      PropTypes.string,
+      PropTypes.arrayOf(
+        PropTypes.string,
+      ),
+    ]),
+
   requireAll:
     PropTypes.bool,
+
   fallback:
     PropTypes.node,
+
   loadingComponent:
     PropTypes.node,
+
   invert:
     PropTypes.bool,
+
   onAllow:
     PropTypes.func,
+
   onDeny:
     PropTypes.func,
+
   audit:
     PropTypes.bool,
+
+  className:
+    PropTypes.string,
+
+  testId:
+    PropTypes.string,
 };
 
-// ============================================================================
-// Export
-// ============================================================================
+/* ============================================================================
+ * Default Props
+ * ========================================================================== */
 
-export default React.memo(
-  FeatureGate
+FeatureGate.defaultProps = {
+  children:
+    null,
+
+  enabledFeatures:
+    undefined,
+
+  requireAll:
+    false,
+
+  fallback:
+    null,
+
+  loadingComponent:
+    null,
+
+  invert:
+    false,
+
+  onAllow:
+    undefined,
+
+  onDeny:
+    undefined,
+
+  audit:
+    false,
+
+  className:
+    '',
+
+  testId:
+    'titech-feature-gate',
+};
+
+/* ============================================================================
+ * Public Exports
+ * ========================================================================== */
+
+export {
+  FeatureGate,
+};
+
+/* ============================================================================
+ * Default Export
+ * ========================================================================== */
+
+export default memo(
+  FeatureGate,
 );

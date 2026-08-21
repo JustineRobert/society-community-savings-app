@@ -6,521 +6,2099 @@
 // ============================================================================
 
 import {
-  createSlice,
-  createSelector,
-  nanoid,
+    createSelector,
+    createSlice,
+    nanoid,
 } from "@reduxjs/toolkit";
 
 // ============================================================================
 // Constants
 // ============================================================================
 
-export const NOTIFICATION_TYPES = {
-  INFO: "info",
-  SUCCESS: "success",
-  WARNING: "warning",
-  ERROR: "error",
-  SYSTEM: "system",
-  SECURITY: "security",
-  TRANSACTION: "transaction",
-};
+export const NOTIFICATION_TYPES =
+    Object.freeze({
+        INFO:
+            "info",
 
-export const NOTIFICATION_CHANNELS = {
-  IN_APP: "in_app",
-  EMAIL: "email",
-  SMS: "sms",
-  PUSH: "push",
-};
+        SUCCESS:
+            "success",
 
-// ============================================================================
-// Initial State
-// ============================================================================
+        WARNING:
+            "warning",
 
-const initialState = {
-  items: [],
-  unreadCount: 0,
-  loading: false,
-  syncing: false,
-  error: null,
-  lastFetchedAt: null,
-  preferences: {
-    email: true,
-    sms: false,
-    push: true,
-    inApp: true,
-  },
-};
+        ERROR:
+            "error",
+
+        SYSTEM:
+            "system",
+
+        SECURITY:
+            "security",
+
+        TRANSACTION:
+            "transaction",
+    });
+
+export const NOTIFICATION_CHANNELS =
+    Object.freeze({
+        IN_APP:
+            "in_app",
+
+        EMAIL:
+            "email",
+
+        SMS:
+            "sms",
+
+        PUSH:
+            "push",
+    });
+
+export const NOTIFICATION_PRIORITIES =
+    Object.freeze({
+        LOW:
+            "low",
+
+        NORMAL:
+            "normal",
+
+        HIGH:
+            "high",
+
+        CRITICAL:
+            "critical",
+    });
+
+export const NOTIFICATION_STATUS =
+    Object.freeze({
+        ACTIVE:
+            "active",
+
+        READ:
+            "read",
+
+        UNREAD:
+            "unread",
+
+        ARCHIVED:
+            "archived",
+
+        DISMISSED:
+            "dismissed",
+    });
+
+const MAX_NOTIFICATIONS =
+    1000;
+
+const MAX_ERROR_HISTORY =
+    25;
 
 // ============================================================================
 // Helpers
 // ============================================================================
 
-function recalculateUnread(state) {
-  state.unreadCount =
-    state.items.filter(
-      (n) => !n.read
-    ).length;
+function nowIso() {
+    return new Date().toISOString();
+}
+
+function normalizeString(
+    value,
+    fallback = null,
+) {
+    if (
+        value ===
+            undefined ||
+        value ===
+            null
+    ) {
+        return fallback;
+    }
+
+    const normalized =
+        String(value).trim();
+
+    return normalized ||
+        fallback;
+}
+
+function normalizeBoolean(
+    value,
+    fallback = false,
+) {
+    if (
+        typeof value ===
+        "boolean"
+    ) {
+        return value;
+    }
+
+    if (
+        value ===
+            1 ||
+        value ===
+            "1" ||
+        String(value)
+            .trim()
+            .toLowerCase() ===
+            "true"
+    ) {
+        return true;
+    }
+
+    if (
+        value ===
+            0 ||
+        value ===
+            "0" ||
+        String(value)
+            .trim()
+            .toLowerCase() ===
+            "false"
+    ) {
+        return false;
+    }
+
+    return fallback;
+}
+
+function normalizeMetadata(
+    metadata,
+) {
+    if (
+        !metadata ||
+        typeof metadata !==
+            "object" ||
+        Array.isArray(metadata)
+    ) {
+        return {};
+    }
+
+    return {
+        ...metadata,
+    };
 }
 
 function normalizeNotification(
-  payload
+    payload,
 ) {
-  return {
-    id:
-      payload.id ||
-      payload._id ||
-      nanoid(),
+    if (
+        !payload ||
+        typeof payload !==
+            "object"
+    ) {
+        return null;
+    }
 
-    title:
-      payload.title ||
-      "Notification",
+    const id =
+        normalizeString(
+            payload.id ||
+            payload._id ||
+            payload.notificationId,
+            null,
+        ) ||
+        nanoid();
 
-    message:
-      payload.message ||
-      "",
+    const read =
+        normalizeBoolean(
+            payload.read,
+        );
 
-    type:
-      payload.type ||
-      NOTIFICATION_TYPES.INFO,
+    const archived =
+        normalizeBoolean(
+            payload.archived,
+        );
 
-    channel:
-      payload.channel ||
-      NOTIFICATION_CHANNELS.IN_APP,
+    const type =
+        payload.type &&
+        Object.values(
+            NOTIFICATION_TYPES,
+        ).includes(
+            payload.type,
+        )
+            ? payload.type
+            : NOTIFICATION_TYPES.INFO;
 
-    read:
-      payload.read || false,
+    const channel =
+        payload.channel &&
+        Object.values(
+            NOTIFICATION_CHANNELS,
+        ).includes(
+            payload.channel,
+        )
+            ? payload.channel
+            : NOTIFICATION_CHANNELS.IN_APP;
 
-    archived:
-      payload.archived || false,
+    const priority =
+        payload.priority &&
+        Object.values(
+            NOTIFICATION_PRIORITIES,
+        ).includes(
+            payload.priority,
+        )
+            ? payload.priority
+            : NOTIFICATION_PRIORITIES.NORMAL;
 
-    createdAt:
-      payload.createdAt ||
-      new Date().toISOString(),
+    return {
+        ...payload,
 
-    metadata:
-      payload.metadata || {},
+        id,
 
-    action:
-      payload.action || null,
+        title:
+            normalizeString(
+                payload.title,
+                "Notification",
+            ),
 
-    priority:
-      payload.priority ||
-      "normal",
-  };
+        message:
+            normalizeString(
+                payload.message,
+                "",
+            ),
+
+        type,
+
+        channel,
+
+        read,
+
+        archived,
+
+        createdAt:
+            payload.createdAt ||
+            nowIso(),
+
+        updatedAt:
+            payload.updatedAt ||
+            payload.createdAt ||
+            nowIso(),
+
+        readAt:
+            payload.readAt ||
+            (read
+                ? nowIso()
+                : null),
+
+        archivedAt:
+            payload.archivedAt ||
+            (archived
+                ? nowIso()
+                : null),
+
+        metadata:
+            normalizeMetadata(
+                payload.metadata,
+            ),
+
+        action:
+            payload.action ||
+            null,
+
+        priority,
+
+        status:
+            archived
+                ? NOTIFICATION_STATUS.ARCHIVED
+                : read
+                    ? NOTIFICATION_STATUS.READ
+                    : NOTIFICATION_STATUS.UNREAD,
+    };
 }
+
+function normalizeError(
+    error,
+) {
+    if (!error) {
+        return null;
+    }
+
+    if (
+        typeof error ===
+        "string"
+    ) {
+        return {
+            name:
+                "Error",
+
+            code:
+                "NOTIFICATION_ERROR",
+
+            message:
+                error,
+
+            statusCode:
+                null,
+
+            retryable:
+                false,
+
+            timestamp:
+                nowIso(),
+        };
+    }
+
+    const responseData =
+        error?.response?.data;
+
+    const source =
+        responseData &&
+        typeof responseData ===
+            "object"
+            ? responseData
+            : error;
+
+    return {
+        name:
+            source?.name ||
+            error?.name ||
+            "Error",
+
+        code:
+            source?.code ||
+            error?.code ||
+            "NOTIFICATION_ERROR",
+
+        message:
+            source?.message ||
+            source?.error ||
+            error?.message ||
+            "Notification operation failed.",
+
+        statusCode:
+            error?.response?.status ??
+            source?.statusCode ??
+            null,
+
+        retryable:
+            Boolean(
+                source?.retryable ??
+                error?.retryable,
+            ),
+
+        classification:
+            source?.classification ||
+            error?.classification ||
+            null,
+
+        requestId:
+            source?.requestId ||
+            error?.requestId ||
+            null,
+
+        timestamp:
+            nowIso(),
+    };
+}
+
+function addErrorHistory(
+    state,
+    error,
+) {
+    const normalized =
+        normalizeError(
+            error,
+        );
+
+    if (
+        !normalized
+    ) {
+        return;
+    }
+
+    state.error =
+        normalized;
+
+    state.errorHistory =
+        [
+            normalized,
+            ...state.errorHistory,
+        ].slice(
+            0,
+            MAX_ERROR_HISTORY,
+        );
+}
+
+function notificationIdentity(
+    notification,
+) {
+    return (
+        notification?.id ||
+        notification?._id ||
+        notification?.notificationId ||
+        null
+    );
+}
+
+function upsertNotification(
+    notifications,
+    notification,
+) {
+    const normalized =
+        normalizeNotification(
+            notification,
+        );
+
+    if (
+        !normalized
+    ) {
+        return notifications;
+    }
+
+    const id =
+        notificationIdentity(
+            normalized,
+        );
+
+    const index =
+        notifications.findIndex(
+            current =>
+                notificationIdentity(
+                    current,
+                ) === id,
+        );
+
+    if (
+        index ===
+            -1
+    ) {
+        return [
+            normalized,
+            ...notifications,
+        ].slice(
+            0,
+            MAX_NOTIFICATIONS,
+        );
+    }
+
+    const next =
+        [
+            ...notifications,
+        ];
+
+    next[index] =
+        {
+            ...next[index],
+            ...normalized,
+        };
+
+    return next;
+}
+
+function deduplicateNotifications(
+    notifications,
+) {
+    if (
+        !Array.isArray(
+            notifications,
+        )
+    ) {
+        return [];
+    }
+
+    const map =
+        new Map();
+
+    for (
+        const notification of
+        notifications
+    ) {
+        const normalized =
+            normalizeNotification(
+                notification,
+            );
+
+        if (
+            !normalized
+        ) {
+            continue;
+        }
+
+        const id =
+            notificationIdentity(
+                normalized,
+            );
+
+        if (
+            !map.has(
+                id,
+            )
+        ) {
+            map.set(
+                id,
+                normalized,
+            );
+        }
+    }
+
+    return Array.from(
+        map.values(),
+    ).slice(
+        0,
+        MAX_NOTIFICATIONS,
+    );
+}
+
+function recalculateUnread(
+    state,
+) {
+    state.unreadCount =
+        state.items.filter(
+            notification =>
+                !notification.read &&
+                !notification.archived,
+        ).length;
+}
+
+function recalculateCounts(
+    state,
+) {
+    const visible =
+        state.items;
+
+    state.counts = {
+        total:
+            visible.length,
+
+        unread:
+            visible.filter(
+                notification =>
+                    !notification.read &&
+                    !notification.archived,
+            ).length,
+
+        read:
+            visible.filter(
+                notification =>
+                    notification.read &&
+                    !notification.archived,
+            ).length,
+
+        archived:
+            visible.filter(
+                notification =>
+                    notification.archived,
+            ).length,
+
+        security:
+            visible.filter(
+                notification =>
+                    notification.type ===
+                    NOTIFICATION_TYPES.SECURITY,
+            ).length,
+
+        transaction:
+            visible.filter(
+                notification =>
+                    notification.type ===
+                    NOTIFICATION_TYPES.TRANSACTION,
+            ).length,
+
+        critical:
+            visible.filter(
+                notification =>
+                    notification.priority ===
+                    NOTIFICATION_PRIORITIES.CRITICAL,
+            ).length,
+    };
+
+    state.unreadCount =
+        state.counts.unread;
+}
+
+function markStateUpdated(
+    state,
+) {
+    state.lastUpdatedAt =
+        nowIso();
+}
+
+// ============================================================================
+// Initial State Factory
+// ============================================================================
+
+function createInitialState() {
+    return {
+        initialized:
+            false,
+
+        hydrated:
+            false,
+
+        items: [],
+
+        unreadCount:
+            0,
+
+        counts: {
+            total:
+                0,
+
+            unread:
+                0,
+
+            read:
+                0,
+
+            archived:
+                0,
+
+            security:
+                0,
+
+            transaction:
+                0,
+
+            critical:
+                0,
+        },
+
+        loading:
+            false,
+
+        syncing:
+            false,
+
+        error:
+            null,
+
+        errorHistory:
+            [],
+
+        lastFetchedAt:
+            null,
+
+        lastSyncedAt:
+            null,
+
+        lastUpdatedAt:
+            null,
+
+        preferences: {
+            email:
+                true,
+
+            sms:
+                false,
+
+            push:
+                true,
+
+            inApp:
+                true,
+        },
+
+        metadata: {
+            tenantId:
+                null,
+
+            userId:
+                null,
+
+            lastRequestId:
+                null,
+
+            source:
+                "local",
+
+            version:
+                1,
+        },
+    };
+}
+
+const initialState =
+    createInitialState();
 
 // ============================================================================
 // Slice
 // ============================================================================
 
 const notificationSlice =
-  createSlice({
-    name: "notifications",
+    createSlice({
 
-    initialState,
+        name:
+            "notifications",
 
-    reducers: {
-      // =====================================================================
-      // Loading
-      // =====================================================================
+        initialState,
 
-      setNotificationsLoading(
-        state,
-        action
-      ) {
-        state.loading =
-          action.payload;
-      },
+        reducers: {
 
-      setNotificationsSyncing(
-        state,
-        action
-      ) {
-        state.syncing =
-          action.payload;
-      },
+            // ------------------------------------------------------------------
+            // Initialization
+            // ------------------------------------------------------------------
 
-      setNotificationsError(
-        state,
-        action
-      ) {
-        state.error =
-          action.payload;
-      },
+            initializeNotifications(
+                state,
+                action,
+            ) {
+                const payload =
+                    action.payload ||
+                    {};
 
-      clearNotificationsError(
-        state
-      ) {
-        state.error = null;
-      },
+                state.initialized =
+                    true;
 
-      // =====================================================================
-      // Set Notifications
-      // =====================================================================
+                state.hydrated =
+                    payload.hydrated ??
+                    state.hydrated;
 
-      setNotifications(
-        state,
-        action
-      ) {
-        state.items =
-          action.payload.map(
-            normalizeNotification
-          );
+                if (
+                    payload.tenantId
+                ) {
+                    state.metadata.tenantId =
+                        payload.tenantId;
+                }
 
-        state.lastFetchedAt =
-          new Date().toISOString();
+                if (
+                    payload.userId
+                ) {
+                    state.metadata.userId =
+                        payload.userId;
+                }
 
-        recalculateUnread(
-          state
-        );
-      },
+                markStateUpdated(
+                    state,
+                );
+            },
 
-      // =====================================================================
-      // Add Notification
-      // =====================================================================
+            hydrateNotifications(
+                state,
+                action,
+            ) {
+                const payload =
+                    action.payload ||
+                    {};
 
-      addNotification(
-        state,
-        action
-      ) {
-        const notification =
-          normalizeNotification(
-            action.payload
-          );
+                if (
+                    Array.isArray(
+                        payload.items,
+                    )
+                ) {
+                    state.items =
+                        deduplicateNotifications(
+                            payload.items,
+                        );
+                }
 
-        state.items.unshift(
-          notification
-        );
+                if (
+                    payload.preferences
+                ) {
+                    state.preferences =
+                        {
+                            ...state.preferences,
+                            ...payload.preferences,
+                        };
+                }
 
-        recalculateUnread(
-          state
-        );
-      },
+                if (
+                    payload.metadata
+                ) {
+                    state.metadata =
+                        {
+                            ...state.metadata,
+                            ...payload.metadata,
+                        };
+                }
 
-      addNotifications(
-        state,
-        action
-      ) {
-        const notifications =
-          action.payload.map(
-            normalizeNotification
-          );
+                state.initialized =
+                    true;
 
-        state.items.unshift(
-          ...notifications
-        );
+                state.hydrated =
+                    true;
 
-        recalculateUnread(
-          state
-        );
-      },
+                recalculateCounts(
+                    state,
+                );
 
-      // =====================================================================
-      // Update Notification
-      // =====================================================================
+                markStateUpdated(
+                    state,
+                );
+            },
 
-      updateNotification(
-        state,
-        action
-      ) {
-        const {
-          id,
-          updates,
-        } = action.payload;
+            // ------------------------------------------------------------------
+            // Loading / synchronization
+            // ------------------------------------------------------------------
 
-        const index =
-          state.items.findIndex(
-            (n) =>
-              n.id === id
-          );
+            setNotificationsLoading(
+                state,
+                action,
+            ) {
+                state.loading =
+                    Boolean(
+                        action.payload,
+                    );
 
-        if (
-          index !== -1
-        ) {
-          state.items[
-            index
-          ] = {
-            ...state.items[
-              index
-            ],
-            ...updates,
-          };
-        }
+                markStateUpdated(
+                    state,
+                );
+            },
 
-        recalculateUnread(
-          state
-        );
-      },
+            setNotificationsSyncing(
+                state,
+                action,
+            ) {
+                state.syncing =
+                    Boolean(
+                        action.payload,
+                    );
 
-      // =====================================================================
-      // Read State
-      // =====================================================================
+                markStateUpdated(
+                    state,
+                );
+            },
 
-      markAsRead(
-        state,
-        action
-      ) {
-        const notification =
-          state.items.find(
-            (n) =>
-              n.id ===
-              action.payload
-          );
+            setNotificationsError(
+                state,
+                action,
+            ) {
+                addErrorHistory(
+                    state,
+                    action.payload,
+                );
 
-        if (
-          notification
-        ) {
-          notification.read =
-            true;
-        }
+                state.loading =
+                    false;
 
-        recalculateUnread(
-          state
-        );
-      },
+                state.syncing =
+                    false;
 
-      markAsUnread(
-        state,
-        action
-      ) {
-        const notification =
-          state.items.find(
-            (n) =>
-              n.id ===
-              action.payload
-          );
+                markStateUpdated(
+                    state,
+                );
+            },
 
-        if (
-          notification
-        ) {
-          notification.read =
-            false;
-        }
+            clearNotificationsError(
+                state,
+            ) {
+                state.error =
+                    null;
 
-        recalculateUnread(
-          state
-        );
-      },
+                markStateUpdated(
+                    state,
+                );
+            },
 
-      markAllAsRead(
-        state
-      ) {
-        state.items.forEach(
-          (n) => {
-            n.read = true;
-          }
-        );
+            clearNotificationErrors(
+                state,
+            ) {
+                state.error =
+                    null;
 
-        state.unreadCount = 0;
-      },
+                state.errorHistory =
+                    [];
 
-      // =====================================================================
-      // Archive
-      // =====================================================================
+                markStateUpdated(
+                    state,
+                );
+            },
 
-      archiveNotification(
-        state,
-        action
-      ) {
-        const notification =
-          state.items.find(
-            (n) =>
-              n.id ===
-              action.payload
-          );
+            // ------------------------------------------------------------------
+            // Set / replace notifications
+            // ------------------------------------------------------------------
 
-        if (
-          notification
-        ) {
-          notification.archived =
-            true;
-        }
-      },
+            setNotifications(
+                state,
+                action,
+            ) {
+                const payload =
+                    Array.isArray(
+                        action.payload,
+                    )
+                        ? action.payload
+                        : (
+                            action.payload
+                                ?.items ||
+                            action.payload
+                                ?.data ||
+                            []
+                        );
 
-      unarchiveNotification(
-        state,
-        action
-      ) {
-        const notification =
-          state.items.find(
-            (n) =>
-              n.id ===
-              action.payload
-          );
+                state.items =
+                    deduplicateNotifications(
+                        payload,
+                    );
 
-        if (
-          notification
-        ) {
-          notification.archived =
-            false;
-        }
-      },
+                state.lastFetchedAt =
+                    nowIso();
 
-      // =====================================================================
-      // Delete
-      // =====================================================================
+                state.initialized =
+                    true;
 
-      removeNotification(
-        state,
-        action
-      ) {
-        state.items =
-          state.items.filter(
-            (n) =>
-              n.id !==
-              action.payload
-          );
+                state.hydrated =
+                    true;
 
-        recalculateUnread(
-          state
-        );
-      },
+                state.error =
+                    null;
 
-      clearNotifications(
-        state
-      ) {
-        state.items = [];
-        state.unreadCount = 0;
-      },
+                recalculateCounts(
+                    state,
+                );
 
-      clearArchivedNotifications(
-        state
-      ) {
-        state.items =
-          state.items.filter(
-            (n) =>
-              !n.archived
-          );
+                markStateUpdated(
+                    state,
+                );
+            },
 
-        recalculateUnread(
-          state
-        );
-      },
+            replaceNotifications(
+                state,
+                action,
+            ) {
+                const payload =
+                    Array.isArray(
+                        action.payload,
+                    )
+                        ? action.payload
+                        : [];
 
-      // =====================================================================
-      // Preferences
-      // =====================================================================
+                state.items =
+                    deduplicateNotifications(
+                        payload,
+                    );
 
-      setNotificationPreferences(
-        state,
-        action
-      ) {
-        state.preferences = {
-          ...state.preferences,
-          ...action.payload,
-        };
-      },
+                recalculateCounts(
+                    state,
+                );
 
-      // =====================================================================
-      // Reset
-      // =====================================================================
+                markStateUpdated(
+                    state,
+                );
+            },
 
-      resetNotificationState() {
-        return initialState;
-      },
-    },
-  });
+            // ------------------------------------------------------------------
+            // Add notifications
+            // ------------------------------------------------------------------
+
+            addNotification(
+                state,
+                action,
+            ) {
+                const notification =
+                    normalizeNotification(
+                        action.payload,
+                    );
+
+                if (
+                    !notification
+                ) {
+                    return;
+                }
+
+                state.items =
+                    upsertNotification(
+                        state.items,
+                        notification,
+                    );
+
+                recalculateCounts(
+                    state,
+                );
+
+                markStateUpdated(
+                    state,
+                );
+            },
+
+            addNotifications(
+                state,
+                action,
+            ) {
+                const notifications =
+                    Array.isArray(
+                        action.payload,
+                    )
+                        ? action.payload
+                        : [];
+
+                for (
+                    const notification of
+                    notifications
+                ) {
+                    state.items =
+                        upsertNotification(
+                            state.items,
+                            notification,
+                        );
+                }
+
+                recalculateCounts(
+                    state,
+                );
+
+                markStateUpdated(
+                    state,
+                );
+            },
+
+            // ------------------------------------------------------------------
+            // Update notification
+            // ------------------------------------------------------------------
+
+            updateNotification(
+                state,
+                action,
+            ) {
+                const payload =
+                    action.payload ||
+                    {};
+
+                const id =
+                    payload.id ||
+                    payload.notificationId;
+
+                if (
+                    !id
+                ) {
+                    return;
+                }
+
+                const index =
+                    state.items.findIndex(
+                        notification =>
+                            notificationIdentity(
+                                notification,
+                            ) === id,
+                    );
+
+                if (
+                    index ===
+                        -1
+                ) {
+                    return;
+                }
+
+                const updates =
+                    payload.updates ||
+                    {};
+
+                state.items[index] =
+                    normalizeNotification({
+                        ...state.items[index],
+                        ...updates,
+                        id:
+                            state.items[index]
+                                .id,
+                        updatedAt:
+                            nowIso(),
+                    });
+
+                recalculateCounts(
+                    state,
+                );
+
+                markStateUpdated(
+                    state,
+                );
+            },
+
+            // ------------------------------------------------------------------
+            // Read state
+            // ------------------------------------------------------------------
+
+            markAsRead(
+                state,
+                action,
+            ) {
+                const id =
+                    typeof action.payload ===
+                        "object"
+                        ? action.payload
+                            ?.id ||
+                          action.payload
+                            ?.notificationId
+                        : action.payload;
+
+                if (
+                    !id
+                ) {
+                    return;
+                }
+
+                const notification =
+                    state.items.find(
+                        current =>
+                            notificationIdentity(
+                                current,
+                            ) === id,
+                    );
+
+                if (
+                    !notification
+                ) {
+                    return;
+                }
+
+                notification.read =
+                    true;
+
+                notification.readAt =
+                    nowIso();
+
+                notification.status =
+                    notification.archived
+                        ? NOTIFICATION_STATUS
+                            .ARCHIVED
+                        : NOTIFICATION_STATUS
+                            .READ;
+
+                notification.updatedAt =
+                    nowIso();
+
+                recalculateCounts(
+                    state,
+                );
+
+                markStateUpdated(
+                    state,
+                );
+            },
+
+            markAsUnread(
+                state,
+                action,
+            ) {
+                const id =
+                    typeof action.payload ===
+                        "object"
+                        ? action.payload
+                            ?.id ||
+                          action.payload
+                            ?.notificationId
+                        : action.payload;
+
+                if (
+                    !id
+                ) {
+                    return;
+                }
+
+                const notification =
+                    state.items.find(
+                        current =>
+                            notificationIdentity(
+                                current,
+                            ) === id,
+                    );
+
+                if (
+                    !notification
+                ) {
+                    return;
+                }
+
+                notification.read =
+                    false;
+
+                notification.readAt =
+                    null;
+
+                notification.status =
+                    NOTIFICATION_STATUS
+                        .UNREAD;
+
+                notification.updatedAt =
+                    nowIso();
+
+                recalculateCounts(
+                    state,
+                );
+
+                markStateUpdated(
+                    state,
+                );
+            },
+
+            markAllAsRead(
+                state,
+            ) {
+                const timestamp =
+                    nowIso();
+
+                state.items.forEach(
+                    notification => {
+
+                        if (
+                            !notification.archived
+                        ) {
+                            notification.read =
+                                true;
+
+                            notification.readAt =
+                                timestamp;
+
+                            notification.status =
+                                NOTIFICATION_STATUS
+                                    .READ;
+
+                            notification.updatedAt =
+                                timestamp;
+                        }
+                    },
+                );
+
+                recalculateCounts(
+                    state,
+                );
+
+                markStateUpdated(
+                    state,
+                );
+            },
+
+            // ------------------------------------------------------------------
+            // Archive
+            // ------------------------------------------------------------------
+
+            archiveNotification(
+                state,
+                action,
+            ) {
+                const id =
+                    typeof action.payload ===
+                        "object"
+                        ? action.payload
+                            ?.id ||
+                          action.payload
+                            ?.notificationId
+                        : action.payload;
+
+                if (
+                    !id
+                ) {
+                    return;
+                }
+
+                const notification =
+                    state.items.find(
+                        current =>
+                            notificationIdentity(
+                                current,
+                            ) === id,
+                    );
+
+                if (
+                    !notification
+                ) {
+                    return;
+                }
+
+                notification.archived =
+                    true;
+
+                notification.archivedAt =
+                    nowIso();
+
+                notification.status =
+                    NOTIFICATION_STATUS
+                        .ARCHIVED;
+
+                notification.updatedAt =
+                    nowIso();
+
+                recalculateCounts(
+                    state,
+                );
+
+                markStateUpdated(
+                    state,
+                );
+            },
+
+            unarchiveNotification(
+                state,
+                action,
+            ) {
+                const id =
+                    typeof action.payload ===
+                        "object"
+                        ? action.payload
+                            ?.id ||
+                          action.payload
+                            ?.notificationId
+                        : action.payload;
+
+                if (
+                    !id
+                ) {
+                    return;
+                }
+
+                const notification =
+                    state.items.find(
+                        current =>
+                            notificationIdentity(
+                                current,
+                            ) === id,
+                    );
+
+                if (
+                    !notification
+                ) {
+                    return;
+                }
+
+                notification.archived =
+                    false;
+
+                notification.archivedAt =
+                    null;
+
+                notification.status =
+                    notification.read
+                        ? NOTIFICATION_STATUS
+                            .READ
+                        : NOTIFICATION_STATUS
+                            .UNREAD;
+
+                notification.updatedAt =
+                    nowIso();
+
+                recalculateCounts(
+                    state,
+                );
+
+                markStateUpdated(
+                    state,
+                );
+            },
+
+            // ------------------------------------------------------------------
+            // Dismissal
+            // ------------------------------------------------------------------
+
+            dismissNotification(
+                state,
+                action,
+            ) {
+                const id =
+                    typeof action.payload ===
+                        "object"
+                        ? action.payload
+                            ?.id ||
+                          action.payload
+                            ?.notificationId
+                        : action.payload;
+
+                if (
+                    !id
+                ) {
+                    return;
+                }
+
+                const notification =
+                    state.items.find(
+                        current =>
+                            notificationIdentity(
+                                current,
+                            ) === id,
+                    );
+
+                if (
+                    !notification
+                ) {
+                    return;
+                }
+
+                notification.status =
+                    NOTIFICATION_STATUS
+                        .DISMISSED;
+
+                notification.updatedAt =
+                    nowIso();
+
+                markStateUpdated(
+                    state,
+                );
+            },
+
+            // ------------------------------------------------------------------
+            // Delete
+            // ------------------------------------------------------------------
+
+            removeNotification(
+                state,
+                action,
+            ) {
+                const id =
+                    typeof action.payload ===
+                        "object"
+                        ? action.payload
+                            ?.id ||
+                          action.payload
+                            ?.notificationId
+                        : action.payload;
+
+                if (
+                    !id
+                ) {
+                    return;
+                }
+
+                state.items =
+                    state.items.filter(
+                        notification =>
+                            notificationIdentity(
+                                notification,
+                            ) !== id,
+                    );
+
+                recalculateCounts(
+                    state,
+                );
+
+                markStateUpdated(
+                    state,
+                );
+            },
+
+            clearNotifications(
+                state,
+            ) {
+                state.items =
+                    [];
+
+                recalculateCounts(
+                    state,
+                );
+
+                markStateUpdated(
+                    state,
+                );
+            },
+
+            clearArchivedNotifications(
+                state,
+            ) {
+                state.items =
+                    state.items.filter(
+                        notification =>
+                            !notification.archived,
+                    );
+
+                recalculateCounts(
+                    state,
+                );
+
+                markStateUpdated(
+                    state,
+                );
+            },
+
+            clearDismissedNotifications(
+                state,
+            ) {
+                state.items =
+                    state.items.filter(
+                        notification =>
+                            notification.status !==
+                            NOTIFICATION_STATUS
+                                .DISMISSED,
+                    );
+
+                recalculateCounts(
+                    state,
+                );
+
+                markStateUpdated(
+                    state,
+                );
+            },
+
+            // ------------------------------------------------------------------
+            // Realtime
+            // ------------------------------------------------------------------
+
+            markRealtimeReceived(
+                state,
+                action,
+            ) {
+                const notification =
+                    action.payload;
+
+                if (
+                    notification
+                ) {
+                    state.items =
+                        upsertNotification(
+                            state.items,
+                            notification,
+                        );
+                }
+
+                state.realtime =
+                    {
+                        ...state.realtime,
+                        connected:
+                            true,
+
+                        connectionState:
+                            "connected",
+
+                        lastReceived:
+                            nowIso(),
+                    };
+
+                recalculateCounts(
+                    state,
+                );
+
+                markStateUpdated(
+                    state,
+                );
+            },
+
+            // ------------------------------------------------------------------
+            // Preferences
+            // ------------------------------------------------------------------
+
+            setNotificationPreferences(
+                state,
+                action,
+            ) {
+                const payload =
+                    action.payload ||
+                    {};
+
+                state.preferences =
+                    {
+                        ...state.preferences,
+                        ...payload,
+                    };
+
+                markStateUpdated(
+                    state,
+                );
+            },
+
+            setNotificationPreference(
+                state,
+                action,
+            ) {
+                const payload =
+                    action.payload ||
+                    {};
+
+                const channel =
+                    payload.channel;
+
+                if (
+                    ![
+                        "email",
+                        "sms",
+                        "push",
+                        "inApp",
+                    ].includes(
+                        channel,
+                    )
+                ) {
+                    return;
+                }
+
+                state.preferences[
+                    channel
+                ] =
+                    Boolean(
+                        payload.enabled,
+                    );
+
+                markStateUpdated(
+                    state,
+                );
+            },
+
+            // ------------------------------------------------------------------
+            // Metadata
+            // ------------------------------------------------------------------
+
+            setNotificationMetadata(
+                state,
+                action,
+            ) {
+                state.metadata =
+                    {
+                        ...state.metadata,
+                        ...(action.payload ||
+                            {}),
+                    };
+
+                markStateUpdated(
+                    state,
+                );
+            },
+
+            markNotificationsSynced(
+                state,
+                action,
+            ) {
+                state.syncing =
+                    false;
+
+                state.loading =
+                    false;
+
+                state.lastSyncedAt =
+                    action.payload
+                        ?.timestamp ||
+                    nowIso();
+
+                state.error =
+                    null;
+
+                markStateUpdated(
+                    state,
+                );
+            },
+
+            // ------------------------------------------------------------------
+            // Reset
+            // ------------------------------------------------------------------
+
+            resetNotificationState() {
+                return createInitialState();
+            },
+        },
+    });
 
 // ============================================================================
 // Actions
 // ============================================================================
 
 export const {
-  setNotificationsLoading,
-  setNotificationsSyncing,
-  setNotificationsError,
-  clearNotificationsError,
-  setNotifications,
-  addNotification,
-  addNotifications,
-  updateNotification,
-  markAsRead,
-  markAsUnread,
-  markAllAsRead,
-  archiveNotification,
-  unarchiveNotification,
-  removeNotification,
-  clearNotifications,
-  clearArchivedNotifications,
-  setNotificationPreferences,
-  resetNotificationState,
+    initializeNotifications,
+    hydrateNotifications,
+
+    setNotificationsLoading,
+    setNotificationsSyncing,
+    setNotificationsError,
+    clearNotificationsError,
+    clearNotificationErrors,
+
+    setNotifications,
+    replaceNotifications,
+
+    addNotification,
+    addNotifications,
+
+    updateNotification,
+
+    markAsRead,
+    markAsUnread,
+    markAllAsRead,
+
+    archiveNotification,
+    unarchiveNotification,
+
+    dismissNotification,
+
+    removeNotification,
+    clearNotifications,
+    clearArchivedNotifications,
+    clearDismissedNotifications,
+
+    markRealtimeReceived,
+
+    setNotificationPreferences,
+    setNotificationPreference,
+
+    setNotificationMetadata,
+    markNotificationsSynced,
+
+    resetNotificationState,
 } =
-  notificationSlice.actions;
+    notificationSlice.actions;
 
 // ============================================================================
-// Selectors
+// Base Selectors
 // ============================================================================
+
+export const selectNotificationState =
+    state =>
+        state?.notifications ||
+        initialState;
 
 export const selectNotifications =
-  (state) =>
-    state.notifications.items;
+    createSelector(
+        [
+            selectNotificationState,
+        ],
+        notifications =>
+            notifications.items,
+    );
 
 export const selectUnreadCount =
-  (state) =>
-    state.notifications
-      .unreadCount;
+    createSelector(
+        [
+            selectNotificationState,
+        ],
+        notifications =>
+            notifications.unreadCount,
+    );
+
+export const selectNotificationCounts =
+    createSelector(
+        [
+            selectNotificationState,
+        ],
+        notifications =>
+            notifications.counts,
+    );
 
 export const selectNotificationLoading =
-  (state) =>
-    state.notifications.loading;
+    createSelector(
+        [
+            selectNotificationState,
+        ],
+        notifications =>
+            notifications.loading,
+    );
 
 export const selectNotificationSyncing =
-  (state) =>
-    state.notifications.syncing;
+    createSelector(
+        [
+            selectNotificationState,
+        ],
+        notifications =>
+            notifications.syncing,
+    );
 
 export const selectNotificationError =
-  (state) =>
-    state.notifications.error;
+    createSelector(
+        [
+            selectNotificationState,
+        ],
+        notifications =>
+            notifications.error,
+    );
+
+export const selectNotificationErrorHistory =
+    createSelector(
+        [
+            selectNotificationState,
+        ],
+        notifications =>
+            notifications.errorHistory,
+    );
 
 export const selectNotificationPreferences =
-  (state) =>
-    state.notifications
-      .preferences;
+    createSelector(
+        [
+            selectNotificationState,
+        ],
+        notifications =>
+            notifications.preferences,
+    );
+
+export const selectNotificationLastFetchedAt =
+    createSelector(
+        [
+            selectNotificationState,
+        ],
+        notifications =>
+            notifications.lastFetchedAt,
+    );
+
+export const selectNotificationLastSyncedAt =
+    createSelector(
+        [
+            selectNotificationState,
+        ],
+        notifications =>
+            notifications.lastSyncedAt,
+    );
+
+// ============================================================================
+// Derived Selectors
+// ============================================================================
 
 export const selectUnreadNotifications =
-  createSelector(
-    [selectNotifications],
-    (notifications) =>
-      notifications.filter(
-        (n) => !n.read
-      )
-  );
+    createSelector(
+        [
+            selectNotifications,
+        ],
+        notifications =>
+            notifications.filter(
+                notification =>
+                    !notification.read &&
+                    !notification.archived,
+            ),
+    );
+
+export const selectReadNotifications =
+    createSelector(
+        [
+            selectNotifications,
+        ],
+        notifications =>
+            notifications.filter(
+                notification =>
+                    notification.read &&
+                    !notification.archived,
+            ),
+    );
 
 export const selectArchivedNotifications =
-  createSelector(
-    [selectNotifications],
-    (notifications) =>
-      notifications.filter(
-        (n) =>
-          n.archived
-      )
-  );
+    createSelector(
+        [
+            selectNotifications,
+        ],
+        notifications =>
+            notifications.filter(
+                notification =>
+                    notification.archived,
+            ),
+    );
+
+export const selectDismissedNotifications =
+    createSelector(
+        [
+            selectNotifications,
+        ],
+        notifications =>
+            notifications.filter(
+                notification =>
+                    notification.status ===
+                    NOTIFICATION_STATUS
+                        .DISMISSED,
+            ),
+    );
 
 export const selectSecurityNotifications =
-  createSelector(
-    [selectNotifications],
-    (notifications) =>
-      notifications.filter(
-        (n) =>
-          n.type ===
-          NOTIFICATION_TYPES.SECURITY
-      )
-  );
+    createSelector(
+        [
+            selectNotifications,
+        ],
+        notifications =>
+            notifications.filter(
+                notification =>
+                    notification.type ===
+                    NOTIFICATION_TYPES.SECURITY,
+            ),
+    );
 
 export const selectTransactionNotifications =
-  createSelector(
-    [selectNotifications],
-    (notifications) =>
-      notifications.filter(
-        (n) =>
-          n.type ===
-          NOTIFICATION_TYPES.TRANSACTION
-      )
-  );
+    createSelector(
+        [
+            selectNotifications,
+        ],
+        notifications =>
+            notifications.filter(
+                notification =>
+                    notification.type ===
+                    NOTIFICATION_TYPES
+                        .TRANSACTION,
+            ),
+    );
+
+export const selectCriticalNotifications =
+    createSelector(
+        [
+            selectNotifications,
+        ],
+        notifications =>
+            notifications.filter(
+                notification =>
+                    notification.priority ===
+                    NOTIFICATION_PRIORITIES
+                        .CRITICAL ||
+                    notification.type ===
+                    NOTIFICATION_TYPES
+                        .SECURITY &&
+                    notification.priority ===
+                        NOTIFICATION_PRIORITIES
+                            .HIGH,
+            ),
+    );
+
+export const selectErrorNotifications =
+    createSelector(
+        [
+            selectNotifications,
+        ],
+        notifications =>
+            notifications.filter(
+                notification =>
+                    notification.type ===
+                    NOTIFICATION_TYPES
+                        .ERROR,
+            ),
+    );
+
+// ============================================================================
+// Parameterized Selectors
+// ============================================================================
+
+export const makeSelectNotificationById =
+    id =>
+        createSelector(
+            [
+                selectNotifications,
+            ],
+            notifications =>
+                notifications.find(
+                    notification =>
+                        notification.id ===
+                        id,
+                ) ||
+                null,
+        );
+
+export const makeSelectNotificationsByType =
+    type =>
+        createSelector(
+            [
+                selectNotifications,
+            ],
+            notifications =>
+                notifications.filter(
+                    notification =>
+                        notification.type ===
+                        type,
+                ),
+        );
+
+export const makeSelectNotificationsByChannel =
+    channel =>
+        createSelector(
+            [
+                selectNotifications,
+            ],
+            notifications =>
+                notifications.filter(
+                    notification =>
+                        notification.channel ===
+                        channel,
+                ),
+        );
+
+export const makeSelectNotificationsByPriority =
+    priority =>
+        createSelector(
+            [
+                selectNotifications,
+            ],
+            notifications =>
+                notifications.filter(
+                    notification =>
+                        notification.priority ===
+                        priority,
+                ),
+        );
+
+// ============================================================================
+// Preference Selectors
+// ============================================================================
+
+export const selectEmailNotificationsEnabled =
+    createSelector(
+        [
+            selectNotificationPreferences,
+        ],
+        preferences =>
+            Boolean(
+                preferences.email,
+            ),
+    );
+
+export const selectSMSNotificationsEnabled =
+    createSelector(
+        [
+            selectNotificationPreferences,
+        ],
+        preferences =>
+            Boolean(
+                preferences.sms,
+            ),
+    );
+
+export const selectPushNotificationsEnabled =
+    createSelector(
+        [
+            selectNotificationPreferences,
+        ],
+        preferences =>
+            Boolean(
+                preferences.push,
+            ),
+    );
+
+export const selectInAppNotificationsEnabled =
+    createSelector(
+        [
+            selectNotificationPreferences,
+        ],
+        preferences =>
+            Boolean(
+                preferences.inApp,
+            ),
+    );
+
+// ============================================================================
+// Operational Summary
+// ============================================================================
+
+export const selectNotificationSummary =
+    createSelector(
+        [
+            selectNotificationState,
+        ],
+        notifications => ({
+            initialized:
+                notifications.initialized,
+
+            hydrated:
+                notifications.hydrated,
+
+            loading:
+                notifications.loading,
+
+            syncing:
+                notifications.syncing,
+
+            total:
+                notifications.counts
+                    .total,
+
+            unread:
+                notifications.counts
+                    .unread,
+
+            read:
+                notifications.counts
+                    .read,
+
+            archived:
+                notifications.counts
+                    .archived,
+
+            security:
+                notifications.counts
+                    .security,
+
+            transaction:
+                notifications.counts
+                    .transaction,
+
+            critical:
+                notifications.counts
+                    .critical,
+
+            hasError:
+                Boolean(
+                    notifications.error,
+                ),
+
+            lastFetchedAt:
+                notifications.lastFetchedAt,
+
+            lastSyncedAt:
+                notifications.lastSyncedAt,
+
+            lastUpdatedAt:
+                notifications.lastUpdatedAt,
+        }),
+    );
 
 // ============================================================================
 // Reducer
 // ============================================================================
 
 export default
-  notificationSlice.reducer;
+    notificationSlice.reducer;

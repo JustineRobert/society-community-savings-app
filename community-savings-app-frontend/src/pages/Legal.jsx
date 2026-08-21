@@ -1,552 +1,1886 @@
 /**
- * Legal Page Component - Comprehensive Legal Information
- * Production-ready consolidated legal documentation
+ * ============================================================================
+ * TITech Community Capital – Legal Information
+ * File: frontend/src/pages/Legal.jsx
+ *
+ * Enterprise Production Grade
+ * ----------------------------------------------------------------------------
  * - Terms of Service
  * - Privacy Policy
- * - Disclaimer
- * - Scrollable content with sticky navigation
- * - Print-friendly layout
- * - Accessibility compliant (WCAG 2.1 AA)
- * - Mobile responsive
+ * - Financial Disclaimer
+ * - Accessibility / WCAG-oriented structure
+ * - Responsive layout
+ * - Sticky section navigation
+ * - Scroll-to-top support
+ * - Active section tracking
+ * - Print support
+ * - Deep-link friendly anchors
+ * - Keyboard accessible navigation
+ * - Reduced-motion awareness
+ * - Safe browser API usage
+ * - No sensitive client-side state
+ * - TITech terminology consistency
+ * - Production-safe lifecycle management
+ * ============================================================================
  */
 
-import React, { useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronUp, Home } from 'lucide-react';
+import {
+  ChevronUp,
+  FileText,
+  Home,
+  Lock,
+  Printer,
+  Scale,
+  ShieldCheck,
+} from 'lucide-react';
+
 import './Legal.css';
 
+/* ============================================================================
+ * Document Metadata
+ * ========================================================================== */
+
+const LEGAL_LAST_UPDATED = 'January 15, 2026';
+const LEGAL_VERSION = '1.0';
+const LEGAL_CONTACT_EMAIL = 'legal@titechcommunity.app';
+const LEGAL_CONTACT_PHONE = '+256 (782) 397907';
+const LEGAL_CONTACT_PHONE_URI = '+256782397907';
+const LEGAL_CONTACT_ADDRESS = 'Kampala, Uganda';
+
+const SCROLL_TOP_THRESHOLD = 420;
+const INITIAL_HASH_DELAY = 50;
+
+/* ============================================================================
+ * Section Configuration
+ * ========================================================================== */
+
+const SECTION_IDS = Object.freeze([
+  'tos-1',
+  'tos-2',
+  'tos-3',
+  'tos-4',
+  'tos-5',
+  'tos-6',
+  'pp-1',
+  'pp-2',
+  'pp-3',
+  'pp-4',
+  'pp-5',
+  'pp-6',
+  'disclaimer',
+  'financial-disclaimer',
+  'contact-legal',
+]);
+
+const NAV_SECTIONS = Object.freeze([
+  {
+    id: 'terms',
+    title: 'Terms of Service',
+    icon: Scale,
+    links: [
+      { id: 'tos-1', label: '1. Acceptance of Terms' },
+      { id: 'tos-2', label: '2. User Rights & Responsibilities' },
+      { id: 'tos-3', label: '3. User Conduct' },
+      { id: 'tos-4', label: '4. Payment Terms' },
+      { id: 'tos-5', label: '5. Loan Agreements' },
+      { id: 'tos-6', label: '6. Limitation of Liability' },
+    ],
+  },
+  {
+    id: 'privacy',
+    title: 'Privacy Policy',
+    icon: ShieldCheck,
+    links: [
+      { id: 'pp-1', label: '1. Information We Collect' },
+      { id: 'pp-2', label: '2. How We Use Information' },
+      { id: 'pp-3', label: '3. Data Security' },
+      { id: 'pp-4', label: '4. Your Privacy Rights' },
+      { id: 'pp-5', label: '5. Cookies & Tracking' },
+      { id: 'pp-6', label: '6. Third-Party Services' },
+    ],
+  },
+  {
+    id: 'disclaimer-section',
+    title: 'Disclaimer',
+    icon: FileText,
+    links: [
+      { id: 'disclaimer', label: 'General Disclaimer' },
+      { id: 'financial-disclaimer', label: 'Financial Disclaimer' },
+      { id: 'contact-legal', label: 'Contact Legal' },
+    ],
+  },
+]);
+
+/* ============================================================================
+ * Browser Helpers
+ * ========================================================================== */
+
+/**
+ * Detect reduced-motion preference safely.
+ */
+function prefersReducedMotion() {
+  if (
+    typeof window === 'undefined' ||
+    typeof window.matchMedia !== 'function'
+  ) {
+    return false;
+  }
+
+  return window.matchMedia(
+    '(prefers-reduced-motion: reduce)',
+  ).matches;
+}
+
+/**
+ * Normalize a URL hash into a section ID.
+ */
+function getHashSectionId() {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const hash = window.location.hash;
+
+  if (!hash) {
+    return null;
+  }
+
+  const id = decodeURIComponent(hash.replace(/^#/, ''));
+
+  return SECTION_IDS.includes(id) ? id : null;
+}
+
+/**
+ * Update the current URL hash without triggering a full navigation.
+ */
+function replaceSectionHash(id) {
+  if (
+    typeof window === 'undefined' ||
+    !window.history?.replaceState ||
+    !id
+  ) {
+    return;
+  }
+
+  const baseUrl =
+    window.location.pathname + window.location.search;
+
+  window.history.replaceState(
+    null,
+    '',
+    `${baseUrl}#${encodeURIComponent(id)}`,
+  );
+}
+
+/**
+ * Remove the current hash without reloading the page.
+ */
+function clearSectionHash() {
+  if (
+    typeof window === 'undefined' ||
+    !window.history?.replaceState
+  ) {
+    return;
+  }
+
+  window.history.replaceState(
+    null,
+    '',
+    window.location.pathname + window.location.search,
+  );
+}
+
+/* ============================================================================
+ * Component
+ * ========================================================================== */
+
 const Legal = () => {
+  const contentRef = useRef(null);
+  const observerRef = useRef(null);
+  const mountedRef = useRef(true);
+
+  const [activeSection, setActiveSection] = useState('tos-1');
   const [showScrollTop, setShowScrollTop] = useState(false);
 
-  const handleScroll = (e) => {
-    setShowScrollTop(e.target.scrollTop > 300);
-  };
+  /* --------------------------------------------------------------------------
+   * Stable Navigation Configuration
+   * ------------------------------------------------------------------------ */
 
-  const scrollToTop = () => {
-    const scrollElement = document.querySelector('.legal-content');
-    if (scrollElement) {
-      scrollElement.scrollTo({ top: 0, behavior: 'smooth' });
+  const navigation = useMemo(
+    () => NAV_SECTIONS,
+    [],
+  );
+
+  /* --------------------------------------------------------------------------
+   * Scroll Position
+   * ------------------------------------------------------------------------ */
+
+  const handleScroll = useCallback(() => {
+    const container = contentRef.current;
+
+    if (!container) {
+      return;
     }
-  };
+
+    const shouldShow =
+      container.scrollTop > SCROLL_TOP_THRESHOLD;
+
+    setShowScrollTop((previous) =>
+      previous === shouldShow ? previous : shouldShow,
+    );
+  }, []);
+
+  /* --------------------------------------------------------------------------
+   * Scroll To Top
+   * ------------------------------------------------------------------------ */
+
+  const scrollToTop = useCallback(() => {
+    const container = contentRef.current;
+
+    if (!container) {
+      return;
+    }
+
+    container.scrollTo({
+      top: 0,
+      behavior: prefersReducedMotion()
+        ? 'auto'
+        : 'smooth',
+    });
+
+    setActiveSection('tos-1');
+    clearSectionHash();
+
+    /*
+     * Move keyboard focus back into the document container so keyboard and
+     * screen-reader users receive predictable navigation behavior.
+     */
+    if (
+      typeof container.focus === 'function' &&
+      document.activeElement !== container
+    ) {
+      container.focus({ preventScroll: true });
+    }
+  }, []);
+
+  /* --------------------------------------------------------------------------
+   * Print
+   * ------------------------------------------------------------------------ */
+
+  const handlePrint = useCallback(() => {
+    if (
+      typeof window === 'undefined' ||
+      typeof window.print !== 'function'
+    ) {
+      return;
+    }
+
+    window.print();
+  }, []);
+
+  /* --------------------------------------------------------------------------
+   * Section Navigation
+   * ------------------------------------------------------------------------ */
+
+  const scrollToSection = useCallback((id) => {
+    const container = contentRef.current;
+
+    if (!container || !SECTION_IDS.includes(id)) {
+      return;
+    }
+
+    const target = document.getElementById(id);
+
+    if (!target) {
+      return;
+    }
+
+    /*
+     * Calculate the target position relative to the legal scroll container.
+     * This is more deterministic than relying exclusively on
+     * scrollIntoView(), particularly when the application itself has a
+     * scrollable layout.
+     */
+    const containerRect = container.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+
+    const nextTop =
+      container.scrollTop +
+      (targetRect.top - containerRect.top) -
+      20;
+
+    container.scrollTo({
+      top: Math.max(0, nextTop),
+      behavior: prefersReducedMotion()
+        ? 'auto'
+        : 'smooth',
+    });
+
+    setActiveSection(id);
+    replaceSectionHash(id);
+  }, []);
+
+  const handleSectionNavigation = useCallback(
+    (event, id) => {
+      event.preventDefault();
+
+      scrollToSection(id);
+    },
+    [scrollToSection],
+  );
+
+  /* --------------------------------------------------------------------------
+   * Intersection Observer
+   * ------------------------------------------------------------------------ */
+
+  useEffect(() => {
+    const container = contentRef.current;
+
+    if (
+      !container ||
+      typeof IntersectionObserver === 'undefined'
+    ) {
+      return undefined;
+    }
+
+    const sections = SECTION_IDS
+      .map((id) => document.getElementById(id))
+      .filter(Boolean);
+
+    if (!sections.length) {
+      return undefined;
+    }
+
+    observerRef.current?.disconnect();
+
+    observerRef.current = new IntersectionObserver(
+      (entries) => {
+        if (!mountedRef.current) {
+          return;
+        }
+
+        const visibleEntries = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort(
+            (first, second) =>
+              first.boundingClientRect.top -
+              second.boundingClientRect.top,
+          );
+
+        if (!visibleEntries.length) {
+          return;
+        }
+
+        const nextId =
+          visibleEntries[0]?.target?.id;
+
+        if (
+          nextId &&
+          SECTION_IDS.includes(nextId)
+        ) {
+          setActiveSection((previous) =>
+            previous === nextId
+              ? previous
+              : nextId,
+          );
+        }
+      },
+      {
+        root: container,
+        /*
+         * Creates a practical "active section" reading zone near the
+         * upper portion of the legal document.
+         */
+        rootMargin: '-12% 0px -65% 0px',
+        threshold: [0, 0.1, 0.25, 0.5],
+      },
+    );
+
+    sections.forEach((section) => {
+      observerRef.current?.observe(section);
+    });
+
+    return () => {
+      observerRef.current?.disconnect();
+      observerRef.current = null;
+    };
+  }, []);
+
+  /* --------------------------------------------------------------------------
+   * Initial Deep-Link Handling
+   * ------------------------------------------------------------------------ */
+
+  useEffect(() => {
+    const hashSectionId = getHashSectionId();
+
+    if (!hashSectionId) {
+      return undefined;
+    }
+
+    const timer =
+      typeof window !== 'undefined'
+        ? window.setTimeout(() => {
+            if (!mountedRef.current) {
+              return;
+            }
+
+            scrollToSection(hashSectionId);
+          }, INITIAL_HASH_DELAY)
+        : null;
+
+    return () => {
+      if (
+        timer !== null &&
+        typeof window !== 'undefined'
+      ) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [scrollToSection]);
+
+  /* --------------------------------------------------------------------------
+   * Scroll Listener
+   * ------------------------------------------------------------------------ */
+
+  useEffect(() => {
+    const container = contentRef.current;
+
+    if (!container) {
+      return undefined;
+    }
+
+    container.addEventListener(
+      'scroll',
+      handleScroll,
+      { passive: true },
+    );
+
+    handleScroll();
+
+    return () => {
+      container.removeEventListener(
+        'scroll',
+        handleScroll,
+      );
+    };
+  }, [handleScroll]);
+
+  /* --------------------------------------------------------------------------
+   * Browser Hash Navigation
+   *
+   * Handles back/forward navigation and external links containing a legal
+   * section hash.
+   * ------------------------------------------------------------------------ */
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const handleHashChange = () => {
+      const id = getHashSectionId();
+
+      if (!id || !mountedRef.current) {
+        return;
+      }
+
+      scrollToSection(id);
+    };
+
+    window.addEventListener(
+      'hashchange',
+      handleHashChange,
+    );
+
+    return () => {
+      window.removeEventListener(
+        'hashchange',
+        handleHashChange,
+      );
+    };
+  }, [scrollToSection]);
+
+  /* --------------------------------------------------------------------------
+   * Global Keyboard Shortcuts
+   * ------------------------------------------------------------------------ */
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (
+        event.defaultPrevented ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey
+      ) {
+        return;
+      }
+
+      /*
+       * Escape provides a convenient way to return to the top when the
+       * scroll-to-top control is available.
+       */
+      if (
+        event.key === 'Escape' &&
+        contentRef.current &&
+        contentRef.current.scrollTop > SCROLL_TOP_THRESHOLD
+      ) {
+        event.preventDefault();
+        scrollToTop();
+      }
+
+      /*
+       * Home is intentionally scoped to the legal document when focus is
+       * already inside the legal content or navigation.
+       */
+      if (
+        event.key === 'Home' &&
+        event.shiftKey &&
+        document.activeElement?.closest?.(
+          '.legal-page',
+        )
+      ) {
+        event.preventDefault();
+        scrollToTop();
+      }
+    };
+
+    window.addEventListener(
+      'keydown',
+      handleKeyDown,
+    );
+
+    return () => {
+      window.removeEventListener(
+        'keydown',
+        handleKeyDown,
+      );
+    };
+  }, [scrollToTop]);
+
+  /* --------------------------------------------------------------------------
+   * Lifecycle Safety
+   * ------------------------------------------------------------------------ */
+
+  useEffect(() => {
+    mountedRef.current = true;
+
+    return () => {
+      mountedRef.current = false;
+
+      observerRef.current?.disconnect();
+      observerRef.current = null;
+    };
+  }, []);
+
+  /* ==========================================================================
+   * Render
+   * ======================================================================== */
 
   return (
     <div className="legal-page">
-      {/* Header */}
-      <div className="legal-header">
+      {/* ======================================================================
+       * Header
+       * ==================================================================== */}
+
+      <header className="legal-header">
         <div className="legal-header-content">
-          <h1 className="legal-title">Legal Information</h1>
-          <p className="legal-subtitle">Terms of Service, Privacy Policy & Disclaimer</p>
-          <p className="legal-description">
-            Please read all legal documents carefully. We recommend reviewing our Terms of Service
-            and Privacy Policy to understand your rights and responsibilities when using TITech Community
-            Capital Platform.
+          <div
+            className="legal-header-badge"
+            aria-hidden="true"
+          >
+            <ShieldCheck size={20} />
+            <span>
+              TITech Community Capital
+            </span>
+          </div>
+
+          <h1 className="legal-title">
+            Legal Information
+          </h1>
+
+          <p className="legal-subtitle">
+            Terms of Service, Privacy Policy &amp;
+            Disclaimer
           </p>
+
+          <p className="legal-description">
+            Please review these legal documents carefully.
+            They explain the terms governing your use of
+            the TITech Community Capital Platform, our
+            approach to privacy and data protection, and
+            important financial and operational
+            disclaimers.
+          </p>
+
+          <div
+            className="legal-header-meta"
+            aria-label="Legal document metadata"
+          >
+            <span>
+              <strong>Last updated:</strong>{' '}
+              {LEGAL_LAST_UPDATED}
+            </span>
+
+            <span aria-hidden="true">
+              •
+            </span>
+
+            <span>
+              <strong>Version:</strong>{' '}
+              {LEGAL_VERSION}
+            </span>
+          </div>
         </div>
-      </div>
+      </header>
+
+      {/* ======================================================================
+       * Main Layout
+       * ==================================================================== */}
 
       <div className="legal-container">
-        {/* Sidebar Navigation */}
-        <aside className="legal-sidebar">
-          <nav className="legal-nav" role="navigation" aria-label="Legal Sections">
-            <div className="nav-section">
-              <h5 className="nav-section-title">Terms of Service</h5>
-              <a href="#tos-1" className="nav-link">
-                1. Acceptance of Terms
-              </a>
-              <a href="#tos-2" className="nav-link">
-                2. User Rights & Responsibilities
-              </a>
-              <a href="#tos-3" className="nav-link">
-                3. User Conduct
-              </a>
-              <a href="#tos-4" className="nav-link">
-                4. Payment Terms
-              </a>
-              <a href="#tos-5" className="nav-link">
-                5. Loan Agreements
-              </a>
-              <a href="#tos-6" className="nav-link">
-                6. Limitation of Liability
-              </a>
-            </div>
+        {/* ====================================================================
+         * Sidebar Navigation
+         * ================================================================== */}
 
-            <div className="nav-section">
-              <h5 className="nav-section-title">Privacy Policy</h5>
-              <a href="#pp-1" className="nav-link">
-                1. Information We Collect
-              </a>
-              <a href="#pp-2" className="nav-link">
-                2. How We Use Information
-              </a>
-              <a href="#pp-3" className="nav-link">
-                3. Data Security
-              </a>
-              <a href="#pp-4" className="nav-link">
-                4. Your Privacy Rights
-              </a>
-              <a href="#pp-5" className="nav-link">
-                5. Cookies & Tracking
-              </a>
-              <a href="#pp-6" className="nav-link">
-                6. Third-Party Services
-              </a>
-            </div>
+        <aside
+          className="legal-sidebar"
+          aria-label="Legal document navigation"
+        >
+          <nav
+            className="legal-nav"
+            aria-label="Legal sections"
+          >
+            {navigation.map((section) => {
+              const SectionIcon = section.icon;
 
-            <div className="nav-section">
-              <h5 className="nav-section-title">Disclaimer</h5>
-              <a href="#disclaimer" className="nav-link">
-                General Disclaimer
-              </a>
-              <a href="#financial-disclaimer" className="nav-link">
-                Financial Disclaimer
-              </a>
-              <a href="#contact-legal" className="nav-link">
-                Contact Legal
-              </a>
-            </div>
+              return (
+                <div
+                  key={section.id}
+                  className="nav-section"
+                >
+                  <h2 className="nav-section-title">
+                    <SectionIcon
+                      size={16}
+                      aria-hidden="true"
+                    />
+
+                    <span>
+                      {section.title}
+                    </span>
+                  </h2>
+
+                  <div className="nav-section-links">
+                    {section.links.map(
+                      (link) => {
+                        const isActive =
+                          activeSection ===
+                          link.id;
+
+                        return (
+                          <a
+                            key={link.id}
+                            href={`#${link.id}`}
+                            className={`nav-link${
+                              isActive
+                                ? ' active'
+                                : ''
+                            }`}
+                            aria-current={
+                              isActive
+                                ? 'location'
+                                : undefined
+                            }
+                            onClick={(event) =>
+                              handleSectionNavigation(
+                                event,
+                                link.id,
+                              )
+                            }
+                          >
+                            {link.label}
+                          </a>
+                        );
+                      },
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </nav>
 
+          {/* ================================================================
+           * Sidebar Actions
+           * ============================================================ */}
+
           <div className="legal-nav-actions">
-            <Link to="/dashboard" className="nav-action-link" title="Return to Dashboard">
-              <Home size={18} /> Dashboard
+            <Link
+              to="/dashboard"
+              className="nav-action-link"
+              title="Return to Dashboard"
+              aria-label="Return to TITech Community Capital Dashboard"
+            >
+              <Home
+                size={18}
+                aria-hidden="true"
+              />
+
+              <span>
+                Dashboard
+              </span>
             </Link>
+
+            <button
+              type="button"
+              className="nav-action-link"
+              onClick={handlePrint}
+              title="Print legal documents"
+              aria-label="Print legal documents"
+            >
+              <Printer
+                size={18}
+                aria-hidden="true"
+              />
+
+              <span>
+                Print
+              </span>
+            </button>
           </div>
         </aside>
 
-        {/* Main Content */}
-        <main className="legal-content" onScroll={handleScroll}>
+        {/* ====================================================================
+         * Legal Content
+         * ================================================================== */}
+
+        <main
+          ref={contentRef}
+          className="legal-content"
+          tabIndex={-1}
+          aria-label="TITech Community Capital legal documents"
+        >
           <article className="legal-article">
-            {/* ==================== TERMS OF SERVICE ==================== */}
-            <section className="legal-major-section">
-              <h2 className="major-title">Terms of Service</h2>
-              <p className="section-update">Last updated: January 15, 2026</p>
+            {/* ================================================================
+             * TERMS OF SERVICE
+             * ============================================================ */}
 
-              {/* TOS Section 1 */}
-              <section id="tos-1" className="legal-section">
-                <h3>1. Acceptance of Terms</h3>
+            <section
+              className="legal-major-section"
+              aria-labelledby="terms-title"
+            >
+              <div className="legal-major-heading">
+                <div
+                  className="legal-major-icon"
+                  aria-hidden="true"
+                >
+                  <Scale size={24} />
+                </div>
+
+                <div>
+                  <h2
+                    id="terms-title"
+                    className="major-title"
+                  >
+                    Terms of Service
+                  </h2>
+
+                  <p className="section-update">
+                    Last updated:{' '}
+                    {LEGAL_LAST_UPDATED}
+                  </p>
+                </div>
+              </div>
+
+              {/* TOS 1 */}
+              <section
+                id="tos-1"
+                className="legal-section"
+                aria-labelledby="tos-1-title"
+              >
+                <h3 id="tos-1-title">
+                  1. Acceptance of Terms
+                </h3>
+
                 <p>
-                  By accessing and using the TITech Community Capital ("Platform"), you accept and
-                  agree to be bound by the terms and provision of this agreement. If you do not
-                  agree to abide by the above, please do not use this service.
+                  By accessing or using the TITech
+                  Community Capital Platform, you
+                  acknowledge that you have read,
+                  understood, and agree to be bound by
+                  these Terms of Service and applicable
+                  laws and regulations.
                 </p>
+
                 <p>
-                  We reserve the right to update these terms at any time. It is your responsibility
-                  to review these terms periodically for changes. Your continued use of the Platform
-                  following the posting of revised Terms means that you accept and agree to the
-                  changes.
+                  If you do not agree with these Terms,
+                  you should discontinue use of the
+                  Platform. TITech Community Capital may
+                  update these Terms from time to time.
+                  Your continued use of the Platform
+                  following publication of material
+                  changes constitutes acceptance of the
+                  revised Terms to the extent permitted
+                  by applicable law.
                 </p>
               </section>
 
-              {/* TOS Section 2 */}
-              <section id="tos-2" className="legal-section">
-                <h3>2. User Rights & Responsibilities</h3>
+              {/* TOS 2 */}
+              <section
+                id="tos-2"
+                className="legal-section"
+                aria-labelledby="tos-2-title"
+              >
+                <h3 id="tos-2-title">
+                  2. User Rights &amp;
+                  Responsibilities
+                </h3>
+
                 <p>
-                  As a user of the TITech Community Capital Platform, you are granted a limited, non-exclusive,
-                  non-transferable license to use the Platform in accordance with these Terms of
-                  Service.
+                  Subject to these Terms, TITech
+                  Community Capital grants you a
+                  limited, non-exclusive,
+                  non-transferable right to access and
+                  use the Platform for lawful purposes.
                 </p>
-                <h4>User Responsibilities:</h4>
+
+                <h4>
+                  User Responsibilities
+                </h4>
+
                 <ul>
                   <li>
-                    You are responsible for maintaining the confidentiality of your account
-                    credentials
+                    Maintain the confidentiality
+                    of your account credentials.
                   </li>
+
                   <li>
-                    You agree to accept responsibility for all activities that occur under your
-                    account
+                    Accept responsibility for
+                    activity performed through your
+                    account.
                   </li>
+
                   <li>
-                    You agree to provide accurate and complete information during registration
+                    Provide accurate, complete, and
+                    current registration
+                    information.
                   </li>
+
                   <li>
-                    You are responsible for complying with all applicable laws and regulations
+                    Comply with applicable laws,
+                    regulations, policies, and
+                    contractual obligations.
                   </li>
-                  <li>You must not use the Platform for any illegal or unauthorized purpose</li>
+
                   <li>
-                    You are responsible for keeping your contact information current and accurate
+                    Avoid using the Platform for
+                    illegal, fraudulent, deceptive,
+                    or unauthorized purposes.
+                  </li>
+
+                  <li>
+                    Keep your contact and account
+                    information reasonably current.
                   </li>
                 </ul>
               </section>
 
-              {/* TOS Section 3 */}
-              <section id="tos-3" className="legal-section">
-                <h3>3. User Conduct</h3>
-                <p>You agree that you will not, under any circumstances:</p>
+              {/* TOS 3 */}
+              <section
+                id="tos-3"
+                className="legal-section"
+                aria-labelledby="tos-3-title"
+              >
+                <h3 id="tos-3-title">
+                  3. User Conduct
+                </h3>
+
+                <p>
+                  You agree not to misuse the Platform
+                  or interfere with the rights,
+                  security, or operation of TITech
+                  Community Capital or its users.
+                </p>
+
                 <ul>
                   <li>
-                    Harass, threaten, embarrass, or cause distress or discomfort to any person
+                    Harass, threaten, intimidate,
+                    or deliberately cause distress
+                    to another person.
                   </li>
-                  <li>Engage in any form of fraud, misrepresentation, or deception</li>
+
                   <li>
-                    Attempt to gain unauthorized access to our systems or other users' accounts
+                    Engage in fraud, impersonation,
+                    misrepresentation, or deception.
                   </li>
-                  <li>Transmit any harmful, malicious, or offensive content</li>
-                  <li>Violate any intellectual property rights</li>
+
                   <li>
-                    Engage in any activity that disrupts the normal functioning of the Platform
+                    Attempt to gain unauthorized
+                    access to systems, accounts,
+                    APIs, or data.
                   </li>
-                  <li>Post or transmit any unsolicited commercial messages or spam</li>
-                  <li>Attempt to reverse engineer, decompile, or discover any underlying code</li>
+
                   <li>
-                    Use the Platform for money laundering or other illegal financial activities
+                    Upload or transmit malicious,
+                    harmful, or unlawful content.
                   </li>
-                  <li>Engage in any form of discrimination based on protected characteristics</li>
+
+                  <li>
+                    Infringe intellectual property,
+                    privacy, or other legal rights.
+                  </li>
+
+                  <li>
+                    Interfere with the availability,
+                    integrity, or normal operation
+                    of the Platform.
+                  </li>
+
+                  <li>
+                    Send unsolicited commercial
+                    messages, spam, or abusive
+                    communications.
+                  </li>
+
+                  <li>
+                    Attempt to reverse engineer,
+                    decompile, or otherwise
+                    improperly discover protected
+                    implementation details.
+                  </li>
+
+                  <li>
+                    Use the Platform for money
+                    laundering, terrorist financing,
+                    fraud, or other unlawful
+                    financial activity.
+                  </li>
+
+                  <li>
+                    Engage in unlawful discrimination,
+                    harassment, or abusive conduct.
+                  </li>
                 </ul>
               </section>
 
-              {/* TOS Section 4 */}
-              <section id="tos-4" className="legal-section">
-                <h3>4. Payment Terms</h3>
+              {/* TOS 4 */}
+              <section
+                id="tos-4"
+                className="legal-section"
+                aria-labelledby="tos-4-title"
+              >
+                <h3 id="tos-4-title">
+                  4. Payment Terms
+                </h3>
+
                 <p>
-                  TITech Community Capital facilitates financial transactions between group members.
-                  The following terms apply to all payments processed through the Platform:
+                  TITech Community Capital may provide
+                  technology that facilitates or records
+                  financial activity between authorized
+                  participants. Specific payment
+                  services may also depend on approved
+                  payment providers and applicable
+                  regulatory requirements.
                 </p>
-                <h4>Payment Processing:</h4>
+
+                <h4>
+                  Payment Processing
+                </h4>
+
                 <ul>
-                  <li>All payments must be made through authorized payment methods</li>
-                  <li>We use industry-standard encryption to protect your financial information</li>
                   <li>
-                    You authorize us to charge your selected payment method for transactions you
-                    initiate
+                    Transactions must use
+                    authorized payment channels.
                   </li>
-                  <li>Processing times may vary depending on your financial institution</li>
-                  <li>Failed payments will result in transaction cancellation</li>
-                  <li>You are responsible for any fees charged by your financial institution</li>
+
+                  <li>
+                    Payment processing may involve
+                    third-party financial or payment
+                    service providers.
+                  </li>
+
+                  <li>
+                    Processing times may vary
+                    depending on the selected provider
+                    and financial institution.
+                  </li>
+
+                  <li>
+                    A transaction may fail, be
+                    delayed, reversed, rejected, or
+                    placed under review.
+                  </li>
+
+                  <li>
+                    Users may be responsible for
+                    fees imposed by their financial
+                    institution or payment provider.
+                  </li>
+
+                  <li>
+                    Transaction records should be
+                    reviewed promptly and
+                    discrepancies reported through
+                    appropriate support channels.
+                  </li>
                 </ul>
-                <h4>Refund Policy:</h4>
+
+                <h4>
+                  Refunds &amp; Reversals
+                </h4>
+
                 <ul>
-                  <li>Refunds are processed within 5-10 business days of approval</li>
-                  <li>Certain transactions may not be eligible for refund</li>
-                  <li>Refund disputes must be reported within 30 days of the transaction</li>
-                  <li>Refund eligibility is determined on a case-by-case basis</li>
+                  <li>
+                    Refunds or reversals are subject
+                    to the nature of the transaction
+                    and applicable provider rules.
+                  </li>
+
+                  <li>
+                    Certain completed financial
+                    transactions may not be
+                    reversible.
+                  </li>
+
+                  <li>
+                    Transaction disputes should be
+                    reported as soon as reasonably
+                    possible.
+                  </li>
+
+                  <li>
+                    Resolution may require
+                    coordination with a payment
+                    provider or financial
+                    institution.
+                  </li>
                 </ul>
               </section>
 
-              {/* TOS Section 5 */}
-              <section id="tos-5" className="legal-section">
-                <h3>5. Loan Agreements</h3>
+              {/* TOS 5 */}
+              <section
+                id="tos-5"
+                className="legal-section"
+                aria-labelledby="tos-5-title"
+              >
+                <h3 id="tos-5-title">
+                  5. Loan Agreements
+                </h3>
+
                 <p>
-                  The TITech Community Capital Platform facilitates informal lending between group members. The
-                  following terms apply:
+                  Where the Platform supports
+                  community lending, loan arrangements
+                  may be established between authorized
+                  participants subject to the rules of
+                  their group and applicable law.
                 </p>
+
                 <ul>
-                  <li>Loan terms are agreed upon directly between borrower and lender</li>
-                  <li>The Platform does not guarantee loan repayment or enforce loan conditions</li>
-                  <li>Loan disputes must be resolved between the parties involved</li>
-                  <li>Interest rates and repayment schedules are determined by mutual agreement</li>
-                  <li>The Platform is not liable for loan defaults or disputes</li>
-                  <li>All loan agreements should be documented in writing</li>
-                  <li>Users acknowledge the risks associated with informal lending</li>
+                  <li>
+                    Loan terms should be clearly agreed
+                    by the relevant parties.
+                  </li>
+
+                  <li>
+                    Repayment schedules and applicable
+                    charges should be documented.
+                  </li>
+
+                  <li>
+                    TITech Community Capital does not
+                    guarantee repayment unless expressly
+                    stated in a separate binding
+                    agreement.
+                  </li>
+
+                  <li>
+                    Loan defaults and disputes may
+                    require direct resolution between
+                    the parties or appropriate legal
+                    processes.
+                  </li>
+
+                  <li>
+                    Users are responsible for
+                    understanding the risks associated
+                    with lending and borrowing.
+                  </li>
+
+                  <li>
+                    Loan arrangements must comply with
+                    applicable laws and regulatory
+                    requirements.
+                  </li>
                 </ul>
-                <div className="highlight">
-                  <strong>Important:</strong> TITech Community Capital is not a financial institution
-                  and does not provide financial advice. Always seek professional legal and
-                  financial counsel before entering into loan agreements.
+
+                <div
+                  className="highlight"
+                  role="note"
+                >
+                  <strong>
+                    Important:
+                  </strong>{' '}
+                  TITech Community Capital is a
+                  technology platform and does not, by
+                  itself, constitute a licensed financial
+                  institution or provider of personalized
+                  financial or legal advice. Obtain
+                  appropriate professional advice where
+                  necessary.
                 </div>
               </section>
 
-              {/* TOS Section 6 */}
-              <section id="tos-6" className="legal-section">
-                <h3>6. Limitation of Liability</h3>
+              {/* TOS 6 */}
+              <section
+                id="tos-6"
+                className="legal-section"
+                aria-labelledby="tos-6-title"
+              >
+                <h3 id="tos-6-title">
+                  6. Limitation of Liability
+                </h3>
+
                 <p>
-                  To the fullest extent permitted by law, TITech Community Capital shall not be liable
-                  for any indirect, incidental, special, consequential, or punitive damages,
-                  including lost profits, even if advised of the possibility of such damages.
+                  To the fullest extent permitted by
+                  applicable law, TITech Community
+                  Capital will not be liable for
+                  indirect, incidental, special,
+                  consequential, or punitive damages
+                  arising from use of the Platform,
+                  including loss of profits, revenue,
+                  data, or business opportunities.
                 </p>
+
                 <p>
-                  In no event shall TITech Community Capital's total liability to you exceed the amount
-                  you have paid to TITech Community Capital in the 12 months preceding the event giving
-                  rise to liability.
+                  Nothing in these Terms excludes or
+                  limits liability that cannot lawfully
+                  be excluded or limited under
+                  applicable law.
                 </p>
+
                 <p>
-                  Some jurisdictions do not allow the exclusion of certain warranties or limitation
-                  of liability, so some of the above limitations may not apply to you. In such
-                  cases, our liability will be limited to the maximum extent permitted by applicable
-                  law.
+                  Where a limitation of liability is
+                  legally enforceable, TITech Community
+                  Capital&apos;s aggregate liability will
+                  be limited to the maximum extent
+                  permitted by applicable law.
                 </p>
               </section>
             </section>
 
-            {/* ==================== PRIVACY POLICY ==================== */}
-            <section className="legal-major-section">
-              <h2 className="major-title">Privacy Policy</h2>
-              <p className="section-update">Last updated: January 15, 2026</p>
+            {/* ================================================================
+             * PRIVACY POLICY
+             * ============================================================ */}
 
-              {/* PP Section 1 */}
-              <section id="pp-1" className="legal-section">
-                <h3>1. Information We Collect</h3>
+            <section
+              className="legal-major-section"
+              aria-labelledby="privacy-title"
+            >
+              <div className="legal-major-heading">
+                <div
+                  className="legal-major-icon"
+                  aria-hidden="true"
+                >
+                  <Lock size={24} />
+                </div>
+
+                <div>
+                  <h2
+                    id="privacy-title"
+                    className="major-title"
+                  >
+                    Privacy Policy
+                  </h2>
+
+                  <p className="section-update">
+                    Last updated:{' '}
+                    {LEGAL_LAST_UPDATED}
+                  </p>
+                </div>
+              </div>
+
+              {/* PP 1 */}
+              <section
+                id="pp-1"
+                className="legal-section"
+                aria-labelledby="pp-1-title"
+              >
+                <h3 id="pp-1-title">
+                  1. Information We Collect
+                </h3>
+
                 <p>
-                  We collect information you provide directly to us, such as when you create an
-                  account, including:
+                  We collect information necessary to
+                  operate the TITech Community Capital
+                  Platform, provide requested services,
+                  maintain security, and comply with
+                  applicable legal obligations.
                 </p>
-                <h4>Personal Information:</h4>
-                <ul>
-                  <li>Name and email address</li>
-                  <li>Phone number and physical address</li>
-                  <li>Date of birth and identification information</li>
-                  <li>Financial information (bank account details, payment method)</li>
-                  <li>Profile picture and biographical information</li>
-                </ul>
-                <h4>Automatically Collected Information:</h4>
+
+                <h4>
+                  Information You Provide
+                </h4>
+
                 <ul>
                   <li>
-                    Device information (device type, operating system, unique device identifiers)
+                    Name and contact information.
                   </li>
-                  <li>Log information (IP address, access times, pages viewed, referrer URL)</li>
-                  <li>Location information (with your permission)</li>
-                  <li>Cookies and similar tracking technologies</li>
+
+                  <li>
+                    Phone number and address
+                    information.
+                  </li>
+
+                  <li>
+                    Identification and verification
+                    information where required.
+                  </li>
+
+                  <li>
+                    Financial and transaction-related
+                    information necessary to provide
+                    requested services.
+                  </li>
+
+                  <li>
+                    Profile and account information
+                    you choose to provide.
+                  </li>
+                </ul>
+
+                <h4>
+                  Automatically Collected
+                  Information
+                </h4>
+
+                <ul>
+                  <li>
+                    Device type, operating system,
+                    browser, and application
+                    information.
+                  </li>
+
+                  <li>
+                    IP address, timestamps, access
+                    records, and technical logs.
+                  </li>
+
+                  <li>
+                    Security and fraud-prevention
+                    signals.
+                  </li>
+
+                  <li>
+                    Cookies and similar technologies
+                    where applicable.
+                  </li>
+
+                  <li>
+                    Location information where
+                    enabled and permitted.
+                  </li>
                 </ul>
               </section>
 
-              {/* PP Section 2 */}
-              <section id="pp-2" className="legal-section">
-                <h3>2. How We Use Information</h3>
-                <p>We use the information we collect to:</p>
+              {/* PP 2 */}
+              <section
+                id="pp-2"
+                className="legal-section"
+                aria-labelledby="pp-2-title"
+              >
+                <h3 id="pp-2-title">
+                  2. How We Use Information
+                </h3>
+
+                <p>
+                  We may use collected information to:
+                </p>
+
                 <ul>
-                  <li>Provide, maintain, and improve the Platform and our services</li>
-                  <li>Process transactions and send related information</li>
-                  <li>Send promotional communications (with your opt-in consent)</li>
-                  <li>Respond to your comments, questions, and requests</li>
-                  <li>Prevent fraud and enhance the security of the Platform</li>
-                  <li>Comply with legal obligations and enforce our terms</li>
-                  <li>Monitor and analyze trends, usage, and activities</li>
                   <li>
-                    Personalize your experience and deliver content relevant to your interests
+                    Provide, operate, maintain, and
+                    improve the Platform.
+                  </li>
+
+                  <li>
+                    Authenticate users and manage
+                    accounts.
+                  </li>
+
+                  <li>
+                    Process, record, reconcile, and
+                    communicate transaction
+                    information.
+                  </li>
+
+                  <li>
+                    Detect, investigate, and prevent
+                    fraud, abuse, unauthorized
+                    activity, and security incidents.
+                  </li>
+
+                  <li>
+                    Provide customer support and
+                    respond to inquiries.
+                  </li>
+
+                  <li>
+                    Send service communications and,
+                    where legally permitted,
+                    promotional communications.
+                  </li>
+
+                  <li>
+                    Meet legal, regulatory,
+                    accounting, and compliance
+                    obligations.
+                  </li>
+
+                  <li>
+                    Analyze system performance and
+                    improve reliability and user
+                    experience.
                   </li>
                 </ul>
               </section>
 
-              {/* PP Section 3 */}
-              <section id="pp-3" className="legal-section">
-                <h3>3. Data Security</h3>
+              {/* PP 3 */}
+              <section
+                id="pp-3"
+                className="legal-section"
+                aria-labelledby="pp-3-title"
+              >
+                <h3 id="pp-3-title">
+                  3. Data Security
+                </h3>
+
                 <p>
-                  We implement appropriate technical and organizational measures to protect your
-                  personal information against unauthorized access, alteration, disclosure, or
-                  destruction. These measures include:
+                  TITech Community Capital maintains
+                  technical and organizational safeguards
+                  designed to protect personal
+                  information against unauthorized
+                  access, alteration, disclosure,
+                  destruction, and misuse.
                 </p>
+
                 <ul>
-                  <li>End-to-end encryption for sensitive data transmission</li>
-                  <li>Secure password hashing and salting</li>
-                  <li>Regular security audits and penetration testing</li>
-                  <li>Limited access to personal information to authorized personnel only</li>
-                  <li>Secure data storage with redundant backups</li>
-                  <li>SSL/TLS encryption for all communications</li>
+                  <li>
+                    Encryption for sensitive data in
+                    transit.
+                  </li>
+
+                  <li>
+                    Secure credential storage and
+                    authentication controls.
+                  </li>
+
+                  <li>
+                    Access controls based on
+                    operational requirements and
+                    authorization.
+                  </li>
+
+                  <li>
+                    Security monitoring and audit
+                    logging.
+                  </li>
+
+                  <li>
+                    Backup and recovery controls
+                    appropriate to the service.
+                  </li>
+
+                  <li>
+                    Security testing and vulnerability
+                    management processes.
+                  </li>
                 </ul>
+
                 <p>
-                  However, no method of transmission over the Internet is 100% secure. While we
-                  strive to protect your information, we cannot guarantee absolute security.
+                  No internet-based service can
+                  guarantee absolute security. Users
+                  should also protect their credentials
+                  and promptly report suspected
+                  unauthorized activity.
                 </p>
               </section>
 
-              {/* PP Section 4 */}
-              <section id="pp-4" className="legal-section">
-                <h3>4. Your Privacy Rights</h3>
+              {/* PP 4 */}
+              <section
+                id="pp-4"
+                className="legal-section"
+                aria-labelledby="pp-4-title"
+              >
+                <h3 id="pp-4-title">
+                  4. Your Privacy Rights
+                </h3>
+
                 <p>
-                  Depending on your location, you may have certain rights regarding your personal
-                  information, including:
+                  Depending on applicable law and your
+                  location, you may have rights
+                  concerning your personal information,
+                  including:
                 </p>
+
                 <ul>
                   <li>
-                    <strong>Right to Access:</strong> You have the right to request and obtain a
-                    copy of your personal data
+                    <strong>
+                      Access:
+                    </strong>{' '}
+                    Request access to personal
+                    information we hold about you.
                   </li>
+
                   <li>
-                    <strong>Right to Rectification:</strong> You can request correction of
-                    inaccurate information
+                    <strong>
+                      Rectification:
+                    </strong>{' '}
+                    Request correction of inaccurate
+                    or incomplete information.
                   </li>
+
                   <li>
-                    <strong>Right to Erasure:</strong> You may request deletion of your data under
-                    certain conditions
+                    <strong>
+                      Erasure:
+                    </strong>{' '}
+                    Request deletion where legally
+                    permitted.
                   </li>
+
                   <li>
-                    <strong>Right to Data Portability:</strong> You can request your data in a
-                    portable format
+                    <strong>
+                      Restriction:
+                    </strong>{' '}
+                    Request restriction of certain
+                    processing activities where
+                    applicable.
                   </li>
+
                   <li>
-                    <strong>Right to Withdraw Consent:</strong> You can withdraw consent for data
-                    processing at any time
+                    <strong>
+                      Portability:
+                    </strong>{' '}
+                    Request applicable personal
+                    information in a portable format.
                   </li>
+
                   <li>
-                    <strong>Right to Lodge Complaints:</strong> You can file complaints with
-                    applicable data protection authorities
+                    <strong>
+                      Withdrawal of Consent:
+                    </strong>{' '}
+                    Withdraw consent where processing
+                    relies on consent.
+                  </li>
+
+                  <li>
+                    <strong>
+                      Complaint:
+                    </strong>{' '}
+                    Lodge a complaint with the relevant
+                    data protection authority.
                   </li>
                 </ul>
+
                 <p>
-                  To exercise any of these rights, please contact us using the information provided
-                  in the Contact Legal section.
+                  Some rights are subject to legal,
+                  regulatory, contractual, security, and
+                  operational limitations.
                 </p>
               </section>
 
-              {/* PP Section 5 */}
-              <section id="pp-5" className="legal-section">
-                <h3>5. Cookies & Tracking</h3>
+              {/* PP 5 */}
+              <section
+                id="pp-5"
+                className="legal-section"
+                aria-labelledby="pp-5-title"
+              >
+                <h3 id="pp-5-title">
+                  5. Cookies &amp; Tracking
+                </h3>
+
                 <p>
-                  We use cookies and similar tracking technologies to enhance your experience on the
-                  Platform. These include:
+                  The Platform may use cookies and
+                  related technologies to support
+                  functionality, security, preferences,
+                  analytics, and service performance.
                 </p>
-                <h4>Types of Cookies:</h4>
+
+                <h4>
+                  Potential Cookie Categories
+                </h4>
+
                 <ul>
                   <li>
-                    <strong>Essential Cookies:</strong> Required for basic functionality and
-                    security
+                    <strong>
+                      Essential:
+                    </strong>{' '}
+                    Required for functionality,
+                    authentication, and security.
                   </li>
+
                   <li>
-                    <strong>Performance Cookies:</strong> Help us understand how you use the
-                    Platform
+                    <strong>
+                      Performance:
+                    </strong>{' '}
+                    Used to understand service
+                    performance and usage.
                   </li>
+
                   <li>
-                    <strong>Functional Cookies:</strong> Remember your preferences and settings
+                    <strong>
+                      Functional:
+                    </strong>{' '}
+                    Used to remember preferences and
+                    settings.
                   </li>
+
                   <li>
-                    <strong>Marketing Cookies:</strong> Track your interactions for targeted
-                    communications
+                    <strong>
+                      Marketing:
+                    </strong>{' '}
+                    Where applicable and permitted,
+                    used for relevant communications
+                    and measurement.
                   </li>
                 </ul>
+
                 <p>
-                  You can control cookies through your browser settings. However, disabling some
-                  cookies may affect the functionality of the Platform.
+                  Browser settings can be used to
+                  manage certain cookies. Disabling
+                  essential technologies may affect
+                  Platform functionality.
                 </p>
               </section>
 
-              {/* PP Section 6 */}
-              <section id="pp-6" className="legal-section">
-                <h3>6. Third-Party Services</h3>
+              {/* PP 6 */}
+              <section
+                id="pp-6"
+                className="legal-section"
+                aria-labelledby="pp-6-title"
+              >
+                <h3 id="pp-6-title">
+                  6. Third-Party Services
+                </h3>
+
                 <p>
-                  We may share your information with third-party service providers who assist us in
-                  operating the Platform and providing services to you, including:
+                  TITech Community Capital may work
+                  with carefully selected third-party
+                  providers that support Platform
+                  operations.
                 </p>
+
                 <ul>
-                  <li>Payment processors and financial service providers</li>
-                  <li>Cloud storage and hosting providers</li>
-                  <li>Analytics and monitoring services</li>
-                  <li>Email service providers</li>
-                  <li>Customer support platforms</li>
+                  <li>
+                    Payment and financial service
+                    providers.
+                  </li>
+
+                  <li>
+                    Cloud hosting and infrastructure
+                    providers.
+                  </li>
+
+                  <li>
+                    Security, monitoring, and
+                    observability services.
+                  </li>
+
+                  <li>
+                    Email and communications
+                    providers.
+                  </li>
+
+                  <li>
+                    Customer support and operational
+                    services.
+                  </li>
                 </ul>
+
                 <p>
-                  These third parties are bound by confidentiality agreements and are required to
-                  use your information only for the purposes of providing services to us. We do not
-                  sell your personal information to third parties.
+                  Third-party providers may process
+                  information on our behalf subject to
+                  applicable agreements, security
+                  requirements, and legal obligations.
+                  TITech Community Capital does not sell
+                  personal information as a business
+                  model.
                 </p>
               </section>
             </section>
 
-            {/* ==================== DISCLAIMER ==================== */}
-            <section className="legal-major-section">
-              <h2 className="major-title">Disclaimer</h2>
+            {/* ================================================================
+             * DISCLAIMER
+             * ============================================================ */}
+
+            <section
+              className="legal-major-section"
+              aria-labelledby="disclaimer-title"
+            >
+              <div className="legal-major-heading">
+                <div
+                  className="legal-major-icon"
+                  aria-hidden="true"
+                >
+                  <FileText size={24} />
+                </div>
+
+                <div>
+                  <h2
+                    id="disclaimer-title"
+                    className="major-title"
+                  >
+                    Disclaimer
+                  </h2>
+                </div>
+              </div>
 
               {/* General Disclaimer */}
-              <section id="disclaimer" className="legal-section">
-                <h3>General Disclaimer</h3>
+              <section
+                id="disclaimer"
+                className="legal-section"
+                aria-labelledby="general-disclaimer-title"
+              >
+                <h3 id="general-disclaimer-title">
+                  General Disclaimer
+                </h3>
+
                 <p>
-                  The TITech Community Capital Platform is provided on an "as-is" and "as-available" basis
-                  without any representations, warranties, or conditions of any kind, either express
-                  or implied, including any implied warranties of merchantability, fitness for a
-                  particular purpose, or non-infringement.
+                  The TITech Community Capital Platform
+                  is provided on an “as-is” and
+                  “as-available” basis to the fullest
+                  extent permitted by applicable law.
                 </p>
-                <h4>Warranty Disclaimers:</h4>
+
+                <h4>
+                  Warranty Disclaimers
+                </h4>
+
                 <ul>
                   <li>
-                    We do not warrant that the Platform will be error-free, uninterrupted, or secure
+                    We do not guarantee uninterrupted
+                    or error-free availability.
                   </li>
-                  <li>We do not warrant that defects in the Platform will be corrected</li>
-                  <li>We do not guarantee specific results from the use of the Platform</li>
+
                   <li>
-                    Your use of third-party content accessed through the Platform is at your own
-                    risk
+                    We do not guarantee that all
+                    defects will be corrected
+                    immediately.
                   </li>
+
                   <li>
-                    We are not responsible for any loss or damage arising from your use of the
-                    Platform
+                    We do not guarantee specific
+                    outcomes from use of the Platform.
+                  </li>
+
+                  <li>
+                    Third-party services and content
+                    may be subject to separate terms
+                    and risks.
+                  </li>
+
+                  <li>
+                    Users remain responsible for
+                    decisions made using Platform
+                    information.
                   </li>
                 </ul>
               </section>
 
               {/* Financial Disclaimer */}
-              <section id="financial-disclaimer" className="legal-section">
-                <h3>Financial Disclaimer</h3>
-                <p>
+              <section
+                id="financial-disclaimer"
+                className="legal-section"
+                aria-labelledby="financial-disclaimer-title"
+              >
+                <h3 id="financial-disclaimer-title">
+                  Financial Disclaimer
+                </h3>
+
+                <div
+                  className="highlight"
+                  role="note"
+                >
                   <strong>
-                    IMPORTANT: TITech Community Capital is not a licensed financial institution and
-                    does not provide financial advice, investment advice, or legal advice.
-                  </strong>
-                </p>
-                <h4>Key Points:</h4>
+                    Important:
+                  </strong>{' '}
+                  TITech Community Capital is a
+                  technology platform and does not
+                  provide personalized financial,
+                  investment, tax, or legal advice unless
+                  expressly stated under a separate
+                  authorized service.
+                </div>
+
+                <h4>
+                  Key Points
+                </h4>
+
                 <ul>
                   <li>
-                    All financial transactions and loan agreements are conducted directly between
-                    group members at their own risk and discretion
+                    Financial activity may involve
+                    risks, including payment failure,
+                    delays, fraud, disputes, and
+                    counterparty default.
                   </li>
+
                   <li>
-                    The Platform makes no representations regarding the creditworthiness or
-                    reliability of borrowers
+                    Users should independently assess
+                    the risks associated with savings,
+                    lending, borrowing, and other
+                    financial activity.
                   </li>
+
                   <li>
-                    The Platform is not responsible for disputes, defaults, or any losses arising
-                    from loans or savings agreements
+                    TITech Community Capital does not
+                    guarantee the creditworthiness,
+                    reliability, or performance of
+                    another participant.
                   </li>
+
                   <li>
-                    Users should conduct their own due diligence and consult with professional
-                    financial and legal advisors
+                    Users should seek qualified
+                    professional advice where financial
+                    or legal advice is required.
                   </li>
-                  <li>Past performance does not guarantee future results</li>
+
                   <li>
-                    Interest rates and loan terms should comply with all applicable local, national,
-                    and international regulations
+                    Financial arrangements must comply
+                    with applicable laws and
+                    regulations.
                   </li>
+
                   <li>
-                    Users are solely responsible for ensuring compliance with all tax obligations
-                    and financial regulations
+                    Users remain responsible for
+                    applicable tax, reporting, and
+                    regulatory obligations.
                   </li>
                 </ul>
               </section>
 
               {/* Contact Legal */}
-              <section id="contact-legal" className="legal-section">
-                <h3>Contact Legal</h3>
+              <section
+                id="contact-legal"
+                className="legal-section"
+                aria-labelledby="contact-legal-title"
+              >
+                <h3 id="contact-legal-title">
+                  Contact Legal
+                </h3>
+
                 <p>
-                  If you have questions about these legal documents or our practices, or to exercise
-                  your privacy rights, please contact our legal team:
+                  If you have questions regarding these
+                  documents, privacy practices, or
+                  applicable user rights, please contact
+                  the TITech Community Capital legal team
+                  through the organization's approved
+                  contact channels.
                 </p>
-                <div className="contact-box">
+
+                <div
+                  className="contact-box"
+                  aria-label="Legal contact information"
+                >
                   <p>
-                    <strong>Email:</strong>{' '}
-                    <a href="mailto:legal@communitysavings.app">legal@communitysavings.app</a>
+                    <strong>
+                      Email:
+                    </strong>{' '}
+                    <a
+                      href={`mailto:${LEGAL_CONTACT_EMAIL}`}
+                    >
+                      {LEGAL_CONTACT_EMAIL}
+                    </a>
                   </p>
+
                   <p>
-                    <strong>Phone:</strong> <a href="tel:+256782397907">+256 (782) 397907</a>
+                    <strong>
+                      Phone:
+                    </strong>{' '}
+                    <a
+                      href={`tel:${LEGAL_CONTACT_PHONE_URI}`}
+                    >
+                      {LEGAL_CONTACT_PHONE}
+                    </a>
                   </p>
+
                   <p>
-                    <strong>Address:</strong> Kampala, Uganda
+                    <strong>
+                      Address:
+                    </strong>{' '}
+                    {LEGAL_CONTACT_ADDRESS}
                   </p>
+
                   <p>
-                    <strong>Response Time:</strong> We aim to respond to all inquiries within 5
-                    business days
+                    <strong>
+                      Target response time:
+                    </strong>{' '}
+                    We aim to respond to legal and
+                    privacy inquiries within 5 business
+                    days, subject to complexity,
+                    verification requirements, and
+                    applicable law.
                   </p>
                 </div>
               </section>
             </section>
 
-            {/* Footer Note */}
-            <section className="legal-footer-note">
+            {/* ================================================================
+             * Document Footer
+             * ============================================================ */}
+
+            <footer className="legal-footer-note">
               <p>
-                <strong>Last Updated:</strong> January 15, 2026 |<strong> Version:</strong> 1.0
+                <strong>
+                  Last Updated:
+                </strong>{' '}
+                {LEGAL_LAST_UPDATED}{' '}
+                <span aria-hidden="true">
+                  |
+                </span>{' '}
+                <strong>
+                  Version:
+                </strong>{' '}
+                {LEGAL_VERSION}
               </p>
+
               <p>
-                These legal documents are subject to change. We recommend reviewing them
+                These documents may be updated from time
+                to time to reflect changes in the Platform,
+                applicable law, regulatory requirements,
+                security practices, or business
+                operations. Users should review this page
                 periodically for updates.
               </p>
-            </section>
+
+              <p className="legal-footer-brand">
+                © {new Date().getFullYear()}{' '}
+                TITech Community Capital.
+                {' '}
+                All rights reserved.
+              </p>
+            </footer>
           </article>
 
-          {/* Scroll to Top Button */}
+          {/* ==================================================================
+           * Scroll To Top
+           * ================================================================= */}
+
           {showScrollTop && (
             <button
+              type="button"
               className="scroll-top-btn"
               onClick={scrollToTop}
-              aria-label="Scroll to top"
+              aria-label="Scroll to top of legal documents"
               title="Scroll to top"
             >
-              <ChevronUp size={20} />
+              <ChevronUp
+                size={20}
+                aria-hidden="true"
+              />
             </button>
           )}
         </main>

@@ -1,338 +1,3648 @@
-// config/db.js
-require('dotenv').config();
-const mongoose = require('mongoose');
-const logger = require('../utils/logger');
-
-// ============================================================================
-// Configuration with Defaults
-// ============================================================================
-const NODE_ENV = process.env.NODE_ENV || 'development';
-const MONGO_URI =
-  process.env.MONGO_URI || 'mongodb+srv://user:pass@cluster.mongodb.net/community_savings';
-const MONGO_URI_FALLBACK =
-  process.env.MONGO_URI_FALLBACK || 'mongodb://127.0.0.1:27017/community_savings';
-
-// Graceful startup configuration
-const GRACEFUL_STARTUP = process.env.GRACEFUL_STARTUP === 'true' || NODE_ENV === 'development';
-const SKIP_DB_CHECKS = process.env.SKIP_DB_CHECKS === 'true';
-
-// Connection retry configuration
-const MAX_RETRIES = GRACEFUL_STARTUP ? 10 : 5; // More retries in graceful mode
-const INITIAL_RETRY_DELAY = 2000; // 2 seconds
-const MAX_RETRY_DELAY = 30000; // 30 seconds
+'use strict';
 
 /**
- * Detect if running in Docker environment
- * Checks for common Docker indicators:
- * - DOCKER environment variable
- * - Docker container ID in cgroup
- * - Hostname patterns
- * @returns {boolean} true if running in Docker
+ * =============================================================================
+ * TITech Community Capital LTD
+ * TITech Community Capital Operating System
+ * =============================================================================
+ *
+ * File:
+ *   backend/config/db.js
+ *
+ * Purpose:
+ *   Enterprise production-grade MongoDB/Mongoose connection configuration and
+ *   lifecycle adapter.
+ *
+ * Responsibilities:
+ *   - Resolve MongoDB connection configuration from the canonical TITech config.
+ *   - Validate MongoDB connection URIs.
+ *   - Establish a single MongoDB connection.
+ *   - Prevent duplicate/concurrent connection attempts.
+ *   - Support controlled retry with exponential backoff and jitter.
+ *   - Expose readiness and health state.
+ *   - Handle runtime MongoDB connection events.
+ *   - Support graceful shutdown.
+ *   - Never call process.exit() from the database module.
+ *   - Integrate with TITech logging, observability and readiness.
+ *   - Preserve compatibility with existing connectDB() consumers.
+ *
+ * IMPORTANT:
+ *
+ *   This module owns MongoDB CONNECTION LIFECYCLE.
+ *
+ *   It does NOT:
+ *     - define Mongoose models.
+ *     - execute business queries.
+ *     - implement repositories.
+ *     - implement financial transactions.
+ *     - implement ledger operations.
+ *     - implement idempotency logic.
+ *     - decide application process exit behavior.
+ *
+ *   Application/bootstrap orchestration owns process termination.
+ *
+ * =============================================================================
+ *
+ * Canonical lifecycle:
+ *
+ *   environment
+ *       ↓
+ *   configuration
+ *       ↓
+ *   logger
+ *       ↓
+ *   observability
+ *       ↓
+ *   resilience
+ *       ↓
+ *   database
+ *       ↓
+ *   services
+ *       ↓
+ *   middleware
+ *       ↓
+ *   routes
+ *       ↓
+ *   server
+ *
+ * =============================================================================
  */
-function isDockerEnvironment() {
-  // Check DOCKER environment variable
-  if (process.env.DOCKER === 'true' || process.env.DOCKER === '1') {
+
+const fs =
+  require('node:fs');
+
+const mongoose =
+  require('mongoose');
+
+/**
+ * -----------------------------------------------------------------------------
+ * Logger
+ * -----------------------------------------------------------------------------
+ */
+
+let loggerModule = null;
+
+try {
+  // eslint-disable-next-line global-require
+  loggerModule =
+    require('../utils/logger');
+} catch {
+  loggerModule = null;
+}
+
+/**
+ * -----------------------------------------------------------------------------
+ * Canonical configuration
+ * -----------------------------------------------------------------------------
+ */
+
+let configProvider = null;
+
+try {
+  // eslint-disable-next-line global-require
+  configProvider =
+    require('./configProvider');
+} catch {
+  configProvider = null;
+}
+
+let baseConfig = null;
+
+try {
+  // eslint-disable-next-line global-require
+  baseConfig =
+    require('./index');
+} catch {
+  baseConfig = null;
+}
+
+/**
+ * -----------------------------------------------------------------------------
+ * Optional readiness integration
+ * -----------------------------------------------------------------------------
+ */
+
+let readinessModule = null;
+
+try {
+  // eslint-disable-next-line global-require
+  readinessModule =
+    require('../bootstrap/readinessState');
+} catch {
+  readinessModule = null;
+}
+
+/**
+ * -----------------------------------------------------------------------------
+ * Optional observability integration
+ * -----------------------------------------------------------------------------
+ */
+
+let observabilityModule = null;
+
+try {
+  // eslint-disable-next-line global-require
+  observabilityModule =
+    require('../bootstrap/observability');
+} catch {
+  observabilityModule = null;
+}
+
+/**
+ * -----------------------------------------------------------------------------
+ * Optional startup error integration
+ * -----------------------------------------------------------------------------
+ */
+
+let startupErrors = null;
+
+try {
+  // eslint-disable-next-line global-require
+  startupErrors =
+    require('../bootstrap/startupErrors');
+} catch {
+  startupErrors = null;
+}
+
+/**
+ * =============================================================================
+ * Constants
+ * =============================================================================
+ */
+
+const COMPONENT =
+  'database';
+
+const SERVICE_NAME =
+  process.env.OTEL_SERVICE_NAME ||
+  process.env.SERVICE_NAME ||
+  'titech-backend';
+
+const APPLICATION_NAME =
+  process.env.APP_NAME ||
+  'titech-community-capital';
+
+const DATABASE_STATES =
+  Object.freeze({
+    CREATED:
+      'created',
+
+    CONNECTING:
+      'connecting',
+
+    CONNECTED:
+      'connected',
+
+    DISCONNECTED:
+      'disconnected',
+
+    DEGRADED:
+      'degraded',
+
+    STOPPING:
+      'stopping',
+
+    STOPPED:
+      'stopped',
+
+    FAILED:
+      'failed',
+
+    SKIPPED:
+      'skipped',
+  });
+
+const DEFAULTS =
+  Object.freeze({
+    nodeEnv:
+      'development',
+
+    databaseName:
+      'titech',
+
+    gracefulStartup:
+      false,
+
+    skipChecks:
+      false,
+
+    maxRetries:
+      5,
+
+    initialRetryDelayMs:
+      2_000,
+
+    maxRetryDelayMs:
+      30_000,
+
+    retryJitterRatio:
+      0.10,
+
+    connectTimeoutMs:
+      30_000,
+
+    serverSelectionTimeoutMS:
+      10_000,
+
+    socketTimeoutMS:
+      45_000,
+
+    heartbeatFrequencyMS:
+      10_000,
+
+    maxPoolSize:
+      10,
+
+    minPoolSize:
+      2,
+
+    maxConnecting:
+      2,
+
+    autoIndex:
+      false,
+
+    autoCreate:
+      false,
+
+    retryWrites:
+      true,
+
+    directConnection:
+      false,
+
+    shutdownTimeoutMs:
+      30_000,
+
+    healthTimeoutMs:
+      5_000,
+
+    retryOnTransientErrors:
+      true,
+
+    fallbackEnabled:
+      false,
+
+    fallbackMaxRetries:
+      2,
+  });
+
+const DEFAULT_DATABASE_URI =
+  null;
+
+const DEFAULT_FALLBACK_URI =
+  null;
+
+/**
+ * =============================================================================
+ * Errors
+ * =============================================================================
+ */
+
+class DatabaseConfigError extends Error {
+  constructor(
+    message,
+    options = {},
+  ) {
+    super(message);
+
+    this.name =
+      'DatabaseConfigError';
+
+    this.code =
+      options.code ||
+      'DATABASE_CONFIG_ERROR';
+
+    this.phase =
+      options.phase ||
+      null;
+
+    this.cause =
+      options.cause ||
+      null;
+
+    this.details =
+      Object.freeze({
+        ...(options.details || {}),
+      });
+
+    Error.captureStackTrace?.(
+      this,
+      DatabaseConfigError,
+    );
+  }
+}
+
+/**
+ * =============================================================================
+ * Utility
+ * =============================================================================
+ */
+
+function getLogger() {
+  try {
+    return (
+      loggerModule?.getLogger?.() ||
+      loggerModule?.logger ||
+      loggerModule
+    );
+  } catch {
+    return null;
+  }
+}
+
+function log(
+  level,
+  payload,
+  message,
+) {
+  const logger =
+    getLogger();
+
+  try {
+    if (
+      logger &&
+      typeof logger[level] ===
+        'function'
+    ) {
+      logger[level](
+        {
+          component:
+            COMPONENT,
+
+          service:
+            SERVICE_NAME,
+
+          application:
+            APPLICATION_NAME,
+
+          ...payload,
+        },
+        message,
+      );
+
+      return;
+    }
+  } catch {
+    // Fall through to console.
+  }
+
+  const text =
+    `[${COMPONENT}] ${message}`;
+
+  if (
+    level === 'error' ||
+    level === 'fatal'
+  ) {
+    process.stderr.write(
+      `${text}\n`,
+    );
+  } else {
+    process.stdout.write(
+      `${text}\n`,
+    );
+  }
+}
+
+function env(
+  name,
+  fallback = undefined,
+) {
+  const value =
+    process.env[name];
+
+  if (
+    value ===
+      undefined ||
+    value ===
+      null ||
+    value ===
+      ''
+  ) {
+    return fallback;
+  }
+
+  return String(
+    value,
+  ).trim();
+}
+
+function asBoolean(
+  value,
+  fallback,
+) {
+  if (
+    value ===
+      undefined ||
+    value ===
+      null ||
+    value ===
+      ''
+  ) {
+    return fallback;
+  }
+
+  if (
+    typeof value ===
+    'boolean'
+  ) {
+    return value;
+  }
+
+  const normalized =
+    String(value)
+      .trim()
+      .toLowerCase();
+
+  if (
+    [
+      '1',
+      'true',
+      'yes',
+      'on',
+      'enabled',
+    ].includes(
+      normalized,
+    )
+  ) {
     return true;
   }
 
-  // Check cgroup file for Docker/container signatures
+  if (
+    [
+      '0',
+      'false',
+      'no',
+      'off',
+      'disabled',
+    ].includes(
+      normalized,
+    )
+  ) {
+    return false;
+  }
+
+  return fallback;
+}
+
+function asPositiveInteger(
+  value,
+  fallback,
+) {
+  if (
+    value ===
+      undefined ||
+    value ===
+      null ||
+    value ===
+      ''
+  ) {
+    return fallback;
+  }
+
+  const parsed =
+    Number(value);
+
+  if (
+    !Number.isInteger(
+      parsed,
+    ) ||
+    parsed <= 0
+  ) {
+    return fallback;
+  }
+
+  return parsed;
+}
+
+function asFloat(
+  value,
+  fallback,
+) {
+  if (
+    value ===
+      undefined ||
+    value ===
+      null ||
+    value ===
+      ''
+  ) {
+    return fallback;
+  }
+
+  const parsed =
+    Number(value);
+
+  return Number.isFinite(
+    parsed,
+  )
+    ? parsed
+    : fallback;
+}
+
+function sleep(
+  milliseconds,
+) {
+  return new Promise(
+    resolve => {
+      const timer =
+        setTimeout(
+          resolve,
+          milliseconds,
+        );
+
+      timer.unref?.();
+    },
+  );
+}
+
+function elapsedMs(
+  startedAt,
+) {
+  return (
+    Number(
+      process.hrtime.bigint() -
+        startedAt,
+    ) / 1_000_000
+  );
+}
+
+function normalizeError(
+  error,
+) {
+  if (
+    error instanceof
+    Error
+  ) {
+    return error;
+  }
+
+  return new Error(
+    error?.message ||
+      String(error),
+  );
+}
+
+function withTimeout(
+  fn,
+  timeoutMs,
+  label,
+) {
+  let timer;
+
+  const operation =
+    Promise.resolve().then(
+      fn,
+    );
+
+  const timeout =
+    new Promise(
+      (_, reject) => {
+        timer =
+          setTimeout(
+            () => {
+              reject(
+                new DatabaseConfigError(
+                  `${label} timed out after ${timeoutMs}ms.`,
+                  {
+                    code:
+                      'DATABASE_OPERATION_TIMEOUT',
+                  },
+                ),
+              );
+            },
+            timeoutMs,
+          );
+
+        timer.unref?.();
+      },
+    );
+
+  return Promise.race([
+    operation,
+    timeout,
+  ]).finally(
+    () => {
+      if (timer) {
+        clearTimeout(
+          timer,
+        );
+      }
+    },
+  );
+}
+
+/**
+ * =============================================================================
+ * Docker / container detection
+ * =============================================================================
+ */
+
+function isDockerEnvironment() {
+  const explicit =
+    env(
+      'DOCKER',
+    );
+
+  if (
+    explicit !==
+      undefined &&
+    explicit !==
+      null
+  ) {
+    if (
+      asBoolean(
+        explicit,
+        false,
+      )
+    ) {
+      return true;
+    }
+  }
+
   try {
-    const fs = require('fs');
-    const cgroup = fs.readFileSync('/proc/self/cgroup', 'utf8');
-    return /docker|container|kubernetes|kubepods/.test(cgroup);
-  } catch (e) {
-    // File doesn't exist on non-Linux or not in container
+    const cgroup =
+      fs.readFileSync(
+        '/proc/self/cgroup',
+        'utf8',
+      );
+
+    return (
+      /docker|containerd|kubernetes|kubepods/i.test(
+        cgroup,
+      )
+    );
+  } catch {
     return false;
   }
 }
 
 /**
- * Validate MongoDB URI format
- * - mongodb:// URIs require a port
- * - mongodb+srv:// URIs should NOT have a port (DNS SRV records handle it)
- * @param {string} uri - MongoDB URI to validate
- * @returns {object} { isValid: boolean, error: string|null, isSRV: boolean }
+ * =============================================================================
+ * Environment helpers
+ * =============================================================================
  */
-function validateMongoURI(uri) {
-  if (!uri) {
-    return { isValid: false, error: 'URI is empty or undefined', isSRV: false };
+
+function getNodeEnvironment() {
+  return (
+    configProvider?.getEnvironment?.() ||
+    baseConfig?.environment ||
+    process.env.NODE_ENV ||
+    DEFAULTS.nodeEnv
+  );
+}
+
+function isProduction() {
+  return (
+    getNodeEnvironment() ===
+    'production'
+  );
+}
+
+function isDevelopment() {
+  return (
+    getNodeEnvironment() ===
+    'development'
+  );
+}
+
+function isTest() {
+  return (
+    getNodeEnvironment() ===
+    'test'
+  );
+}
+
+/**
+ * =============================================================================
+ * Configuration resolution
+ * =============================================================================
+ *
+ * Existing production deployments commonly use:
+ *
+ *   MONGO_URI
+ *   MONGODB_URI
+ *
+ * Fallback is opt-in. We deliberately DO NOT manufacture a public/default
+ * MongoDB URI. Silent fallback to an unrelated database is unsafe.
+ * =============================================================================
+ */
+
+function getRawDatabaseConfig() {
+  const provider =
+    configProvider?.getDatabaseConfig?.();
+
+  if (
+    provider &&
+    typeof provider ===
+      'object'
+  ) {
+    return provider;
   }
 
-  const isSRV = uri.startsWith('mongodb+srv://');
-  const isStandard = uri.startsWith('mongodb://');
+  if (
+    baseConfig?.database
+  ) {
+    return baseConfig.database;
+  }
 
-  if (!isSRV && !isStandard) {
+  if (
+    baseConfig?.db
+  ) {
+    return baseConfig.db;
+  }
+
+  return {};
+}
+
+function createDatabaseConfig(
+  options = {},
+) {
+  const raw =
+    getRawDatabaseConfig();
+
+  const nodeEnv =
+    options.nodeEnv ||
+    raw.environment ||
+    getNodeEnvironment();
+
+  const docker =
+    options.inDocker ??
+    isDockerEnvironment();
+
+  const production =
+    nodeEnv ===
+    'production';
+
+  const gracefulStartup =
+    options.gracefulStartup ??
+    asBoolean(
+      raw.gracefulStartup ??
+        env(
+          'GRACEFUL_STARTUP',
+        ),
+      production
+        ? DEFAULTS
+            .gracefulStartup
+        : true,
+    );
+
+  const skipChecks =
+    options.skipChecks ??
+    asBoolean(
+      raw.skipChecks ??
+        env(
+          'SKIP_DB_CHECKS',
+        ),
+      false,
+    );
+
+  const primaryUri =
+    options.uri ||
+    raw.uri ||
+    env(
+      'MONGO_URI',
+    ) ||
+    env(
+      'MONGODB_URI',
+    ) ||
+    DEFAULT_DATABASE_URI;
+
+  const fallbackUri =
+    options.fallbackUri ||
+    raw.fallbackUri ||
+    env(
+      'MONGO_URI_FALLBACK',
+    ) ||
+    env(
+      'MONGODB_URI_FALLBACK',
+    ) ||
+    DEFAULT_FALLBACK_URI;
+
+  const fallbackEnabled =
+    options.fallbackEnabled ??
+    asBoolean(
+      raw.fallbackEnabled ??
+        env(
+          'MONGO_FALLBACK_ENABLED',
+        ),
+      production
+        ? false
+        : DEFAULTS
+            .fallbackEnabled,
+    );
+
+  const config = {
+    component:
+      COMPONENT,
+
+    serviceName:
+      raw.serviceName ||
+      SERVICE_NAME,
+
+    applicationName:
+      raw.applicationName ||
+      APPLICATION_NAME,
+
+    nodeEnv,
+
+    production,
+
+    development:
+      nodeEnv ===
+      'development',
+
+    staging:
+      nodeEnv ===
+      'staging',
+
+    test:
+      nodeEnv ===
+      'test',
+
+    inDocker:
+      docker,
+
+    enabled:
+      options.enabled ??
+      asBoolean(
+        raw.enabled ??
+          env(
+            'DATABASE_ENABLED',
+          ),
+        true,
+      ),
+
+    required:
+      options.required ??
+      asBoolean(
+        raw.required ??
+          env(
+            'DATABASE_REQUIRED',
+          ),
+        true,
+      ),
+
+    gracefulStartup,
+
+    skipChecks,
+
+    uri:
+      primaryUri,
+
+    fallbackUri,
+
+    fallbackEnabled,
+
+    databaseName:
+      options.databaseName ||
+      raw.name ||
+      env(
+        'MONGODB_DB_NAME',
+      ) ||
+      env(
+        'MONGO_DATABASE',
+      ) ||
+      DEFAULTS.databaseName,
+
+    maxRetries:
+      asPositiveInteger(
+        options.maxRetries ??
+          raw.maxRetries ??
+          env(
+            'MONGO_MAX_RETRIES',
+          ),
+        DEFAULTS.maxRetries,
+      ),
+
+    initialRetryDelayMs:
+      asPositiveInteger(
+        options.initialRetryDelayMs ??
+          raw.initialRetryDelayMs ??
+          env(
+            'MONGO_INITIAL_RETRY_DELAY_MS',
+          ),
+        DEFAULTS.initialRetryDelayMs,
+      ),
+
+    maxRetryDelayMs:
+      asPositiveInteger(
+        options.maxRetryDelayMs ??
+          raw.maxRetryDelayMs ??
+          env(
+            'MONGO_MAX_RETRY_DELAY_MS',
+          ),
+        DEFAULTS.maxRetryDelayMs,
+      ),
+
+    retryJitterRatio:
+      Math.min(
+        Math.max(
+          asFloat(
+            options.retryJitterRatio ??
+              raw.retryJitterRatio ??
+              env(
+                'MONGO_RETRY_JITTER_RATIO',
+              ),
+            DEFAULTS.retryJitterRatio,
+          ),
+          0,
+        ),
+        1,
+      ),
+
+    connectTimeoutMs:
+      asPositiveInteger(
+        options.connectTimeoutMs ??
+          raw.connectTimeoutMs ??
+          env(
+            'MONGO_CONNECT_TIMEOUT_MS',
+          ),
+        DEFAULTS.connectTimeoutMs,
+      ),
+
+    serverSelectionTimeoutMS:
+      asPositiveInteger(
+        options.serverSelectionTimeoutMS ??
+          raw.serverSelectionTimeoutMS ??
+          env(
+            'MONGODB_SERVER_SELECTION_TIMEOUT_MS',
+          ),
+        DEFAULTS.serverSelectionTimeoutMS,
+      ),
+
+    socketTimeoutMS:
+      asPositiveInteger(
+        options.socketTimeoutMS ??
+          raw.socketTimeoutMS ??
+          env(
+            'MONGODB_SOCKET_TIMEOUT_MS',
+          ),
+        DEFAULTS.socketTimeoutMS,
+      ),
+
+    heartbeatFrequencyMS:
+      asPositiveInteger(
+        options.heartbeatFrequencyMS ??
+          raw.heartbeatFrequencyMS ??
+          env(
+            'MONGODB_HEARTBEAT_FREQUENCY_MS',
+          ),
+        DEFAULTS.heartbeatFrequencyMS,
+      ),
+
+    maxPoolSize:
+      asPositiveInteger(
+        options.maxPoolSize ??
+          raw.maxPoolSize ??
+          env(
+            'MONGODB_MAX_POOL_SIZE',
+          ),
+        DEFAULTS.maxPoolSize,
+      ),
+
+    minPoolSize:
+      asPositiveInteger(
+        options.minPoolSize ??
+          raw.minPoolSize ??
+          env(
+            'MONGODB_MIN_POOL_SIZE',
+          ),
+        DEFAULTS.minPoolSize,
+      ),
+
+    maxConnecting:
+      asPositiveInteger(
+        options.maxConnecting ??
+          raw.maxConnecting ??
+          env(
+            'MONGODB_MAX_CONNECTING',
+          ),
+        DEFAULTS.maxConnecting,
+      ),
+
+    autoIndex:
+      options.autoIndex ??
+      raw.autoIndex ??
+      asBoolean(
+        env(
+          'MONGODB_AUTO_INDEX',
+        ),
+        nodeEnv !==
+          'production',
+      ),
+
+    autoCreate:
+      options.autoCreate ??
+      raw.autoCreate ??
+      asBoolean(
+        env(
+          'MONGODB_AUTO_CREATE',
+        ),
+        nodeEnv !==
+          'production',
+      ),
+
+    retryWrites:
+      options.retryWrites ??
+      raw.retryWrites ??
+      asBoolean(
+        env(
+          'MONGODB_RETRY_WRITES',
+        ),
+        DEFAULTS.retryWrites,
+      ),
+
+    directConnection:
+      options.directConnection ??
+      raw.directConnection ??
+      asBoolean(
+        env(
+          'MONGODB_DIRECT_CONNECTION',
+        ),
+        DEFAULTS.directConnection,
+      ),
+
+    shutdownTimeoutMs:
+      asPositiveInteger(
+        options.shutdownTimeoutMs ??
+          raw.shutdownTimeoutMs ??
+          env(
+            'DATABASE_SHUTDOWN_TIMEOUT_MS',
+          ),
+        DEFAULTS.shutdownTimeoutMs,
+      ),
+
+    healthTimeoutMs:
+      asPositiveInteger(
+        options.healthTimeoutMs ??
+          raw.healthTimeoutMs ??
+          env(
+            'DATABASE_HEALTH_TIMEOUT_MS',
+          ),
+        DEFAULTS.healthTimeoutMs,
+      ),
+
+    retryOnTransientErrors:
+      options.retryOnTransientErrors ??
+      raw.retryOnTransientErrors ??
+      asBoolean(
+        env(
+          'MONGO_RETRY_TRANSIENT_ERRORS',
+        ),
+        DEFAULTS
+          .retryOnTransientErrors,
+      ),
+
+    fallbackMaxRetries:
+      asPositiveInteger(
+        options.fallbackMaxRetries ??
+          raw.fallbackMaxRetries ??
+          env(
+            'MONGO_FALLBACK_MAX_RETRIES',
+          ),
+        DEFAULTS.fallbackMaxRetries,
+      ),
+
+    options:
+      {
+        ...(raw.options ||
+          {}),
+        ...(options.connectionOptions ||
+          {}),
+      },
+  };
+
+  return Object.freeze(
+    config,
+  );
+}
+
+let configuration =
+  createDatabaseConfig();
+
+/**
+ * =============================================================================
+ * URI validation
+ * =============================================================================
+ */
+
+function validateMongoURI(
+  uri,
+) {
+  if (
+    typeof uri !==
+      'string' ||
+    uri.trim() ===
+      ''
+  ) {
     return {
-      isValid: false,
-      error: 'Invalid URI format. Must start with mongodb:// or mongodb+srv://',
-      isSRV: false,
+      isValid:
+        false,
+
+      error:
+        'MongoDB URI is empty or undefined.',
+
+      isSRV:
+        false,
     };
   }
 
-  // SRV URIs should NOT have an explicit port after the host
-  if (isSRV) {
-    const afterScheme = uri.substring(uri.indexOf('://') + 3);
-    const hostPart = afterScheme.split('/')[0];
-    // If hostPart contains a colon followed by digits at the end, it's a port
-    if (hostPart.match(/:\d+$/)) {
+  const value =
+    uri.trim();
+
+  const isSRV =
+    value.startsWith(
+      'mongodb+srv://',
+    );
+
+  const isStandard =
+    value.startsWith(
+      'mongodb://',
+    );
+
+  if (
+    !isSRV &&
+    !isStandard
+  ) {
+    return {
+      isValid:
+        false,
+
+      error:
+        'MongoDB URI must start with mongodb:// or mongodb+srv://.',
+
+      isSRV:
+        false,
+    };
+  }
+
+  try {
+    const parsed =
+      new URL(
+        value,
+      );
+
+    const hostname =
+      parsed.hostname;
+
+    if (
+      !hostname
+    ) {
       return {
-        isValid: false,
+        isValid:
+          false,
+
         error:
-          'mongodb+srv:// URIs should NOT include a port number (DNS SRV records handle connection)',
-        isSRV: true,
+          'MongoDB URI does not contain a valid hostname.',
+
+        isSRV,
       };
     }
-  }
 
-  // Standard URIs: basic sanity check (allow many valid variants)
-  if (isStandard) {
-    return { isValid: true, error: null, isSRV: false };
-  }
+    if (
+      isSRV &&
+      parsed.port
+    ) {
+      return {
+        isValid:
+          false,
 
-  return { isValid: true, error: null, isSRV };
+        error:
+          'mongodb+srv:// URIs must not specify an explicit port.',
+
+        isSRV:
+          true,
+      };
+    }
+
+    if (
+      isSRV &&
+      hostname.includes(
+        ':',
+      )
+    ) {
+      return {
+        isValid:
+          false,
+
+        error:
+          'mongodb+srv:// URI hostname is invalid.',
+
+        isSRV:
+          true,
+      };
+    }
+
+    return {
+      isValid:
+        true,
+
+      error:
+        null,
+
+      isSRV,
+
+      scheme:
+        isSRV
+          ? 'mongodb+srv'
+          : 'mongodb',
+
+      hostname,
+    };
+  } catch (error) {
+    return {
+      isValid:
+        false,
+
+      error:
+        `MongoDB URI parsing failed: ${error.message}`,
+
+      isSRV,
+    };
+  }
 }
 
 /**
- * Mask credentials in URI for safe logging
- * Replaces password with **** in URIs
- * @param {string} uri - Full MongoDB URI
- * @returns {string} URI with masked credentials
- */
-function maskCredentials(uri) {
-  try {
-    return uri.replace(/(:\/\/[^:]+:)[^@]+(@)/, '$1****$2');
-  } catch (e) {
+ * =============================================================================
+ * Safe URI masking
+ * ============================================================================= */
+
+function maskCredentials(
+  uri,
+) {
+  if (
+    typeof uri !==
+    'string'
+  ) {
     return uri;
   }
+
+  try {
+    const parsed =
+      new URL(
+        uri,
+      );
+
+    if (
+      parsed.username
+    ) {
+      parsed.username =
+        '***';
+    }
+
+    if (
+      parsed.password
+    ) {
+      parsed.password =
+        '***';
+    }
+
+    return parsed.toString();
+  } catch {
+    /**
+     * Fallback masking for malformed-but-loggable strings.
+     */
+    return uri.replace(
+      /\/\/([^:/@]+)(?::[^@]*)?@/g,
+      '//$1:***@',
+    );
+  }
 }
 
 /**
- * Resolve MongoDB URI based on environment and Docker detection
- * - Production: Always use MONGO_URI (Atlas SRV) unless forceFallback is true
- * - Development or Docker: Use MONGO_URI_FALLBACK (local/Docker MongoDB)
- * @param {boolean} forceFallback - when true, prefer fallback URI even in production
- * @returns {object} { uri: string, type: string, source: string, masked: string, inProduction: boolean, inDocker: boolean }
+ * =============================================================================
+ * URI resolution
+ * =============================================================================
  */
-const resolveMongoUri = (forceFallback = false) => {
-  const inProduction = NODE_ENV === 'production';
-  const inDocker = isDockerEnvironment();
 
-  let selectedUri, uriType, source;
+function resolveMongoUri(
+  options = {},
+) {
+  const config =
+    options.config ||
+    configuration;
 
-  if (inProduction && !forceFallback) {
-    // Production prefers Atlas SRV
-    selectedUri = MONGO_URI;
-    uriType = 'MongoDB Atlas (SRV)';
-    source = 'MONGO_URI';
-  } else if (inDocker || NODE_ENV === 'development' || forceFallback) {
-    // Development, Docker, or forced fallback uses local/fallback
-    selectedUri = MONGO_URI_FALLBACK;
-    uriType = inDocker ? 'Docker MongoDB' : 'Local MongoDB';
-    source = 'MONGO_URI_FALLBACK';
+  const forceFallback =
+    options.forceFallback ===
+    true;
+
+  const preferFallback =
+    options.preferFallback ===
+    true;
+
+  const production =
+    config.production;
+
+  let uri =
+    null;
+
+  let type =
+    null;
+
+  let source =
+    null;
+
+  if (
+    forceFallback ||
+    preferFallback
+  ) {
+    uri =
+      config.fallbackUri;
+
+    type =
+      config.inDocker
+        ? 'docker-fallback'
+        : 'fallback';
+
+    source =
+      'MONGO_URI_FALLBACK';
+  } else if (
+    production
+  ) {
+    uri =
+      config.uri;
+
+    type =
+      getUriType(
+        uri,
+      );
+
+    source =
+      'MONGO_URI';
   } else {
-    selectedUri = MONGO_URI_FALLBACK;
-    uriType = 'Local MongoDB';
-    source = 'MONGO_URI_FALLBACK';
-  }
+    /**
+     * In non-production, prefer explicit primary URI when provided.
+     * Fallback is only selected when the primary URI is absent.
+     */
+    if (
+      config.uri
+    ) {
+      uri =
+        config.uri;
 
-  if (!selectedUri) {
-    const defaultFallback = 'mongodb://127.0.0.1:27017/community_savings';
-    logger.warn(
-      `⚠️ ${source} not set. Using default fallback: ${maskCredentials(defaultFallback)}`
-    );
-    selectedUri = defaultFallback;
-    source = 'DEFAULT_FALLBACK';
+      type =
+        getUriType(
+          uri,
+        );
+
+      source =
+        'MONGO_URI';
+    } else if (
+      config.fallbackUri
+    ) {
+      uri =
+        config.fallbackUri;
+
+      type =
+        config.inDocker
+          ? 'docker-fallback'
+          : 'fallback';
+
+      source =
+        'MONGO_URI_FALLBACK';
+    }
   }
 
   return {
-    uri: selectedUri,
-    type: uriType,
-    source: source,
-    masked: maskCredentials(selectedUri),
-    inProduction,
-    inDocker,
+    uri,
+
+    type,
+
+    source,
+
+    masked:
+      maskCredentials(
+        uri,
+      ),
+
+    inProduction:
+      production,
+
+    inDocker:
+      config.inDocker,
+
+    isFallback:
+      source ===
+      'MONGO_URI_FALLBACK',
   };
-};
+}
 
-let isConnecting = false;
+function getUriType(
+  uri,
+) {
+  if (
+    !uri
+  ) {
+    return 'unknown';
+  }
 
-/**
- * Calculate exponential backoff with jitter
- * @param {number} attempt - Attempt number (starting from 1)
- * @returns {number} Delay in milliseconds
- */
-function getRetryDelay(attempt) {
-  // Exponential backoff: 2s, 4s, 8s, 16s, 30s max
-  const baseDelay = Math.min(INITIAL_RETRY_DELAY * Math.pow(2, attempt - 1), MAX_RETRY_DELAY);
-  // Add jitter (±10% randomness) to prevent thundering herd
-  const jitter = baseDelay * 0.1 * (Math.random() - 0.5);
-  return Math.floor(baseDelay + jitter);
+  if (
+    uri.startsWith(
+      'mongodb+srv://',
+    )
+  ) {
+    return 'mongodb-atlas-srv';
+  }
+
+  if (
+    uri.startsWith(
+      'mongodb://',
+    )
+  ) {
+    return 'mongodb-standard';
+  }
+
+  return 'unknown';
 }
 
 /**
- * Connect to MongoDB with exponential backoff retry strategy
- * Intelligently selects between MONGO_URI (production/Atlas) and
- * MONGO_URI_FALLBACK (development/Docker) based on environment.
- * If SRV/DNS errors are detected, it will attempt the fallback URI before exiting.
- * @param {number} attempt - Current attempt number (starting from 1)
- * @param {boolean} forceFallback - When true, prefer fallback URI even in production
+ * =============================================================================
+ * Retry policy
+ * =============================================================================
  */
-const connectDB = async (attempt = 1, forceFallback = false) => {
-  if (isConnecting && attempt > 1) return;
-  if (attempt === 1) isConnecting = true;
 
-  // Resolve URI based on environment and Docker detection
-  const uriConfig = resolveMongoUri(forceFallback);
-  const mongoUri = uriConfig.uri;
-
-  if (SKIP_DB_CHECKS) {
-  logger.warn('⚠️ SKIP_DB_CHECKS enabled — skipping MongoDB connection');
-  return;
-}
-
-  if (!mongoUri) {
-    logger.error(
-      '❌ MongoDB URI is missing. Check MONGO_URI and MONGO_URI_FALLBACK environment variables.'
+function getRetryDelay(
+  attempt,
+  config = configuration,
+) {
+  const exponential =
+    Math.min(
+      config.initialRetryDelayMs *
+        Math.pow(
+          2,
+          Math.max(
+            attempt - 1,
+            0,
+          ),
+        ),
+      config.maxRetryDelayMs,
     );
-    process.exit(1);
-  }
 
-  // Validate URI format
-  const validation = validateMongoURI(mongoUri);
-  if (!validation.isValid) {
-    logger.error(`❌ Invalid MongoDB URI format: ${validation.error}`);
-    logger.error(`   URI (masked): ${uriConfig.masked}`);
-    logger.error(`   Type: ${uriConfig.type}`);
-    logger.error(`   Source: ${uriConfig.source}`);
-    // If validation fails for SRV due to port, try fallback automatically
-    if (validation.isSRV && !forceFallback) {
-      logger.warn('⚠️ SRV URI validation failed; attempting fallback URI.');
-      isConnecting = false;
-      return connectDB(1, true);
-    }
-    process.exit(1);
-  }
+  const jitterRange =
+    exponential *
+    config.retryJitterRatio;
 
-  if (validation.warning) {
-    logger.warn(`⚠️ ${validation.warning}`);
-  }
+  const jitter =
+    (
+      Math.random() *
+      2 -
+      1
+    ) *
+    jitterRange;
 
+  return Math.max(
+    0,
+    Math.floor(
+      exponential +
+        jitter,
+    ),
+  );
+}
+
+/**
+ * =============================================================================
+ * Error classification
+ * ============================================================================= */
+
+function getErrorText(
+  error,
+) {
+  return [
+    error?.name,
+    error?.code,
+    error?.message,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+}
+
+function isAuthenticationError(
+  error,
+) {
+  const text =
+    getErrorText(
+      error,
+    );
+
+  return /authentication failed|auth error|authenticationexception|sasl|bad auth|invalid username|unauthorized/i.test(
+    text,
+  );
+}
+
+function isInvalidUriError(
+  error,
+) {
+  const text =
+    getErrorText(
+      error,
+    );
+
+  return /invalid connection string|invalid scheme|invalid hostname|invalid uri|uri must/i.test(
+    text,
+  );
+}
+
+function isCertificateError(
+  error,
+) {
+  const text =
+    getErrorText(
+      error,
+    );
+
+  return /certificate|tls|ssl/i.test(
+    text,
+  );
+}
+
+function isSrvDnsError(
+  error,
+) {
+  const text =
+    getErrorText(
+      error,
+    );
+
+  return /querysrv|enotfound|eai_again|servfail|dns|srv/i.test(
+    text,
+  );
+}
+
+function isNetworkError(
+  error,
+) {
+  const text =
+    getErrorText(
+      error,
+    );
+
+  return /econnrefused|econnreset|etimedout|ehostunreach|enetunreach|network|serverselection|mongo.*network|topology/i.test(
+    text,
+  );
+}
+
+function isTransientError(
+  error,
+) {
+  return (
+    isNetworkError(
+      error,
+    ) ||
+    isSrvDnsError(
+      error,
+    ) ||
+    /timed out|temporary|unavailable|shutdown in progress|pool cleared/i.test(
+      getErrorText(
+        error,
+      ),
+    )
+  );
+}
+
+/**
+ * =============================================================================
+ * Readiness / observability integration
+ * =============================================================================
+ */
+
+function publishReadiness(
+  ready,
+  details = {},
+) {
   try {
-    logger.info(`🔌 Connecting to MongoDB (Attempt ${attempt}/${MAX_RETRIES})`);
-    logger.info(`   Type: ${uriConfig.type} | Source: ${uriConfig.source}`);
-    logger.info(`   URI (masked): ${uriConfig.masked}`);
+    const target =
+      readinessModule
+        ?.readinessState ||
+      readinessModule;
 
-    await mongoose.connect(mongoUri, {
-      maxPoolSize: 10,
-      minPoolSize: 2,
-      serverSelectionTimeoutMS: 10000,
-      socketTimeoutMS: 45000,
-      // Prevent automatic index creation in production for better control
-      autoIndex: NODE_ENV !== 'production',
-      // SRV URIs don't need retryWrites in connection options
-      retryWrites: !validation.isSRV,
-    });
-
-    logger.info(`✅ MongoDB connected successfully (${uriConfig.type})`);
-    isConnecting = false;
-  } catch (error) {
-    isConnecting = false;
-    const message = error && error.message ? error.message : String(error);
-
-    logger.error(`❌ MongoDB connection error (Attempt ${attempt}/${MAX_RETRIES}): ${message}`);
-    logger.error(`   Type: ${uriConfig.type}`);
-    logger.error(`   URI (masked): ${uriConfig.masked}`);
-
-    // Detect SRV/DNS/network errors and attempt fallback instead of exiting immediately
-    const isSrvDnsError = /querySrv|ENOTFOUND|ECONNREFUSED|EAI_AGAIN/i.test(message);
-    if (isSrvDnsError && !forceFallback) {
-      logger.warn('⚠️ Detected SRV/DNS error; attempting fallback URI before giving up.');
-      // Try fallback immediately (reset attempt counter for fallback)
-      return connectDB(1, true);
-    }
-
-    // Fail fast on configuration errors
     if (
-      message.includes('Invalid connection string') ||
-      message.includes('Invalid scheme') ||
-      message.includes('Invalid hostname')
+      !target
     ) {
-      logger.error('🛑 Invalid MongoDB URI configuration.');
-      logger.error(
-        `   Check that the URI format is correct: mongodb://host:port/db or mongodb+srv://...`
-      );
-      logger.error(`   For mongodb+srv:// URIs, ensure NO port number is specified.`);
-      logger.error(`   Current source: ${uriConfig.source}`);
-      process.exit(1);
-    }
-
-    // Fail fast on authentication errors (but retry network timeouts)
-    if (
-      /authentication failed|auth error|SASL authentication failed|Invalid username/i.test(message)
-    ) {
-      logger.error('🛑 MongoDB authentication failed.');
-      logger.error(`   Check credentials in ${uriConfig.source} environment variable.`);
-      logger.error(
-        `   Ensure username and password are URL-encoded if they contain special characters.`
-      );
-      logger.error(`   URI (masked): ${uriConfig.masked}`);
-      process.exit(1);
-    }
-
-    // Fail fast if URI points to wrong environment
-    if (message.includes('Certificate verification failed') && uriConfig.inProduction) {
-      logger.error('🛑 SSL/TLS certificate verification failed.');
-      logger.error(
-        `   This typically means you're trying to connect to MongoDB Atlas from an environment`
-      );
-      logger.error(`   without proper certificate validation. Check network/firewall settings.`);
-      process.exit(1);
-    }
-
-    // Retry network-related errors only
-    if (attempt < MAX_RETRIES) {
-      const delay = getRetryDelay(attempt);
-      logger.warn(
-        `🔄 Retrying MongoDB connection in ${delay / 1000}s (Attempt ${attempt + 1}/${MAX_RETRIES})`
-      );
-      logger.info(`   Will attempt to connect to: ${uriConfig.type}`);
-      setTimeout(() => connectDB(attempt + 1, forceFallback), delay);
       return;
     }
 
-    // Final failure after all retries exhausted
-    logger.error('🛑 MongoDB failed to connect after maximum retries.');
-    logger.error(`   Attempted ${MAX_RETRIES} connections to: ${uriConfig.type}`);
-    logger.error(`   Configuration source: ${uriConfig.source}`);
-    logger.error(`   Last error: ${message}`);
-    logger.error('   Troubleshooting:');
-    logger.error(`   - If using mongodb://, ensure MongoDB is running at the specified host:port`);
-    logger.error(`   - If using mongodb+srv://, ensure you have network access to MongoDB Atlas`);
-    logger.error(`   - Check that credentials in ${uriConfig.source} are correct and URL-encoded`);
-    logger.error(`   - Verify firewall/security group allows connections`);
+    if (
+      ready &&
+      typeof target.markReady ===
+        'function'
+    ) {
+      /**
+       * Prefer dependency-aware registration when available.
+       */
+      if (
+        typeof target.has ===
+          'function' &&
+        typeof target.register ===
+          'function'
+      ) {
+        if (
+          !target.has(
+            COMPONENT,
+          )
+        ) {
+          target.register({
+            name:
+              COMPONENT,
 
-    // In graceful startup mode, don't exit - let the app start with limited functionality
-    if (GRACEFUL_STARTUP) {
-      logger.error('');
-      logger.error('🚨 GRACEFUL STARTUP MODE: Application will continue without MongoDB!');
-      logger.error('   Some features will be limited until MongoDB becomes available.');
-      logger.error('   The application will attempt to reconnect automatically.');
-      logger.error('   To disable graceful startup, set GRACEFUL_STARTUP=false');
-      logger.error('');
-      return; // Don't exit, let the app start
+            severity:
+              configuration.required
+                ? 'critical'
+                : 'required',
+
+            enabled:
+              true,
+
+            readiness:
+              async () => ({
+                ready:
+                  databaseState.ready,
+              }),
+
+            health:
+              async () =>
+                health(),
+
+            metadata: {
+              component:
+                COMPONENT,
+
+              service:
+                SERVICE_NAME,
+            },
+          });
+        }
+
+        return;
+      }
     }
 
-    process.exit(1);
+    if (
+      !ready &&
+      typeof target.markNotReady ===
+        'function'
+    ) {
+      target.markNotReady(
+        details.reason ||
+          'database-not-ready',
+        {
+          component:
+            COMPONENT,
+
+          ...details,
+        },
+      );
+    }
+  } catch {
+    /**
+     * Readiness integration must not mask database lifecycle failures.
+     */
   }
+}
+
+function emitTelemetry(
+  event,
+  payload = {},
+) {
+  try {
+    if (
+      typeof observabilityModule?.emitEvent ===
+        'function'
+    ) {
+      observabilityModule.emitEvent(
+        event,
+        {
+          component:
+            COMPONENT,
+
+          service:
+            SERVICE_NAME,
+
+          ...payload,
+        },
+      );
+
+      return;
+    }
+
+    if (
+      observabilityModule
+        ?.observability
+        ?.emitEvent
+    ) {
+      observabilityModule
+        .observability
+        .emitEvent(
+          event,
+          {
+            component:
+              COMPONENT,
+
+            service:
+              SERVICE_NAME,
+
+            ...payload,
+          },
+        );
+    }
+  } catch {
+    // Telemetry must never block database lifecycle.
+  }
+}
+
+/**
+ * =============================================================================
+ * Runtime state
+ * =============================================================================
+ */
+
+const databaseState = {
+  state:
+    DATABASE_STATES.CREATED,
+
+  ready:
+    false,
+
+  connected:
+    false,
+
+  connecting:
+    false,
+
+  stopping:
+    false,
+
+  stopped:
+    false,
+
+  failed:
+    false,
+
+  degraded:
+    false,
+
+  initializedAt:
+    null,
+
+  connectedAt:
+    null,
+
+  disconnectedAt:
+    null,
+
+  lastHealthCheckAt:
+    null,
+
+  lastError:
+    null,
+
+  lastAttempt:
+    0,
+
+  attempts:
+    0,
+
+  connectionCount:
+    0,
+
+  currentUriSource:
+    null,
+
+  currentUriType:
+    null,
 };
 
 /**
- * MongoDB lifecycle events
+ * =============================================================================
+ * Connection promises
+ * =============================================================================
  */
-mongoose.connection.on('connected', () => logger.info('📡 MongoDB connection established'));
 
-mongoose.connection.on('disconnected', () => logger.warn('⚠️ MongoDB disconnected'));
+let connectPromise =
+  null;
 
-mongoose.connection.on('error', (err) => logger.error(`❌ MongoDB runtime error: ${err.message}`));
+let shutdownPromise =
+  null;
 
-module.exports = connectDB;
+/**
+ * =============================================================================
+ * URI Validation
+ * =============================================================================
+ */
+
+function assertConfiguredUri(
+  uriConfig,
+) {
+  if (
+    !uriConfig.uri
+  ) {
+    throw new DatabaseConfigError(
+      configuration.required
+        ? 'TITech MongoDB URI is not configured.'
+        : 'TITech MongoDB URI is not configured; database connection is optional.',
+      {
+        code:
+          configuration.required
+            ? 'DATABASE_URI_MISSING'
+            : 'DATABASE_URI_NOT_CONFIGURED',
+      },
+    );
+  }
+
+  const validation =
+    validateMongoURI(
+      uriConfig.uri,
+    );
+
+  if (
+    !validation.isValid
+  ) {
+    throw new DatabaseConfigError(
+      validation.error,
+      {
+        code:
+          'DATABASE_URI_INVALID',
+
+        details: {
+          source:
+            uriConfig.source,
+
+          type:
+            uriConfig.type,
+
+          masked:
+            uriConfig.masked,
+        },
+      },
+    );
+  }
+
+  return validation;
+}
+
+/**
+ * =============================================================================
+ * Mongoose connection options
+ * =============================================================================
+ */
+
+function getConnectionOptions(
+  validation,
+) {
+  return {
+    ...configuration.options,
+
+    maxPoolSize:
+      configuration.maxPoolSize,
+
+    minPoolSize:
+      configuration.minPoolSize,
+
+    maxConnecting:
+      configuration.maxConnecting,
+
+    serverSelectionTimeoutMS:
+      configuration
+        .serverSelectionTimeoutMS,
+
+    socketTimeoutMS:
+      configuration
+        .socketTimeoutMS,
+
+    heartbeatFrequencyMS:
+      configuration
+        .heartbeatFrequencyMS,
+
+    autoIndex:
+      configuration.autoIndex,
+
+    autoCreate:
+      configuration.autoCreate,
+
+    retryWrites:
+      configuration.retryWrites,
+
+    directConnection:
+      configuration.directConnection,
+
+    /**
+     * A bounded connection timeout is preferred for startup orchestration.
+     * serverSelectionTimeoutMS remains the MongoDB topology selection bound.
+     */
+    connectTimeoutMS:
+      configuration.connectTimeoutMs,
+
+    /**
+     * Keep retry behavior explicit rather than relying on implicit topology
+     * behavior from the application layer.
+     */
+    family:
+      validation.isSRV
+        ? undefined
+        : configuration.options
+            ?.family,
+  };
+}
+
+/**
+ * =============================================================================
+ * Connect once
+ * =============================================================================
+ */
+
+async function connectOnce(
+  uriConfig,
+) {
+  const validation =
+    assertConfiguredUri(
+      uriConfig,
+    );
+
+  const options =
+    getConnectionOptions(
+      validation,
+    );
+
+  const startedAt =
+    process.hrtime.bigint();
+
+  databaseState.lastAttempt +=
+    1;
+
+  databaseState.attempts +=
+    1;
+
+  databaseState.lastError =
+    null;
+
+  databaseState.state =
+    DATABASE_STATES.CONNECTING;
+
+  databaseState.connecting =
+    true;
+
+  databaseState.currentUriSource =
+    uriConfig.source;
+
+  databaseState.currentUriType =
+    uriConfig.type;
+
+  log(
+    'info',
+    {
+      attempt:
+        databaseState.lastAttempt,
+
+      source:
+        uriConfig.source,
+
+      type:
+        uriConfig.type,
+
+      uri:
+        uriConfig.masked,
+    },
+    'TITech MongoDB connection attempt started.',
+  );
+
+  try {
+    await withTimeout(
+      () =>
+        mongoose.connect(
+          uriConfig.uri,
+          options,
+        ),
+      configuration.connectTimeoutMs,
+      'TITech MongoDB connection',
+    );
+
+    databaseState.state =
+      DATABASE_STATES.CONNECTED;
+
+    databaseState.connected =
+      true;
+
+    databaseState.ready =
+      true;
+
+    databaseState.connecting =
+      false;
+
+    databaseState.failed =
+      false;
+
+    databaseState.degraded =
+      false;
+
+    databaseState.stopped =
+      false;
+
+    databaseState.connectedAt =
+      new Date();
+
+    databaseState.connectionCount +=
+      1;
+
+    databaseState.initializedAt =
+      databaseState.initializedAt ||
+      new Date();
+
+    publishReadiness(
+      true,
+      {
+        reason:
+          'database-connected',
+      },
+    );
+
+    emitTelemetry(
+      'database.connected',
+      {
+        source:
+          uriConfig.source,
+
+        type:
+          uriConfig.type,
+
+        durationMs:
+          elapsedMs(
+            startedAt,
+          ),
+      },
+    );
+
+    log(
+      'info',
+      {
+        source:
+          uriConfig.source,
+
+        type:
+          uriConfig.type,
+
+        durationMs:
+          elapsedMs(
+            startedAt,
+          ),
+      },
+      'TITech MongoDB connected successfully.',
+    );
+
+    return mongoose.connection;
+  } catch (error) {
+    databaseState.connecting =
+      false;
+
+    databaseState.connected =
+      false;
+
+    databaseState.ready =
+      false;
+
+    databaseState.degraded =
+      true;
+
+    databaseState.lastError =
+      error;
+
+    databaseState.state =
+      DATABASE_STATES.DEGRADED;
+
+    publishReadiness(
+      false,
+      {
+        reason:
+          'database-connection-failed',
+
+        error:
+          safeError(
+            error,
+          ),
+      },
+    );
+
+    emitTelemetry(
+      'database.connection_failed',
+      {
+        source:
+          uriConfig.source,
+
+        type:
+          uriConfig.type,
+
+        durationMs:
+          elapsedMs(
+            startedAt,
+          ),
+
+        error:
+          safeError(
+            error,
+          ),
+      },
+    );
+
+    throw error;
+  }
+}
+
+/**
+ * =============================================================================
+ * Fallback decision
+ * =============================================================================
+ */
+
+function shouldUseFallback(
+  error,
+  uriConfig,
+) {
+  if (
+    uriConfig.isFallback
+  ) {
+    return false;
+  }
+
+  if (
+    !configuration.fallbackEnabled
+  ) {
+    return false;
+  }
+
+  if (
+    !configuration.fallbackUri
+  ) {
+    return false;
+  }
+
+  /**
+   * Never silently redirect production traffic to a local/fallback database.
+   *
+   * An explicit fallback request may be used operationally, but must be
+   * configured and intentional.
+   */
+  if (
+    configuration.production
+  ) {
+    return (
+      process.env
+        .MONGO_FORCE_FALLBACK ===
+        'true'
+    );
+  }
+
+  return (
+    isSrvDnsError(
+      error,
+    ) ||
+    isNetworkError(
+      error,
+    )
+  );
+}
+
+/**
+ * =============================================================================
+ * Retryable failure
+ * =============================================================================
+ */
+
+function isRetryableConnectionFailure(
+  error,
+) {
+  if (
+    isInvalidUriError(
+      error,
+    ) ||
+    isAuthenticationError(
+      error,
+    )
+  ) {
+    return false;
+  }
+
+  if (
+    isCertificateError(
+      error,
+    ) &&
+    configuration.production
+  ) {
+    return false;
+  }
+
+  if (
+    !configuration
+      .retryOnTransientErrors
+  ) {
+    return false;
+  }
+
+  return isTransientError(
+    error,
+  );
+}
+
+/**
+ * =============================================================================
+ * connectDB
+ * =============================================================================
+ */
+
+async function connectDB(
+  options = {},
+) {
+  if (
+    databaseState.connected &&
+    mongoose.connection.readyState ===
+      1
+  ) {
+    return mongoose.connection;
+  }
+
+  if (
+    configuration.skipChecks ||
+    options.skipChecks ===
+      true
+  ) {
+    databaseState.state =
+      DATABASE_STATES.SKIPPED;
+
+    databaseState.ready =
+      !configuration.required;
+
+    databaseState.connected =
+      false;
+
+    databaseState.degraded =
+      true;
+
+    publishReadiness(
+      false,
+      {
+        reason:
+          'database-checks-skipped',
+      },
+    );
+
+    log(
+      'warn',
+      {},
+      'TITech MongoDB connection checks are disabled.',
+    );
+
+    return null;
+  }
+
+  if (
+    connectPromise
+  ) {
+    return connectPromise;
+  }
+
+  connectPromise =
+    (async () => {
+      databaseState.state =
+        DATABASE_STATES.CONNECTING;
+
+      databaseState.stopped =
+        false;
+
+      databaseState.failed =
+        false;
+
+      databaseState.lastError =
+        null;
+
+      const forceFallback =
+        options.forceFallback ===
+        true ||
+        process.env
+          .MONGO_FORCE_FALLBACK ===
+          'true';
+
+      let uriConfig =
+        resolveMongoUri({
+          forceFallback,
+        });
+
+      if (
+        !uriConfig.uri
+      ) {
+        const error =
+          new DatabaseConfigError(
+            configuration.required
+              ? 'TITech MongoDB connection is required but no URI is configured.'
+              : 'TITech MongoDB URI is not configured.',
+            {
+              code:
+                configuration.required
+                  ? 'DATABASE_URI_MISSING'
+                  : 'DATABASE_URI_NOT_CONFIGURED',
+            },
+          );
+
+        databaseState.state =
+          configuration.required
+            ? DATABASE_STATES
+                .FAILED
+            : DATABASE_STATES
+                .DEGRADED;
+
+        databaseState.failed =
+          configuration.required;
+
+        databaseState.degraded =
+          true;
+
+        databaseState.lastError =
+          error;
+
+        publishReadiness(
+          false,
+          {
+            reason:
+              'database-uri-missing',
+          },
+        );
+
+        if (
+          configuration.required ||
+          !configuration.gracefulStartup
+        ) {
+          throw error;
+        }
+
+        return null;
+      }
+
+      /**
+       * Optional fallback path.
+       *
+       * A failed primary URI is not automatically replaced with another
+       * database unless fallback has explicitly been enabled.
+       */
+      for (
+        let phase = 0;
+        phase < 2;
+        phase += 1
+      ) {
+        const maxAttempts =
+          uriConfig.isFallback
+            ? configuration
+                .fallbackMaxRetries
+            : configuration.maxRetries;
+
+        for (
+          let attempt = 1;
+          attempt <=
+            maxAttempts;
+          attempt += 1
+        ) {
+          databaseState.lastAttempt =
+            attempt;
+
+          try {
+            const connection =
+              await connectOnce(
+                uriConfig,
+              );
+
+            return connection;
+          } catch (error) {
+            const normalized =
+              normalizeError(
+                error,
+              );
+
+            log(
+              'error',
+              {
+                attempt,
+                maxAttempts,
+
+                source:
+                  uriConfig.source,
+
+                type:
+                  uriConfig.type,
+
+                uri:
+                  uriConfig.masked,
+
+                error:
+                  safeError(
+                    normalized,
+                  ),
+              },
+              'TITech MongoDB connection attempt failed.',
+            );
+
+            /**
+             * Configuration/authentication failures should never be hidden by
+             * retries.
+             */
+            if (
+              isInvalidUriError(
+                normalized,
+              )
+            ) {
+              throw createDatabaseError(
+                normalized,
+                'DATABASE_URI_INVALID',
+                'TITech MongoDB URI configuration is invalid.',
+              );
+            }
+
+            if (
+              isAuthenticationError(
+                normalized,
+              )
+            ) {
+              throw createDatabaseError(
+                normalized,
+                'DATABASE_AUTHENTICATION_FAILED',
+                'TITech MongoDB authentication failed.',
+              );
+            }
+
+            if (
+              isCertificateError(
+                normalized,
+              ) &&
+              configuration.production
+            ) {
+              throw createDatabaseError(
+                normalized,
+                'DATABASE_TLS_FAILED',
+                'TITech MongoDB TLS/certificate validation failed.',
+              );
+            }
+
+            /**
+             * Fallback is an explicit policy, never an implicit production
+             * behavior.
+             */
+            if (
+              shouldUseFallback(
+                normalized,
+                uriConfig,
+              ) &&
+              phase ===
+                0
+            ) {
+              log(
+                'warn',
+                {
+                  primarySource:
+                    uriConfig.source,
+
+                  fallbackSource:
+                    'MONGO_URI_FALLBACK',
+                },
+                'TITech MongoDB primary connection failed; switching to explicitly configured fallback.',
+              );
+
+              uriConfig =
+                resolveMongoUri({
+                  forceFallback:
+                    true,
+                });
+
+              break;
+            }
+
+            /**
+             * Stop retrying non-transient errors.
+             */
+            if (
+              !isRetryableConnectionFailure(
+                normalized,
+              )
+            ) {
+              throw createDatabaseError(
+                normalized,
+                'DATABASE_CONNECTION_FAILED',
+                'TITech MongoDB connection failed.',
+              );
+            }
+
+            if (
+              attempt <
+              maxAttempts
+            ) {
+              const delay =
+                getRetryDelay(
+                  attempt,
+                );
+
+              log(
+                'warn',
+                {
+                  delayMs:
+                    delay,
+
+                  nextAttempt:
+                    attempt + 1,
+
+                  maxAttempts,
+                },
+                'TITech MongoDB will retry the connection.',
+              );
+
+              await sleep(
+                delay,
+              );
+            } else if (
+              phase ===
+                0 &&
+              shouldUseFallback(
+                normalized,
+                uriConfig,
+              )
+            ) {
+              uriConfig =
+                resolveMongoUri({
+                  forceFallback:
+                    true,
+                });
+
+              break;
+            }
+          }
+        }
+
+        /**
+         * If the loop changed to fallback, phase 2 handles it.
+         * Otherwise there is no additional connection path.
+         */
+        if (
+          uriConfig.isFallback
+        ) {
+          continue;
+        }
+
+        break;
+      }
+
+      const finalError =
+        databaseState.lastError ||
+        new DatabaseConfigError(
+          'TITech MongoDB failed to connect after the configured retry policy.',
+          {
+            code:
+              'DATABASE_CONNECTION_EXHAUSTED',
+          },
+        );
+
+      databaseState.state =
+        configuration.gracefulStartup &&
+        !configuration.production
+          ? DATABASE_STATES
+              .DEGRADED
+          : DATABASE_STATES
+              .FAILED;
+
+      databaseState.failed =
+        !configuration.gracefulStartup ||
+        configuration.production;
+
+      databaseState.degraded =
+        true;
+
+      databaseState.ready =
+        false;
+
+      publishReadiness(
+        false,
+        {
+          reason:
+            'database-retries-exhausted',
+
+          error:
+            safeError(
+              finalError,
+            ),
+        },
+      );
+
+      if (
+        configuration.gracefulStartup &&
+        !configuration.production
+      ) {
+        log(
+          'error',
+          {
+            error:
+              safeError(
+                finalError,
+              ),
+          },
+          'TITech graceful startup is continuing without MongoDB.',
+        );
+
+        return null;
+      }
+
+      throw finalError;
+    })();
+
+  try {
+    return await connectPromise;
+  } finally {
+    connectPromise =
+      null;
+  }
+}
+
+/**
+ * =============================================================================
+ * Health
+ * =============================================================================
+ */
+
+async function health() {
+  databaseState.lastHealthCheckAt =
+    new Date();
+
+  try {
+    const readyState =
+      mongoose.connection
+        ?.readyState;
+
+    const connected =
+      readyState ===
+      1;
+
+    /**
+     * Ping MongoDB only when a connection actually exists.
+     */
+    if (
+      connected &&
+      mongoose.connection.db
+    ) {
+      await withTimeout(
+        () =>
+          mongoose.connection.db.command(
+            {
+              ping:
+                1,
+            },
+          ),
+        configuration.healthTimeoutMs,
+        'TITech MongoDB health check',
+      );
+    }
+
+    const healthy =
+      connected;
+
+    return {
+      status:
+        healthy
+          ? 'healthy'
+          : 'unhealthy',
+
+      healthy,
+
+      ready:
+        databaseState.ready &&
+        connected,
+
+      state:
+        databaseState.state,
+
+      connected,
+
+      required:
+        configuration.required,
+
+      environment:
+        configuration.nodeEnv,
+
+      source:
+        databaseState
+          .currentUriSource,
+
+      type:
+        databaseState
+          .currentUriType,
+
+      connection:
+        getConnectionSnapshot(),
+
+      timestamp:
+        databaseState
+          .lastHealthCheckAt
+          .toISOString(),
+    };
+  } catch (error) {
+    databaseState.lastError =
+      error;
+
+    databaseState.degraded =
+      true;
+
+    databaseState.ready =
+      false;
+
+    return {
+      status:
+        'unhealthy',
+
+      healthy:
+        false,
+
+      ready:
+        false,
+
+      state:
+        databaseState.state,
+
+      connected:
+        false,
+
+      required:
+        configuration.required,
+
+      error:
+        safeError(
+          error,
+        ),
+
+      timestamp:
+        databaseState
+          .lastHealthCheckAt
+          .toISOString(),
+    };
+  }
+}
+
+/**
+ * =============================================================================
+ * Readiness
+ * =============================================================================
+ */
+
+async function readiness() {
+  const readyState =
+    mongoose.connection
+      ?.readyState;
+
+  const connected =
+    readyState ===
+    1;
+
+  return {
+    ready:
+      databaseState.ready &&
+      connected &&
+      !databaseState.failed &&
+      !databaseState.stopping,
+
+    status:
+      databaseState.ready &&
+      connected
+        ? 'ready'
+        : 'not_ready',
+
+    state:
+      databaseState.state,
+
+    required:
+      configuration.required,
+
+    component:
+      COMPONENT,
+
+    service:
+      SERVICE_NAME,
+
+    timestamp:
+      new Date().toISOString(),
+  };
+}
+
+/**
+ * =============================================================================
+ * Connection snapshot
+ * =============================================================================
+ */
+
+function getConnectionSnapshot() {
+  const connection =
+    mongoose.connection;
+
+  return {
+    readyState:
+      connection?.readyState ??
+      0,
+
+    connected:
+      connection?.readyState ===
+      1,
+
+    host:
+      connection?.host ||
+      null,
+
+    port:
+      connection?.port ||
+      null,
+
+    name:
+      connection?.name ||
+      configuration.databaseName,
+
+    models:
+      connection
+        ? Object.keys(
+            connection.models ||
+              {},
+          ).length
+        : 0,
+  };
+}
+
+/**
+ * =============================================================================
+ * MongoDB lifecycle events
+ * =============================================================================
+ */
+
+let listenersInstalled =
+  false;
+
+function installConnectionListeners() {
+  if (
+    listenersInstalled
+  ) {
+    return;
+  }
+
+  const connection =
+    mongoose.connection;
+
+  connection.on(
+    'connected',
+    () => {
+      databaseState.connected =
+        true;
+
+      databaseState.ready =
+        true;
+
+      databaseState.failed =
+        false;
+
+      databaseState.degraded =
+        false;
+
+      databaseState.state =
+        DATABASE_STATES
+          .CONNECTED;
+
+      databaseState.connectedAt =
+        databaseState.connectedAt ||
+        new Date();
+
+      publishReadiness(
+        true,
+        {
+          reason:
+            'database-connected-event',
+        },
+      );
+
+      emitTelemetry(
+        'database.connected',
+      );
+    },
+  );
+
+  connection.on(
+    'disconnected',
+    () => {
+      databaseState.connected =
+        false;
+
+      databaseState.ready =
+        false;
+
+      databaseState.degraded =
+        true;
+
+      databaseState.state =
+        DATABASE_STATES
+          .DISCONNECTED;
+
+      databaseState.disconnectedAt =
+        new Date();
+
+      publishReadiness(
+        false,
+        {
+          reason:
+            'database-disconnected',
+        },
+      );
+
+      emitTelemetry(
+        'database.disconnected',
+      );
+
+      log(
+        'warn',
+        {},
+        'TITech MongoDB disconnected.',
+      );
+    },
+  );
+
+  connection.on(
+    'reconnected',
+    () => {
+      databaseState.connected =
+        true;
+
+      databaseState.ready =
+        true;
+
+      databaseState.failed =
+        false;
+
+      databaseState.degraded =
+        false;
+
+      databaseState.state =
+        DATABASE_STATES
+          .CONNECTED;
+
+      publishReadiness(
+        true,
+        {
+          reason:
+            'database-reconnected',
+        },
+      );
+
+      emitTelemetry(
+        'database.reconnected',
+      );
+
+      log(
+        'info',
+        {},
+        'TITech MongoDB reconnected.',
+      );
+    },
+  );
+
+  connection.on(
+    'error',
+    error => {
+      databaseState.lastError =
+        error;
+
+      databaseState.degraded =
+        true;
+
+      /**
+       * Do not immediately mark readiness down for every driver error.
+       * Mongoose can recover transiently. Readiness is changed when the actual
+       * connection state becomes unavailable.
+       */
+      emitTelemetry(
+        'database.error',
+        {
+          error:
+            safeError(
+              error,
+            ),
+        },
+      );
+
+      log(
+        'error',
+        {
+          error:
+            safeError(
+              error,
+            ),
+        },
+        'TITech MongoDB runtime error.',
+      );
+    },
+  );
+
+  listenersInstalled =
+    true;
+}
+
+installConnectionListeners();
+
+/**
+ * =============================================================================
+ * Shutdown
+ * =============================================================================
+ */
+
+async function closeDatabase(
+  options = {},
+) {
+  if (
+    shutdownPromise
+  ) {
+    return shutdownPromise;
+  }
+
+  if (
+    mongoose.connection
+      ?.readyState ===
+      0
+  ) {
+    databaseState.connected =
+      false;
+
+    databaseState.ready =
+      false;
+
+    databaseState.stopping =
+      false;
+
+    databaseState.stopped =
+      true;
+
+    databaseState.state =
+      DATABASE_STATES
+        .STOPPED;
+
+    return true;
+  }
+
+  shutdownPromise =
+    (async () => {
+      databaseState.stopping =
+        true;
+
+      databaseState.ready =
+        false;
+
+      databaseState.state =
+        DATABASE_STATES
+          .STOPPING;
+
+      publishReadiness(
+        false,
+        {
+          reason:
+            'database-shutdown',
+        },
+      );
+
+      try {
+        await withTimeout(
+          () =>
+            mongoose.disconnect(),
+          options.timeoutMs ||
+            configuration.shutdownTimeoutMs,
+          'TITech MongoDB shutdown',
+        );
+
+        databaseState.connected =
+          false;
+
+        databaseState.ready =
+          false;
+
+        databaseState.stopping =
+          false;
+
+        databaseState.stopped =
+          true;
+
+        databaseState.failed =
+          false;
+
+        databaseState.degraded =
+          false;
+
+        databaseState.state =
+          DATABASE_STATES
+            .STOPPED;
+
+        databaseState.disconnectedAt =
+          new Date();
+
+        emitTelemetry(
+          'database.stopped',
+        );
+
+        log(
+          'info',
+          {},
+          'TITech MongoDB connection closed.',
+        );
+
+        return true;
+      } catch (error) {
+        const normalized =
+          normalizeError(
+            error,
+          );
+
+        databaseState.stopping =
+          false;
+
+        databaseState.failed =
+          true;
+
+        databaseState.state =
+          DATABASE_STATES
+            .FAILED;
+
+        databaseState.lastError =
+          normalized;
+
+        emitTelemetry(
+          'database.shutdown_failed',
+          {
+            error:
+              safeError(
+                normalized,
+              ),
+          },
+        );
+
+        throw createDatabaseError(
+          normalized,
+          'DATABASE_SHUTDOWN_FAILED',
+          'TITech MongoDB shutdown failed.',
+        );
+      }
+    })();
+
+  try {
+    return await shutdownPromise;
+  } finally {
+    shutdownPromise =
+      null;
+  }
+}
+
+async function disconnectDB(
+  options,
+) {
+  return closeDatabase(
+    options,
+  );
+}
+
+async function shutdownDatabase(
+  options,
+) {
+  return closeDatabase(
+    options,
+  );
+}
+
+/**
+ * =============================================================================
+ * State accessors
+ * =============================================================================
+ */
+
+function isConnected() {
+  return (
+    databaseState.connected &&
+    mongoose.connection
+      ?.readyState ===
+      1
+  );
+}
+
+function isReady() {
+  return (
+    databaseState.ready &&
+    isConnected() &&
+    !databaseState.failed &&
+    !databaseState.stopping
+  );
+}
+
+function isHealthy() {
+  return isReady();
+}
+
+function isDegraded() {
+  return (
+    databaseState.degraded
+  );
+}
+
+function isFailed() {
+  return (
+    databaseState.failed
+  );
+}
+
+function getState() {
+  return Object.freeze({
+    ...databaseState,
+
+    lastError:
+      safeError(
+        databaseState.lastError,
+      ),
+  });
+}
+
+/**
+ * =============================================================================
+ * Configuration snapshot
+ * ============================================================================= */
+
+function getConfigSnapshot() {
+  return Object.freeze({
+    component:
+      COMPONENT,
+
+    serviceName:
+      configuration.serviceName,
+
+    applicationName:
+      configuration.applicationName,
+
+    environment:
+      configuration.nodeEnv,
+
+    production:
+      configuration.production,
+
+    development:
+      configuration.development,
+
+    staging:
+      configuration.staging,
+
+    docker:
+      configuration.inDocker,
+
+    enabled:
+      configuration.enabled,
+
+    required:
+      configuration.required,
+
+    gracefulStartup:
+      configuration.gracefulStartup,
+
+    skipChecks:
+      configuration.skipChecks,
+
+    uriConfigured:
+      Boolean(
+        configuration.uri,
+      ),
+
+    fallbackConfigured:
+      Boolean(
+        configuration.fallbackUri,
+      ),
+
+    fallbackEnabled:
+      configuration.fallbackEnabled,
+
+    databaseName:
+      configuration.databaseName,
+
+    maxRetries:
+      configuration.maxRetries,
+
+    connectTimeoutMs:
+      configuration.connectTimeoutMs,
+
+    serverSelectionTimeoutMS:
+      configuration
+        .serverSelectionTimeoutMS,
+
+    socketTimeoutMS:
+      configuration
+        .socketTimeoutMS,
+
+    maxPoolSize:
+      configuration.maxPoolSize,
+
+    minPoolSize:
+      configuration.minPoolSize,
+
+    autoIndex:
+      configuration.autoIndex,
+
+    autoCreate:
+      configuration.autoCreate,
+  });
+}
+
+/**
+ * =============================================================================
+ * Runtime initialization
+ * ============================================================================= */
+
+async function initialize(
+  context = {},
+  options = {},
+) {
+  if (
+    options.config
+  ) {
+    configuration =
+      Object.freeze({
+        ...configuration,
+        ...options.config,
+      });
+  }
+
+  if (
+    context &&
+    typeof context ===
+      'object'
+  ) {
+    context.database =
+      module.exports;
+
+    context.databaseConfig =
+      configuration;
+  }
+
+  return connectDB(
+    options,
+  );
+}
+
+/**
+ * =============================================================================
+ * Bootstrap lifecycle adapter
+ * ============================================================================= */
+
+function registerBootstrapHooks(
+  context = {},
+  options = {},
+) {
+  const {
+    hooks,
+    lifecycle,
+  } =
+    require('../bootstrap/hooks');
+
+  if (
+    hooks.has(
+      COMPONENT,
+    )
+  ) {
+    return hooks.get(
+      COMPONENT,
+    );
+  }
+
+  return lifecycle(
+    COMPONENT,
+    {
+      priority:
+        options.priority ??
+        -300,
+
+      dependencies:
+        options.dependencies ||
+        [
+          'resilience',
+          'readiness',
+        ],
+
+      critical:
+        options.critical ??
+        configuration.required,
+
+      timeoutMs:
+        options.timeoutMs ||
+        configuration.connectTimeoutMs,
+
+      start:
+        async hookContext =>
+          initialize(
+            hookContext ||
+              context,
+          ),
+
+      ready:
+        async () =>
+          (
+            await readiness()
+          ).ready,
+
+      health:
+        async () =>
+          health(),
+
+      stop:
+        async hookContext =>
+          closeDatabase({
+            timeoutMs:
+              hookContext?.timeoutMs ||
+              configuration.shutdownTimeoutMs,
+          }),
+
+      metadata: {
+        component:
+          COMPONENT,
+
+        service:
+          SERVICE_NAME,
+
+        implementation:
+          'backend/config/db.js',
+      },
+    },
+  );
+}
+
+/**
+ * =============================================================================
+ * Error construction
+ * ============================================================================= */
+
+function createDatabaseError(
+  error,
+  code,
+  message,
+) {
+  if (
+    startupErrors?.databaseError
+  ) {
+    try {
+      return startupErrors.databaseError(
+        message,
+        {
+          cause:
+            error,
+
+          dependency:
+            'database',
+
+          component:
+            COMPONENT,
+
+          service:
+            SERVICE_NAME,
+
+          critical:
+            configuration.required,
+
+          fatal:
+            configuration.required,
+
+          retryable:
+            isTransientError(
+              error,
+            ),
+        },
+      );
+    } catch {
+      // Fall through.
+    }
+  }
+
+  return new DatabaseConfigError(
+    message,
+    {
+      code,
+
+      phase:
+        'database',
+
+      cause:
+        error,
+    },
+  );
+}
+
+/**
+ * =============================================================================
+ * Compatibility API
+ * =============================================================================
+ *
+ * Existing code can continue using:
+ *
+ *   const connectDB = require('./config/db');
+ *   await connectDB();
+ *
+ * while newer bootstrap code can use:
+ *
+ *   require('./config/db').initialize(...)
+ *
+ * =============================================================================
+ */
+
+module.exports =
+  Object.assign(
+    connectDB,
+    {
+      /**
+       * Primary lifecycle.
+       */
+      connectDB,
+
+      connect:
+        connectDB,
+
+      initialize,
+
+      start:
+        initialize,
+
+      closeDB:
+        closeDatabase,
+
+      closeDatabase,
+
+      disconnectDB,
+
+      disconnect:
+        disconnectDB,
+
+      shutdown:
+        shutdownDatabase,
+
+      stop:
+        shutdownDatabase,
+
+      /**
+       * Health/readiness.
+       */
+      health,
+
+      checkHealth:
+        health,
+
+      readiness,
+
+      isReady,
+
+      isConnected,
+
+      isHealthy,
+
+      isDegraded,
+
+      isFailed,
+
+      /**
+       * Configuration.
+       */
+      getConfig:
+        () =>
+          configuration,
+
+      getConfigSnapshot,
+
+      resolveMongoUri,
+
+      validateMongoURI,
+
+      maskCredentials,
+
+      /**
+       * State.
+       */
+      getState,
+
+      getConnection:
+        () =>
+          mongoose.connection,
+
+      getConnectionSnapshot,
+
+      /**
+       * Bootstrap.
+       */
+      registerBootstrapHooks,
+
+      bootstrap:
+        registerBootstrapHooks,
+
+      /**
+       * Constants.
+       */
+      COMPONENT,
+
+      SERVICE_NAME,
+
+      APPLICATION_NAME,
+
+      DATABASE_STATES,
+
+      /**
+       * Error class.
+       */
+      DatabaseConfigError,
+    },
+  );

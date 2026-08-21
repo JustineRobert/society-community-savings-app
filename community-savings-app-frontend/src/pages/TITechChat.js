@@ -1,214 +1,1716 @@
-// ============================================================================
-// TITech Community Capital – TITechChat Page
-// File: frontend/src/pages/TITechChat.jsx
-// Production-grade
-// ============================================================================
+'use strict';
 
-import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
+/**
+ * ============================================================================
+ * TITech Community Capital Ltd
+ * Enterprise TITechChat Page
+ * ============================================================================
+ *
+ * File:
+ *   frontend/src/pages/TITechChat.js
+ *
+ * Purpose:
+ *   Production-grade TITech enterprise messaging workspace.
+ *
+ * Architecture
+ * ----------------------------------------------------------------------------
+ * ✓ Redux-backed conversation state
+ * ✓ Lazy-loaded conversation modules
+ * ✓ Responsive master/detail layout
+ * ✓ Mobile conversation navigation
+ * ✓ Keyboard navigation
+ * ✓ Accessible tab/list semantics
+ * ✓ Conversation refresh/retry
+ * ✓ Defensive selector handling
+ * ✓ Suspense loading boundaries
+ * ✓ Error isolation
+ * ✓ Stable test selectors
+ * ✓ Tenant-aware page context
+ * ✓ TITech branding consistency
+ *
+ * IMPORTANT
+ * ----------------------------------------------------------------------------
+ * This page is a presentation/orchestration layer.
+ *
+ * Authoritative:
+ *   - authentication
+ *   - authorization
+ *   - tenant isolation
+ *   - message persistence
+ *   - financial/business rules
+ *
+ * MUST remain enforced by TITech's trusted service/API layers.
+ *
+ * ============================================================================
+ */
+
+import React, {
+  Suspense,
+  lazy,
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+
+import {
+  useDispatch,
+  useSelector,
+} from 'react-redux';
+
 import PropTypes from 'prop-types';
+
+import {
+  AlertCircle,
+  Inbox,
+  RefreshCw,
+  Search,
+  ChevronLeft,
+  Menu,
+  X,
+} from 'lucide-react';
+
 import Spinner from '../components/ui/Spinner';
-import logger from '../../utils/logger';
+
 import {
   fetchConversations,
   setActiveConversation,
   selectActiveConversationId,
   selectConversationsLoading,
   selectConversationsSummary,
-} from '../store/chat'; // adjust imports to your store layout
+} from '../store/chat';
 
-// Lazy-load heavy components to speed initial render
-const ConversationList = React.lazy(() => import('../components/chat/ConversationList'));
-const ConversationDetail = React.lazy(() => import('../components/chat/ConversationDetail'));
+import logger from '../utils/logger';
 
-/**
- * TITechChat
- *
- * - Responsive two-column chat layout (list + detail)
- * - Lazy loads heavy components and shows accessible fallback
- * - Keyboard navigation: ArrowUp/ArrowDown to move selection, Enter to open
- * - Graceful handling when no conversation is selected
- * - Integrates with Redux store for data and actions
- * - Memoized and resilient to missing data
- */
-function TITechChat({ initialConversationId = null }) {
-  const dispatch = useDispatch();
-  const activeConversationId = useSelector(selectActiveConversationId);
-  const loading = useSelector(selectConversationsLoading);
-  const conversationsSummary = useSelector(selectConversationsSummary);
-  const [isListVisibleOnMobile, setIsListVisibleOnMobile] = useState(true);
-  const listRef = useRef(null);
+import './TITechChat.css';
 
-  // Ensure conversations are loaded on mount
-  useEffect(() => {
-    (async () => {
-      try {
-        await dispatch(fetchConversations());
-      } catch (err) {
-        logger?.warn?.('Failed to fetch conversations on TITechChat mount', { error: err?.message });
-      }
-    })();
-  }, [dispatch]);
 
-  // If an initialConversationId prop is provided, set it
-  useEffect(() => {
-    if (initialConversationId && !activeConversationId) {
-      dispatch(setActiveConversation(initialConversationId));
-    }
-  }, [initialConversationId, activeConversationId, dispatch]);
+/* ============================================================================
+ * Lazy-loaded modules
+ * ========================================================================== */
 
-  // Build an ordered list of conversation ids for keyboard navigation
-  const conversationIds = useMemo(
-    () => (Array.isArray(conversationsSummary) ? conversationsSummary.map((c) => c.id) : []),
-    [conversationsSummary]
+const ConversationList = lazy(
+  () =>
+    import(
+      '../components/chat/ConversationList'
+    ),
+);
+
+const ConversationDetail = lazy(
+  () =>
+    import(
+      '../components/chat/ConversationDetail'
+    ),
+);
+
+
+/* ============================================================================
+ * Constants
+ * ========================================================================== */
+
+const DEFAULT_TITLE =
+  'TITechChat';
+
+const DEFAULT_CONVERSATIONS_LABEL =
+  'Conversations';
+
+const MOBILE_BREAKPOINT =
+  768;
+
+const FALLBACK_TEST_ID =
+  'titech-chat';
+
+
+/* ============================================================================
+ * Utility helpers
+ * ========================================================================== */
+
+const cn = (
+  ...classes
+) =>
+  classes
+    .filter(Boolean)
+    .join(' ');
+
+
+const normalizeId = (
+  value,
+) => {
+  if (
+    value === null ||
+    value === undefined
+  ) {
+    return '';
+  }
+
+  try {
+    return String(
+      value,
+    );
+  } catch {
+    return '';
+  }
+};
+
+
+const getConversationId = (
+  conversation,
+) =>
+  normalizeId(
+    conversation?.id ??
+      conversation?.conversationId ??
+      conversation?._id ??
+      conversation?.uuid,
   );
 
-  // Keyboard navigation handler
-  const onKeyDown = useCallback(
-    (e) => {
-      if (!conversationIds.length) return;
-      const idx = conversationIds.indexOf(activeConversationId);
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        const next = idx < 0 ? 0 : Math.min(conversationIds.length - 1, idx + 1);
-        dispatch(setActiveConversation(conversationIds[next]));
-        // ensure list item is visible
-        try {
-          const el = document.querySelector(`[data-conversation-id="${conversationIds[next]}"]`);
-          el?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
-        } catch (_) {}
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        const prev = idx < 0 ? 0 : Math.max(0, idx - 1);
-        dispatch(setActiveConversation(conversationIds[prev]));
-        try {
-          const el = document.querySelector(`[data-conversation-id="${conversationIds[prev]}"]`);
-          el?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
-        } catch (_) {}
-      } else if (e.key === 'Enter') {
-        // On Enter, ensure detail pane is visible on mobile
-        if (window.innerWidth < 768) {
-          setIsListVisibleOnMobile(false);
-        }
-      } else if (e.key === 'Escape') {
-        // On Escape, show list on mobile
-        if (window.innerWidth < 768) {
-          setIsListVisibleOnMobile(true);
-        }
+
+const safeArray = (
+  value,
+) =>
+  Array.isArray(
+    value,
+  )
+    ? value
+    : [];
+
+
+const isBrowser =
+  typeof window !==
+    'undefined';
+
+
+/* ============================================================================
+ * Loading boundary
+ * ========================================================================== */
+
+function ChatLoadingFallback({
+  label =
+    'Loading TITechChat…',
+}) {
+  return (
+    <div
+      className="titech-chat__loading"
+      role="status"
+      aria-live="polite"
+      aria-label={
+        label
       }
-    },
-    [conversationIds, activeConversationId, dispatch]
-  );
+    >
+      <Spinner
+        label={
+          label
+        }
+      />
 
-  useEffect(() => {
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onKeyDown]);
-
-  // Toggle list visibility for mobile
-  const toggleList = useCallback(() => {
-    setIsListVisibleOnMobile((v) => !v);
-  }, []);
-
-  // Fallback UI for Suspense
-  const fallback = (
-    <div className="flex items-center justify-center p-6">
-      <Spinner label="Loading chat…" />
+      <span className="titech-chat__loading-text">
+        {
+          label
+        }
+      </span>
     </div>
   );
+}
+
+
+/* ============================================================================
+ * Error boundary
+ * ========================================================================== */
+
+class ChatSectionErrorBoundary extends React.Component {
+  constructor(
+    props,
+  ) {
+    super(
+      props,
+    );
+
+    this.state = {
+      hasError:
+        false,
+
+      error:
+        null,
+    };
+  }
+
+  static getDerivedStateFromError(
+    error,
+  ) {
+    return {
+      hasError:
+        true,
+
+      error,
+    };
+  }
+
+  componentDidCatch(
+    error,
+    errorInfo,
+  ) {
+    logger?.error?.(
+      'TITechChat section render failure',
+      {
+        error:
+          error?.message,
+
+        componentStack:
+          errorInfo?.componentStack,
+      },
+    );
+
+    this.props.onError?.(
+      error,
+      errorInfo,
+    );
+  }
+
+  handleRetry = () => {
+    this.setState({
+      hasError:
+        false,
+
+      error:
+        null,
+    });
+
+    this.props.onRetry?.();
+  };
+
+  render() {
+    if (
+      !this.state.hasError
+    ) {
+      return this.props.children;
+    }
+
+    return (
+      <div
+        className="titech-chat__section-error"
+        role="alert"
+        aria-live="assertive"
+      >
+        <AlertCircle
+          size={30}
+          aria-hidden="true"
+        />
+
+        <h3>
+          TITechChat could not load this section
+        </h3>
+
+        <p>
+          The messaging interface encountered an unexpected UI error.
+        </p>
+
+        {process.env?.NODE_ENV ===
+        'development' &&
+        this.state.error?.message ? (
+          <details>
+            <summary>
+              Development details
+            </summary>
+
+            <code>
+              {
+                this.state
+                  .error
+                  .message
+              }
+            </code>
+          </details>
+        ) : null}
+
+        <button
+          type="button"
+          className="titech-chat__button titech-chat__button--primary"
+          onClick={
+            this.handleRetry
+          }
+        >
+          <RefreshCw
+            size={16}
+            aria-hidden="true"
+          />
+          Retry
+        </button>
+      </div>
+    );
+  }
+}
+
+ChatSectionErrorBoundary.propTypes = {
+  children:
+    PropTypes.node
+      .isRequired,
+
+  onError:
+    PropTypes.func,
+
+  onRetry:
+    PropTypes.func,
+};
+
+
+/* ============================================================================
+ * Empty conversation state
+ * ========================================================================== */
+
+function EmptyConversationState({
+  title =
+    'No conversation selected',
+
+  description =
+    'Select a conversation from the list to begin.',
+
+  onShowList,
+  mobile,
+}) {
+  return (
+    <div
+      className="titech-chat__empty"
+      role="status"
+      aria-live="polite"
+      data-testid="titech-chat-empty"
+    >
+      <div
+        className="titech-chat__empty-icon"
+        aria-hidden="true"
+      >
+        <Inbox
+          size={34}
+        />
+      </div>
+
+      <h2>
+        {
+          title
+        }
+      </h2>
+
+      <p>
+        {
+          description
+        }
+      </p>
+
+      {mobile &&
+      typeof onShowList ===
+        'function' ? (
+        <button
+          type="button"
+          className="titech-chat__button titech-chat__button--primary"
+          onClick={
+            onShowList
+          }
+        >
+          <Menu
+            size={17}
+            aria-hidden="true"
+          />
+          Browse conversations
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+
+/* ============================================================================
+ * TITechChat
+ * ========================================================================== */
+
+function TITechChat({
+  initialConversationId =
+    null,
+
+  title =
+    DEFAULT_TITLE,
+
+  testId =
+    FALLBACK_TEST_ID,
+
+  className =
+    '',
+}) {
+  const dispatch =
+    useDispatch();
+
+  const activeConversationId =
+    useSelector(
+      selectActiveConversationId,
+    );
+
+  const loading =
+    useSelector(
+      selectConversationsLoading,
+    );
+
+  const conversationsSummary =
+    useSelector(
+      selectConversationsSummary,
+    );
+
+
+  /* ==========================================================================
+   * State
+   * ======================================================================== */
+
+  const [
+    listVisibleOnMobile,
+    setListVisibleOnMobile,
+  ] = useState(
+    true,
+  );
+
+  const [
+    isMobile,
+    setIsMobile,
+  ] = useState(
+    () =>
+      isBrowser
+        ? window.innerWidth <
+          MOBILE_BREAKPOINT
+        : false,
+  );
+
+  const [
+    refreshError,
+    setRefreshError,
+  ] = useState(
+    '',
+  );
+
+  const [
+    refreshing,
+    setRefreshing,
+  ] = useState(
+    false,
+  );
+
+
+  /* ==========================================================================
+   * Refs
+   * ======================================================================== */
+
+  const pageRef =
+    useRef(null);
+
+  const listRef =
+    useRef(null);
+
+  const detailRef =
+    useRef(null);
+
+  const lastInitialConversationRef =
+    useRef(null);
+
+
+  /* ==========================================================================
+   * Normalize conversations
+   * ======================================================================== */
+
+  const conversations =
+    useMemo(
+      () =>
+        safeArray(
+          conversationsSummary,
+        ).filter(
+          conversation =>
+            Boolean(
+              getConversationId(
+                conversation,
+              ),
+            ),
+        ),
+      [
+        conversationsSummary,
+      ],
+    );
+
+
+  const conversationIds =
+    useMemo(
+      () =>
+        conversations.map(
+          conversation =>
+            getConversationId(
+              conversation,
+            ),
+        ),
+      [
+        conversations,
+      ],
+    );
+
+
+  /* ==========================================================================
+   * Active conversation normalization
+   * ======================================================================== */
+
+  const normalizedActiveId =
+    normalizeId(
+      activeConversationId,
+    );
+
+
+  const hasActiveConversation =
+    Boolean(
+      normalizedActiveId &&
+        conversationIds.includes(
+          normalizedActiveId,
+        ),
+    );
+
+
+  /* ==========================================================================
+   * Active conversation
+   * ======================================================================== */
+
+  const activeConversation =
+    useMemo(
+      () =>
+        conversations.find(
+          conversation =>
+            getConversationId(
+              conversation,
+            ) ===
+            normalizedActiveId,
+        ) || null,
+      [
+        conversations,
+        normalizedActiveId,
+      ],
+    );
+
+
+  /* ==========================================================================
+   * Responsive handling
+   * ======================================================================== */
+
+  useEffect(
+    () => {
+      if (
+        !isBrowser
+      ) {
+        return undefined;
+      }
+
+      const handleResize =
+        () => {
+          const nextIsMobile =
+            window.innerWidth <
+            MOBILE_BREAKPOINT;
+
+          setIsMobile(
+            nextIsMobile,
+          );
+
+          if (
+            !nextIsMobile
+          ) {
+            setListVisibleOnMobile(
+              true,
+            );
+          }
+        };
+
+      handleResize();
+
+      window.addEventListener(
+        'resize',
+        handleResize,
+      );
+
+      return () =>
+        window.removeEventListener(
+          'resize',
+          handleResize,
+        );
+    },
+    [],
+  );
+
+
+  /* ==========================================================================
+   * Fetch conversations
+   * ======================================================================== */
+
+  const loadConversations =
+    useCallback(
+      async ({
+        silent = false,
+      } = {}) => {
+        try {
+          if (
+            silent
+          ) {
+            setRefreshing(
+              true,
+            );
+          }
+
+          setRefreshError(
+            '',
+          );
+
+          const action =
+            dispatch(
+              fetchConversations(),
+            );
+
+          if (
+            action &&
+            typeof action.then ===
+              'function'
+          ) {
+            await action.unwrap?.();
+          }
+        } catch (
+          error
+        ) {
+          const message =
+            error?.message ||
+            'Unable to load conversations.';
+
+          setRefreshError(
+            message,
+          );
+
+          logger?.warn?.(
+            'Failed to fetch conversations in TITechChat',
+            {
+              error:
+                error?.message,
+            },
+          );
+        } finally {
+          if (
+            silent
+          ) {
+            setRefreshing(
+              false,
+            );
+          }
+        }
+      },
+      [
+        dispatch,
+      ],
+    );
+
+
+  /* ==========================================================================
+   * Initial data loading
+   * ======================================================================== */
+
+  useEffect(
+    () => {
+      loadConversations();
+    },
+    [
+      loadConversations,
+    ],
+  );
+
+
+  /* ==========================================================================
+   * Initial conversation selection
+   * ======================================================================== */
+
+  useEffect(
+    () => {
+      if (
+        !initialConversationId
+      ) {
+        return;
+      }
+
+      const requestedId =
+        normalizeId(
+          initialConversationId,
+        );
+
+      if (
+        !requestedId ||
+        requestedId ===
+          lastInitialConversationRef.current
+      ) {
+        return;
+      }
+
+      const exists =
+        conversationIds.includes(
+          requestedId,
+        );
+
+      if (
+        !exists
+      ) {
+        return;
+      }
+
+      if (
+        normalizedActiveId !==
+        requestedId
+      ) {
+        dispatch(
+          setActiveConversation(
+            requestedId,
+          ),
+        );
+      }
+
+      lastInitialConversationRef.current =
+        requestedId;
+
+      if (
+        isMobile
+      ) {
+        setListVisibleOnMobile(
+          false,
+        );
+      }
+    },
+    [
+      conversationIds,
+      dispatch,
+      initialConversationId,
+      isMobile,
+      normalizedActiveId,
+    ],
+  );
+
+
+  /* ==========================================================================
+   * Recover from stale active conversation
+   * ======================================================================== */
+
+  useEffect(
+    () => {
+      if (
+        !normalizedActiveId ||
+        conversations.length ===
+          0
+      ) {
+        return;
+      }
+
+      if (
+        hasActiveConversation
+      ) {
+        return;
+      }
+
+      const firstConversation =
+        conversations[0];
+
+      const firstId =
+        getConversationId(
+          firstConversation,
+        );
+
+      if (
+        firstId
+      ) {
+        dispatch(
+          setActiveConversation(
+            firstId,
+          ),
+        );
+      }
+    },
+    [
+      conversations,
+      dispatch,
+      hasActiveConversation,
+      normalizedActiveId,
+    ],
+  );
+
+
+  /* ==========================================================================
+   * Select conversation
+   * ======================================================================== */
+
+  const selectConversation =
+    useCallback(
+      conversationId => {
+        const normalizedId =
+          normalizeId(
+            conversationId,
+          );
+
+        if (
+          !normalizedId
+        ) {
+          return;
+        }
+
+        dispatch(
+          setActiveConversation(
+            normalizedId,
+          ),
+        );
+
+        if (
+          isMobile
+        ) {
+          setListVisibleOnMobile(
+            false,
+          );
+        }
+      },
+      [
+        dispatch,
+        isMobile,
+      ],
+    );
+
+
+  /* ==========================================================================
+   * Scroll selected conversation into view
+   * ======================================================================== */
+
+  const scrollConversationIntoView =
+    useCallback(
+      conversationId => {
+        if (
+          !conversationId ||
+          !isBrowser
+        ) {
+          return;
+        }
+
+        try {
+          const elements =
+            listRef.current?.querySelectorAll?.(
+              '[data-conversation-id]',
+            );
+
+          if (
+            !elements
+          ) {
+            return;
+          }
+
+          const target =
+            Array.from(
+              elements,
+            ).find(
+              element =>
+                normalizeId(
+                  element.getAttribute(
+                    'data-conversation-id',
+                  ),
+                ) ===
+                normalizeId(
+                  conversationId,
+                ),
+            );
+
+          target?.scrollIntoView?.({
+            block:
+              'nearest',
+
+            behavior:
+              'smooth',
+          });
+        } catch (
+          error
+        ) {
+          logger?.debug?.(
+            'Unable to scroll TITechChat conversation into view',
+            {
+              error:
+                error?.message,
+            },
+          );
+        }
+      },
+      [],
+    );
+
+
+  /* ==========================================================================
+   * Keyboard navigation
+   * ======================================================================== */
+
+  const handleKeyboardNavigation =
+    useCallback(
+      event => {
+        if (
+          !conversationIds.length
+        ) {
+          return;
+        }
+
+        const target =
+          event.target;
+
+        const tagName =
+          target?.tagName?.toLowerCase?.();
+
+        if (
+          tagName ===
+            'input' ||
+          tagName ===
+            'textarea' ||
+          target?.isContentEditable
+        ) {
+          return;
+        }
+
+        const currentIndex =
+          conversationIds.indexOf(
+            normalizedActiveId,
+          );
+
+        switch (
+          event.key
+        ) {
+          case 'ArrowDown': {
+            event.preventDefault();
+
+            const nextIndex =
+              currentIndex <
+              0
+                ? 0
+                : Math.min(
+                    conversationIds.length -
+                      1,
+                    currentIndex +
+                      1,
+                  );
+
+            const nextId =
+              conversationIds[
+                nextIndex
+              ];
+
+            selectConversation(
+              nextId,
+            );
+
+            requestAnimationFrame(
+              () =>
+                scrollConversationIntoView(
+                  nextId,
+                ),
+            );
+
+            break;
+          }
+
+          case 'ArrowUp': {
+            event.preventDefault();
+
+            const previousIndex =
+              currentIndex <
+              0
+                ? 0
+                : Math.max(
+                    0,
+                    currentIndex -
+                      1,
+                  );
+
+            const previousId =
+              conversationIds[
+                previousIndex
+              ];
+
+            selectConversation(
+              previousId,
+            );
+
+            requestAnimationFrame(
+              () =>
+                scrollConversationIntoView(
+                  previousId,
+                ),
+            );
+
+            break;
+          }
+
+          case 'Enter': {
+            if (
+              isMobile &&
+              normalizedActiveId
+            ) {
+              event.preventDefault();
+
+              setListVisibleOnMobile(
+                false,
+              );
+            }
+
+            break;
+          }
+
+          case 'Escape': {
+            if (
+              isMobile
+            ) {
+              event.preventDefault();
+
+              setListVisibleOnMobile(
+                true,
+              );
+
+              listRef.current?.querySelector?.(
+                '[data-conversation-id]',
+              )?.focus?.();
+            }
+
+            break;
+          }
+
+          default:
+            break;
+        }
+      },
+      [
+        conversationIds,
+        isMobile,
+        normalizedActiveId,
+        scrollConversationIntoView,
+        selectConversation,
+      ],
+    );
+
+
+  useEffect(
+    () => {
+      if (
+        !isBrowser
+      ) {
+        return undefined;
+      }
+
+      window.addEventListener(
+        'keydown',
+        handleKeyboardNavigation,
+      );
+
+      return () =>
+        window.removeEventListener(
+          'keydown',
+          handleKeyboardNavigation,
+        );
+    },
+    [
+      handleKeyboardNavigation,
+    ],
+  );
+
+
+  /* ==========================================================================
+   * Page focus
+   * ======================================================================== */
+
+  const focusConversationList =
+    useCallback(
+      () => {
+        const target =
+          listRef.current?.querySelector?.(
+            '[data-conversation-id]',
+          );
+
+        target?.focus?.();
+      },
+      [],
+    );
+
+
+  /* ==========================================================================
+   * Mobile controls
+   * ======================================================================== */
+
+  const showConversationList =
+    useCallback(
+      () => {
+        setListVisibleOnMobile(
+          true,
+        );
+
+        requestAnimationFrame(
+          () => {
+            focusConversationList();
+          },
+        );
+      },
+      [
+        focusConversationList,
+      ],
+    );
+
+
+  const showConversationDetail =
+    useCallback(
+      () => {
+        if (
+          normalizedActiveId
+        ) {
+          setListVisibleOnMobile(
+            false,
+          );
+        }
+      },
+      [
+        normalizedActiveId,
+      ],
+    );
+
+
+  /* ==========================================================================
+   * Suspense fallback
+   * ======================================================================== */
+
+  const suspenseFallback =
+    useMemo(
+      () => (
+        <ChatLoadingFallback
+          label="Loading TITechChat…"
+        />
+      ),
+      [],
+    );
+
+
+  /* ==========================================================================
+   * Render
+   * ======================================================================== */
 
   return (
-    <main className="titech-chat h-full min-h-screen bg-gray-50">
-      <div className="max-w-screen-xl mx-auto h-full grid grid-cols-1 md:grid-cols-3 gap-4 p-4">
-        {/* Left column: conversation list (collapsible on mobile) */}
+    <main
+      ref={
+        pageRef
+      }
+      className={cn(
+        'titech-chat',
+        className,
+      )}
+      aria-label={
+        title
+      }
+      data-testid={
+        testId
+      }
+      data-active-conversation-id={
+        normalizedActiveId ||
+        undefined
+      }
+      data-mobile={
+        isMobile
+          ? 'true'
+          : 'false'
+      }
+    >
+
+      {/* ======================================================================
+          Page toolbar
+          ==================================================================== */}
+
+      <header className="titech-chat__toolbar">
+
+        <div className="titech-chat__toolbar-title">
+
+          <span className="titech-chat__brand">
+            TITechChat
+          </span>
+
+          <h1>
+            {
+              title
+            }
+          </h1>
+
+          <span className="titech-chat__toolbar-count">
+            {conversations.length}{' '}
+            {conversations.length ===
+            1
+              ? 'conversation'
+              : 'conversations'}
+          </span>
+
+        </div>
+
+
+        <div className="titech-chat__toolbar-actions">
+
+          {isMobile ? (
+            <button
+              type="button"
+              className="titech-chat__button titech-chat__button--secondary"
+              onClick={
+                listVisibleOnMobile
+                  ? showConversationDetail
+                  : showConversationList
+              }
+              disabled={
+                !normalizedActiveId &&
+                !listVisibleOnMobile
+              }
+              aria-label={
+                listVisibleOnMobile
+                  ? 'Show conversation'
+                  : 'Show conversations'
+              }
+            >
+              {listVisibleOnMobile ? (
+                <>
+                  <ChevronLeft
+                    size={16}
+                    aria-hidden="true"
+                  />
+                  Conversation
+                </>
+              ) : (
+                <>
+                  <Menu
+                    size={16}
+                    aria-hidden="true"
+                  />
+                  Conversations
+                </>
+              )}
+            </button>
+          ) : null}
+
+          <button
+            type="button"
+            className="titech-chat__button titech-chat__button--secondary"
+            onClick={() =>
+              loadConversations({
+                silent:
+                  true,
+              })
+            }
+            disabled={
+              loading ||
+              refreshing
+            }
+            aria-label="Refresh TITech conversations"
+            title="Refresh conversations"
+          >
+            <RefreshCw
+              size={16}
+              className={
+                loading ||
+                refreshing
+                  ? 'titech-chat__spin'
+                  : undefined
+              }
+              aria-hidden="true"
+            />
+
+            <span>
+              {
+                refreshing
+                  ? 'Refreshing…'
+                  : 'Refresh'
+              }
+            </span>
+          </button>
+
+        </div>
+
+      </header>
+
+
+      {/* ======================================================================
+          Refresh error
+          ==================================================================== */}
+
+      {refreshError ? (
+        <div
+          className="titech-chat__refresh-error"
+          role="alert"
+        >
+          <AlertCircle
+            size={17}
+            aria-hidden="true"
+          />
+
+          <span>
+            {
+              refreshError
+            }
+          </span>
+
+          <button
+            type="button"
+            onClick={() =>
+              loadConversations()
+            }
+          >
+            Retry
+          </button>
+        </div>
+      ) : null}
+
+
+      {/* ======================================================================
+          Master/detail workspace
+          ==================================================================== */}
+
+      <div className="titech-chat__workspace">
+
+        {/* ====================================================================
+            Conversation list
+            ================================================================== */}
+
         <aside
-          ref={listRef}
-          className={`col-span-1 md:col-span-1 bg-white rounded shadow-sm overflow-hidden transition-transform duration-200 ${
-            isListVisibleOnMobile ? 'block' : 'hidden'
-          } md:block`}
-          aria-label="Conversations"
-        >
-          <div className="flex items-center justify-between px-4 py-3 border-b">
-            <h2 className="text-sm font-semibold">Conversations</h2>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => dispatch(fetchConversations())}
-                className="text-xs text-gray-600 hover:text-gray-900"
-                aria-label="Refresh conversations"
-                title="Refresh"
-              >
-                Refresh
-              </button>
-              <button
-                type="button"
-                onClick={toggleList}
-                className="md:hidden text-xs text-gray-600 hover:text-gray-900"
-                aria-label="Toggle conversation list"
-                title="Toggle list"
-              >
-                {isListVisibleOnMobile ? 'Hide' : 'Show'}
-              </button>
-            </div>
-          </div>
+          ref={
+            listRef
+          }
+          className={cn(
+            'titech-chat__sidebar',
 
-          <div className="h-[calc(100vh-120px)] overflow-auto">
-            <Suspense fallback={fallback}>
-              <ConversationList />
-            </Suspense>
-            {loading && (
-              <div className="p-3 text-center text-sm text-gray-500">
-                <Spinner size="sm" label="Loading…" />
-              </div>
-            )}
-          </div>
-        </aside>
+            (
+              !isMobile ||
+              listVisibleOnMobile
+            ) &&
+              'titech-chat__sidebar--visible',
 
-        {/* Right column: conversation detail */}
-        <section
-          className="col-span-1 md:col-span-2 bg-white rounded shadow-sm overflow-hidden flex flex-col"
-          aria-label="Conversation detail"
+            isMobile &&
+              !listVisibleOnMobile &&
+              'titech-chat__sidebar--hidden',
+          )}
+          aria-label={
+            DEFAULT_CONVERSATIONS_LABEL
+          }
         >
-          <div className="flex items-center justify-between px-4 py-3 border-b">
+
+          <div className="titech-chat__sidebar-header">
+
             <div>
-              <h2 className="text-sm font-semibold">
-                {activeConversationId ? 'Conversation' : 'No conversation selected'}
+              <h2>
+                Conversations
               </h2>
-              <p className="text-xs text-gray-500">
-                {activeConversationId ? 'Messages and actions' : 'Select a conversation to begin'}
+
+              <p>
+                Select a conversation to continue.
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
-              {/* On small screens show back to list button */}
+            {isMobile ? (
               <button
                 type="button"
-                onClick={() => setIsListVisibleOnMobile(true)}
-                className="text-xs text-gray-600 hover:text-gray-900 md:hidden"
-                aria-label="Show conversation list"
+                className="titech-chat__icon-button"
+                onClick={
+                  showConversationDetail
+                }
+                disabled={
+                  !normalizedActiveId
+                }
+                aria-label="Close conversation list"
+                title="Close conversation list"
               >
-                Back to list
+                <X
+                  size={17}
+                  aria-hidden="true"
+                />
               </button>
-            </div>
+            ) : null}
+
           </div>
 
-          <div className="flex-1 h-[calc(100vh-120px)] overflow-auto">
-            <Suspense fallback={fallback}>
-              <ConversationDetail />
-            </Suspense>
+
+          <div className="titech-chat__sidebar-content">
+
+            {loading &&
+            conversations.length ===
+              0 ? (
+              <ChatLoadingFallback
+                label="Loading conversations…"
+              />
+            ) : conversations.length ===
+              0 ? (
+              <div
+                className="titech-chat__list-empty"
+                role="status"
+              >
+                <Search
+                  size={28}
+                  aria-hidden="true"
+                />
+
+                <h3>
+                  No conversations
+                </h3>
+
+                <p>
+                  There are currently no TITech conversations available.
+                </p>
+
+                <button
+                  type="button"
+                  className="titech-chat__button titech-chat__button--primary"
+                  onClick={() =>
+                    loadConversations({
+                      silent:
+                        true,
+                    })
+                  }
+                  disabled={
+                    refreshing
+                  }
+                >
+                  <RefreshCw
+                    size={16}
+                    aria-hidden="true"
+                  />
+                  Refresh
+                </button>
+              </div>
+            ) : (
+              <ChatSectionErrorBoundary
+                onError={
+                  error =>
+                    logger?.warn?.(
+                      'ConversationList failed inside TITechChat',
+                      {
+                        error:
+                          error?.message,
+                      },
+                    )
+                }
+              >
+                <Suspense
+                  fallback={
+                    suspenseFallback
+                  }
+                >
+                  <ConversationList
+                    conversations={
+                      conversations
+                    }
+                    activeConversationId={
+                      normalizedActiveId
+                    }
+                    onConversationSelect={
+                      selectConversation
+                    }
+                  />
+                </Suspense>
+              </ChatSectionErrorBoundary>
+            )}
+
           </div>
+
+        </aside>
+
+
+        {/* ====================================================================
+            Conversation detail
+            ================================================================== */}
+
+        <section
+          ref={
+            detailRef
+          }
+          className={cn(
+            'titech-chat__detail',
+
+            (
+              !isMobile ||
+              !listVisibleOnMobile
+            ) &&
+              'titech-chat__detail--visible',
+
+            isMobile &&
+              listVisibleOnMobile &&
+              'titech-chat__detail--hidden',
+          )}
+          aria-label="Conversation detail"
+          aria-live="polite"
+        >
+
+          <div className="titech-chat__detail-header">
+
+            {isMobile ? (
+              <button
+                type="button"
+                className="titech-chat__icon-button"
+                onClick={
+                  showConversationList
+                }
+                aria-label="Show conversations"
+                title="Show conversations"
+              >
+                <ChevronLeft
+                  size={18}
+                  aria-hidden="true"
+                />
+              </button>
+            ) : null}
+
+            <div className="titech-chat__detail-heading">
+
+              <h2>
+                {activeConversation
+                  ?.title ||
+                  activeConversation
+                    ?.name ||
+                  (
+                    hasActiveConversation
+                      ? 'Conversation'
+                      : 'No conversation selected'
+                  )}
+              </h2>
+
+              <p>
+                {hasActiveConversation
+                  ? 'Messages and conversation actions'
+                  : 'Select a conversation to begin'}
+              </p>
+
+            </div>
+
+          </div>
+
+
+          <div className="titech-chat__detail-content">
+
+            {hasActiveConversation ? (
+              <ChatSectionErrorBoundary
+                onError={
+                  error =>
+                    logger?.error?.(
+                      'ConversationDetail failed inside TITechChat',
+                      {
+                        error:
+                          error?.message,
+                      },
+                    )
+                }
+              >
+                <Suspense
+                  fallback={
+                    suspenseFallback
+                  }
+                >
+                  <ConversationDetail
+                    conversationId={
+                      normalizedActiveId
+                    }
+                    conversation={
+                      activeConversation
+                    }
+                  />
+                </Suspense>
+              </ChatSectionErrorBoundary>
+            ) : (
+              <EmptyConversationState
+                mobile={
+                  isMobile
+                }
+                onShowList={
+                  showConversationList
+                }
+              />
+            )}
+
+          </div>
+
         </section>
+
       </div>
+
+
+      {/* ======================================================================
+          Keyboard help
+          ==================================================================== */}
+
+      <footer className="titech-chat__footer">
+
+        <span>
+          Keyboard:
+          {' '}
+          ↑ / ↓ to navigate
+        </span>
+
+        <span>
+          Enter to open
+        </span>
+
+        <span>
+          Esc to return to conversations
+        </span>
+
+      </footer>
+
     </main>
   );
 }
 
+
+/* ============================================================================
+ * PropTypes
+ * ========================================================================== */
+
 TITechChat.propTypes = {
-  initialConversationId: PropTypes.string,
+  initialConversationId:
+    PropTypes.string,
+
+  title:
+    PropTypes.string,
+
+  websocketUrl:
+    PropTypes.string,
+
+  testId:
+    PropTypes.string,
+
+  className:
+    PropTypes.string,
 };
+
+
+/* ============================================================================
+ * Defaults
+ * ========================================================================== */
 
 TITechChat.defaultProps = {
-  initialConversationId: null,
+  initialConversationId:
+    null,
+
+  title:
+    DEFAULT_TITLE,
+
+  testId:
+    FALLBACK_TEST_ID,
+
+  className:
+    '',
 };
 
-export default React.memo(TITechChat);
+
+/* ============================================================================
+ * Metadata
+ * ========================================================================== */
+
+TITechChat.displayName =
+  'TITechChat';
+
+
+/* ============================================================================
+ * Export
+ * ========================================================================== */
+
+export {
+  ChatLoadingFallback,
+  ChatSectionErrorBoundary,
+  EmptyConversationState,
+  getConversationId,
+  normalizeId,
+};
+
+export default memo(
+  TITechChat,
+);

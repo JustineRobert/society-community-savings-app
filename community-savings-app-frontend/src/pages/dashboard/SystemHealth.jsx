@@ -1,14 +1,27 @@
 // ============================================================================
 // TITech Community Capital
 // System Health Dashboard
-// File: frontend/src/pages/SystemHealth.jsx
-// Production Grade
+// File: frontend/src/pages/dashboard/SystemHealth.jsx
+// Enterprise Production Grade
+//
+// Platform Observability
+// Infrastructure Monitoring
+// Dependency Health
+// Service Availability
+// Automatic Refresh
+// Abort-Safe Requests
+// Resilient API Handling
+// Accessibility Ready
+// Multi-Tenant Aware
+// Defensive Data Normalization
 // ============================================================================
 
 import React, {
+  memo,
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -43,41 +56,116 @@ import "./SystemHealth.css";
 // Constants
 // ============================================================================
 
-const AUTO_REFRESH_INTERVAL = 30000;
+const HEALTH_ENDPOINT = "/api/system/health";
 
-const DEFAULT_HEALTH = {
-  status: "healthy",
+const AUTO_REFRESH_INTERVAL = 30_000;
+
+const MAX_PERCENTAGE = 100;
+
+const DEFAULT_HEALTH = Object.freeze({
+  status: "unknown",
   uptime: 0,
+
   memory: {
     used: 0,
     total: 0,
     percentage: 0,
   },
+
   cpu: {
     usage: 0,
   },
+
   database: {
-    status: "healthy",
+    status: "unknown",
     latency: 0,
   },
+
   redis: {
-    status: "healthy",
+    status: "unknown",
     latency: 0,
   },
+
   services: [],
+
   metrics: {
     requestsPerMinute: 0,
     activeUsers: 0,
     errorRate: 0,
   },
-};
+});
 
 // ============================================================================
 // Helpers
 // ============================================================================
 
+function isFiniteNumber(value) {
+  return (
+    typeof value === "number" &&
+    Number.isFinite(value)
+  );
+}
+
+function toSafeNumber(
+  value,
+  fallback = 0
+) {
+  if (isFiniteNumber(value)) {
+    return value;
+  }
+
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return fallback;
+  }
+
+  const numericValue = Number(value);
+
+  return Number.isFinite(numericValue)
+    ? numericValue
+    : fallback;
+}
+
+function clampPercentage(value) {
+  return Math.min(
+    Math.max(
+      toSafeNumber(value),
+      0
+    ),
+    MAX_PERCENTAGE
+  );
+}
+
+function normalizeStatus(
+  status,
+  fallback = "unknown"
+) {
+  if (
+    typeof status !==
+    "string"
+  ) {
+    return fallback;
+  }
+
+  const normalized = status
+    .trim()
+    .toLowerCase();
+
+  return normalized || fallback;
+}
+
 function formatBytes(bytes) {
-  if (!bytes) return "0 MB";
+  const value = Math.max(
+    toSafeNumber(bytes),
+    0
+  );
+
+  if (value <= 0) {
+    return "0 MB";
+  }
 
   const units = [
     "Bytes",
@@ -87,101 +175,520 @@ function formatBytes(bytes) {
     "TB",
   ];
 
-  const index = Math.floor(
-    Math.log(bytes) /
-      Math.log(1024)
+  const index = Math.min(
+    Math.floor(
+      Math.log(value) /
+        Math.log(1024)
+    ),
+    units.length - 1
   );
 
   return `${(
-    bytes /
-    Math.pow(
-      1024,
-      index
+    value /
+    Math.pow(1024, index)
+  ).toFixed(
+    index === 0 ? 0 : 2
+  )} ${units[index]}`;
+}
+
+function formatUptime(seconds) {
+  const value = Math.max(
+    toSafeNumber(seconds),
+    0
+  );
+
+  if (value < 60) {
+    return `${Math.floor(value)}s`;
+  }
+
+  const days = Math.floor(
+    value / 86400
+  );
+
+  const hours = Math.floor(
+    (value % 86400) / 3600
+  );
+
+  const minutes = Math.floor(
+    (value % 3600) / 60
+  );
+
+  if (days > 0) {
+    return `${days}d ${hours}h ${minutes}m`;
+  }
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+
+  return `${minutes}m`;
+}
+
+function formatNumber(value) {
+  return new Intl.NumberFormat(
+    "en-UG"
+  ).format(
+    Math.max(
+      toSafeNumber(value),
+      0
     )
-  ).toFixed(2)} ${
-    units[index]
-  }`;
+  );
 }
 
-function formatUptime(
-  seconds
-) {
-  if (!seconds)
-    return "0m";
-
-  const days =
-    Math.floor(
-      seconds / 86400
-    );
-
-  const hours =
-    Math.floor(
-      (seconds %
-        86400) /
-        3600
-    );
-
-  const minutes =
-    Math.floor(
-      (seconds %
-        3600) /
-        60
-    );
-
-  return `${days}d ${hours}h ${minutes}m`;
+function formatPercentage(value) {
+  return `${clampPercentage(
+    value
+  ).toFixed(1)}%`;
 }
 
-function getStatusVariant(
-  status
-) {
+function formatLatency(value) {
+  return `${Math.round(
+    Math.max(
+      toSafeNumber(value),
+      0
+    )
+  )} ms`;
+}
+
+function formatLastUpdated(value) {
+  if (!value) {
+    return "Not available";
+  }
+
+  try {
+    const date = new Date(value);
+
+    if (
+      Number.isNaN(
+        date.getTime()
+      )
+    ) {
+      return "Not available";
+    }
+
+    return new Intl.DateTimeFormat(
+      "en-UG",
+      {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }
+    ).format(date);
+  } catch {
+    return "Not available";
+  }
+}
+
+function getStatusVariant(status) {
   switch (
-    status?.toLowerCase()
+    normalizeStatus(status)
   ) {
     case "healthy":
+    case "operational":
+    case "online":
+    case "ok":
       return "success";
+
     case "warning":
-      return "warning";
     case "degraded":
+    case "partial":
       return "warning";
+
     case "critical":
-      return "danger";
     case "offline":
+    case "failed":
+    case "unhealthy":
       return "danger";
+
+    case "unknown":
     default:
       return "secondary";
   }
+}
+
+function getStatusLabel(status) {
+  const normalized =
+    normalizeStatus(status);
+
+  if (
+    !normalized ||
+    normalized === "unknown"
+  ) {
+    return "Unknown";
+  }
+
+  return normalized
+    .replace(
+      /[_-]+/g,
+      " "
+    )
+    .replace(
+      /\b\w/g,
+      (character) =>
+        character.toUpperCase()
+    );
+}
+
+function isAbortError(error) {
+  return (
+    error?.name ===
+      "CanceledError" ||
+    error?.name ===
+      "AbortError" ||
+    error?.code ===
+      "ERR_CANCELED"
+  );
+}
+
+function extractHealthPayload(
+  response
+) {
+  const responseData =
+    response?.data;
+
+  if (
+    responseData?.data &&
+    typeof responseData.data ===
+      "object" &&
+    !Array.isArray(
+      responseData.data
+    )
+  ) {
+    return responseData.data;
+  }
+
+  return responseData;
+}
+
+// ============================================================================
+// Health Normalization
+// ============================================================================
+
+function normalizeHealth(payload) {
+  const source =
+    payload &&
+    typeof payload === "object" &&
+    !Array.isArray(payload)
+      ? payload
+      : {};
+
+  const memory =
+    source.memory &&
+    typeof source.memory === "object"
+      ? source.memory
+      : {};
+
+  const cpu =
+    source.cpu &&
+    typeof source.cpu === "object"
+      ? source.cpu
+      : {};
+
+  const database =
+    source.database &&
+    typeof source.database === "object"
+      ? source.database
+      : {};
+
+  const redis =
+    source.redis &&
+    typeof source.redis === "object"
+      ? source.redis
+      : {};
+
+  const metrics =
+    source.metrics &&
+    typeof source.metrics === "object"
+      ? source.metrics
+      : {};
+
+  const services = Array.isArray(
+    source.services
+  )
+    ? source.services
+    : [];
+
+  return {
+    status: normalizeStatus(
+      source.status,
+      DEFAULT_HEALTH.status
+    ),
+
+    uptime: Math.max(
+      toSafeNumber(
+        source.uptime
+      ),
+      0
+    ),
+
+    memory: {
+      used: Math.max(
+        toSafeNumber(
+          memory.used
+        ),
+        0
+      ),
+
+      total: Math.max(
+        toSafeNumber(
+          memory.total
+        ),
+        0
+      ),
+
+      percentage:
+        clampPercentage(
+          memory.percentage
+        ),
+    },
+
+    cpu: {
+      usage:
+        clampPercentage(
+          cpu.usage
+        ),
+    },
+
+    database: {
+      status:
+        normalizeStatus(
+          database.status
+        ),
+
+      latency: Math.max(
+        toSafeNumber(
+          database.latency
+        ),
+        0
+      ),
+    },
+
+    redis: {
+      status:
+        normalizeStatus(
+          redis.status
+        ),
+
+      latency: Math.max(
+        toSafeNumber(
+          redis.latency
+        ),
+        0
+      ),
+    },
+
+    metrics: {
+      requestsPerMinute:
+        Math.max(
+          toSafeNumber(
+            metrics.requestsPerMinute
+          ),
+          0
+        ),
+
+      activeUsers: Math.max(
+        toSafeNumber(
+          metrics.activeUsers
+        ),
+        0
+      ),
+
+      errorRate:
+        clampPercentage(
+          metrics.errorRate
+        ),
+    },
+
+    services: services
+      .filter(
+        (service) =>
+          service &&
+          typeof service ===
+            "object"
+      )
+      .map(
+        (
+          service,
+          index
+        ) => ({
+          id:
+            service.id ??
+            service._id ??
+            null,
+
+          name:
+            typeof service.name ===
+              "string" &&
+            service.name.trim()
+              ? service.name.trim()
+              : `Service ${
+                  index + 1
+                }`,
+
+          status:
+            normalizeStatus(
+              service.status
+            ),
+
+          latency: Math.max(
+            toSafeNumber(
+              service.latency
+            ),
+            0
+          ),
+        })
+      ),
+  };
 }
 
 // ============================================================================
 // Progress Bar
 // ============================================================================
 
-function ProgressBar({
-  value,
-  color = "#2563eb",
-}) {
-  return (
-    <div className="health-progress">
+const ProgressBar = memo(
+  ({
+    value = 0,
+    color = "#2563eb",
+    label = "System utilization",
+  }) => {
+    const percentage =
+      clampPercentage(value);
+
+    return (
       <div
-        className="health-progress-fill"
-        style={{
-          width: `${Math.min(
-            value,
-            100
-          )}%`,
-          background:
-            color,
-        }}
+        className="health-progress"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={
+          MAX_PERCENTAGE
+        }
+        aria-valuenow={
+          percentage
+        }
+        aria-label={label}
+      >
+        <div
+          className="health-progress-fill"
+          style={{
+            width: `${percentage}%`,
+            background: color,
+          }}
+        />
+      </div>
+    );
+  }
+);
+
+ProgressBar.displayName =
+  "ProgressBar";
+
+ProgressBar.propTypes = {
+  value: Number,
+  color: String,
+  label: String,
+};
+
+// ============================================================================
+// Metric Card
+// ============================================================================
+
+const HealthMetricCard = memo(
+  ({
+    icon: Icon,
+    title,
+    value,
+    children,
+  }) => (
+    <Card className="metric-card">
+      <div
+        className="metric-card-icon"
+        aria-hidden="true"
+      >
+        <Icon size={28} />
+      </div>
+
+      <h3>{title}</h3>
+
+      <h2>{value}</h2>
+
+      {children}
+    </Card>
+  )
+);
+
+HealthMetricCard.displayName =
+  "HealthMetricCard";
+
+HealthMetricCard.propTypes = {
+  icon: Function,
+  title: String,
+  value: String,
+  children: React.node,
+};
+
+// ============================================================================
+// Dependency Card
+// ============================================================================
+
+const DependencyCard = memo(
+  ({
+    icon: Icon,
+    title,
+    status,
+    latency,
+  }) => (
+    <Card className="dependency-card">
+      <Icon
+        aria-hidden="true"
       />
-    </div>
-  );
-}
+
+      <div>
+        <h3>{title}</h3>
+
+        <p>
+          Latency:{" "}
+          {formatLatency(
+            latency
+          )}
+        </p>
+      </div>
+
+      <StatusBadge
+        status={getStatusVariant(
+          status
+        )}
+      >
+        {getStatusLabel(
+          status
+        )}
+      </StatusBadge>
+    </Card>
+  )
+);
+
+DependencyCard.displayName =
+  "DependencyCard";
+
+DependencyCard.propTypes = {
+  icon: Function,
+  title: String,
+  status: String,
+  latency: Number,
+};
 
 // ============================================================================
 // System Health Page
 // ============================================================================
 
-export default function SystemHealth() {
+function SystemHealth() {
+  const mountedRef =
+    useRef(false);
+
+  const controllerRef =
+    useRef(null);
+
+  const requestInFlightRef =
+    useRef(false);
+
   const [
     health,
     setHealth,
@@ -204,67 +711,138 @@ export default function SystemHealth() {
     setError,
   ] = useState("");
 
-  // ===========================================================================
+  const [
+    lastUpdated,
+    setLastUpdated,
+  ] = useState(null);
+
+  // ========================================================================
   // Fetch Health
-  // ===========================================================================
+  // ========================================================================
 
   const loadHealth =
     useCallback(
       async (
         silent = false
       ) => {
+        if (
+          requestInFlightRef.current
+        ) {
+          return;
+        }
+
+        requestInFlightRef.current =
+          true;
+
+        if (!silent) {
+          setRefreshing(true);
+        }
+
+        controllerRef.current?.abort();
+
+        const controller =
+          new AbortController();
+
+        controllerRef.current =
+          controller;
+
         try {
-          if (!silent) {
-            setRefreshing(
-              true
-            );
-          }
-
-          setError("");
-
           const response =
             await api.get(
-              "/api/system/health"
+              HEALTH_ENDPOINT,
+              {
+                signal:
+                  controller.signal,
+              }
             );
 
-          const data =
-            response.data ||
-            DEFAULT_HEALTH;
+          if (
+            controller.signal
+              .aborted ||
+            !mountedRef.current
+          ) {
+            return;
+          }
 
-          setHealth({
-            ...DEFAULT_HEALTH,
-            ...data,
-          });
+          const payload =
+            extractHealthPayload(
+              response
+            );
+
+          setHealth(
+            normalizeHealth(
+              payload
+            )
+          );
+
+          setLastUpdated(
+            new Date()
+          );
+
+          setError("");
         } catch (
-          err
+          requestError
         ) {
+          if (
+            isAbortError(
+              requestError
+            ) ||
+            controller.signal
+              .aborted
+          ) {
+            return;
+          }
+
+          if (
+            !mountedRef.current
+          ) {
+            return;
+          }
+
           setError(
-            err?.response
+            requestError
+              ?.response
               ?.data
               ?.message ||
+              requestError
+                ?.message ||
               "Failed to load system health."
           );
         } finally {
-          setLoading(
-            false
-          );
-          setRefreshing(
-            false
-          );
+          if (
+            mountedRef.current
+          ) {
+            setLoading(false);
+            setRefreshing(false);
+          }
+
+          if (
+            controllerRef.current ===
+            controller
+          ) {
+            controllerRef.current =
+              null;
+          }
+
+          requestInFlightRef.current =
+            false;
         }
       },
       []
     );
 
-  // ===========================================================================
-  // Initialize
-  // ===========================================================================
+  // ========================================================================
+  // Lifecycle
+  // ========================================================================
 
   useEffect(() => {
+    mountedRef.current =
+      true;
+
     loadHealth();
 
     const timer =
-      setInterval(
+      window.setInterval(
         () =>
           loadHealth(
             true
@@ -272,61 +850,141 @@ export default function SystemHealth() {
         AUTO_REFRESH_INTERVAL
       );
 
-    return () =>
-      clearInterval(
+    return () => {
+      mountedRef.current =
+        false;
+
+      window.clearInterval(
         timer
       );
+
+      controllerRef.current?.abort();
+
+      controllerRef.current =
+        null;
+
+      requestInFlightRef.current =
+        false;
+    };
   }, [loadHealth]);
 
-  // ===========================================================================
-  // Computed
-  // ===========================================================================
+  // ========================================================================
+  // Derived State
+  // ========================================================================
 
   const systemHealthy =
-    useMemo(() => {
-      return (
-        health.status ===
-        "healthy"
-      );
-    }, [health]);
+    useMemo(
+      () =>
+        [
+          "healthy",
+          "operational",
+          "ok",
+        ].includes(
+          health.status
+        ),
+      [health.status]
+    );
 
-  // ===========================================================================
-  // Loading
-  // ===========================================================================
+  const overallStatusLabel =
+    useMemo(
+      () =>
+        getStatusLabel(
+          health.status
+        ),
+      [health.status]
+    );
+
+  // ========================================================================
+  // Initial Loading
+  // ========================================================================
 
   if (loading) {
-    return <LoadingScreen />;
+    return (
+      <LoadingScreen />
+    );
   }
 
-  // ===========================================================================
+  // ========================================================================
   // Render
-  // ===========================================================================
+  // ========================================================================
 
   return (
-    <div className="system-health-page">
+    <main
+      className="system-health-page"
+      aria-labelledby="system-health-title"
+    >
       <PageHeader
         title="System Health"
         subtitle="Monitor infrastructure, services and platform availability."
         actions={
           <Button
             onClick={() =>
-              loadHealth()
+              loadHealth(false)
             }
-            disabled={
-              refreshing
-            }
+            disabled={refreshing}
+            aria-label="Refresh system health"
+            aria-busy={refreshing}
           >
             <RefreshCw
               size={18}
+              className={
+                refreshing
+                  ? "health-refreshing"
+                  : undefined
+              }
+              aria-hidden="true"
             />
-            Refresh
+
+            {refreshing
+              ? "Refreshing..."
+              : "Refresh"}
           </Button>
         }
       />
 
-      {/* ================================================================ */}
+      <h1
+        id="system-health-title"
+        className="sr-only"
+      >
+        TITech Community Capital
+        System Health
+      </h1>
+
+      {/* ================================================================== */}
+      {/* Metadata */}
+      {/* ================================================================== */}
+
+      <div
+        className="system-health-meta"
+        aria-live="polite"
+      >
+        <Clock
+          size={15}
+          aria-hidden="true"
+        />
+
+        <span>
+          Last updated:{" "}
+          {formatLastUpdated(
+            lastUpdated
+          )}
+        </span>
+
+        <span aria-hidden="true">
+          •
+        </span>
+
+        <span>
+          Auto-refreshes every{" "}
+          {AUTO_REFRESH_INTERVAL /
+            1000}
+          s
+        </span>
+      </div>
+
+      {/* ================================================================== */}
       {/* Overall Status */}
-      {/* ================================================================ */}
+      {/* ================================================================== */}
 
       <Card className="system-status-card">
         <div className="system-status-header">
@@ -336,9 +994,9 @@ export default function SystemHealth() {
             </h2>
 
             <p>
-              Current system
-              operational
-              health.
+              Current TITech
+              Community Capital
+              operational health.
             </p>
           </div>
 
@@ -347,7 +1005,7 @@ export default function SystemHealth() {
               health.status
             )}
           >
-            {health.status}
+            {overallStatusLabel}
           </StatusBadge>
         </div>
 
@@ -356,11 +1014,13 @@ export default function SystemHealth() {
             <CheckCircle2
               size={60}
               className="status-icon healthy"
+              aria-hidden="true"
             />
           ) : (
             <AlertTriangle
               size={60}
               className="status-icon unhealthy"
+              aria-hidden="true"
             />
           )}
 
@@ -381,274 +1041,244 @@ export default function SystemHealth() {
         </div>
       </Card>
 
+      {/* ================================================================== */}
+      {/* Error */}
+      {/* ================================================================== */}
+
       {error && (
-        <Card className="system-error-card">
-          <WifiOff />
-          <span>
-            {error}
-          </span>
+        <Card
+          className="system-error-card"
+          role="alert"
+          aria-live="assertive"
+        >
+          <WifiOff
+            size={20}
+            aria-hidden="true"
+          />
+
+          <span>{error}</span>
+
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() =>
+              loadHealth(false)
+            }
+            disabled={refreshing}
+          >
+            Retry
+          </Button>
         </Card>
       )}
 
-      {/* ================================================================ */}
-      {/* Metrics */}
-      {/* ================================================================ */}
+      {/* ================================================================== */}
+      {/* Infrastructure Metrics */}
+      {/* ================================================================== */}
 
-      <section className="health-grid">
-        <Card className="metric-card">
-          <Cpu
-            size={28}
-          />
-
-          <h3>
-            CPU Usage
-          </h3>
-
-          <h2>
-            {
-              health.cpu
-                ?.usage
-            }
-            %
-          </h2>
-
+      <section
+        className="health-grid"
+        aria-label="Infrastructure metrics"
+      >
+        <HealthMetricCard
+          icon={Cpu}
+          title="CPU Usage"
+          value={formatPercentage(
+            health.cpu?.usage
+          )}
+        >
           <ProgressBar
             value={
-              health.cpu
-                ?.usage
+              health.cpu?.usage
             }
             color="#2563eb"
+            label="CPU usage"
           />
-        </Card>
+        </HealthMetricCard>
 
-        <Card className="metric-card">
-          <HardDrive
-            size={28}
-          />
-
-          <h3>
-            Memory Usage
-          </h3>
-
-          <h2>
-            {
-              health.memory
-                ?.percentage
-            }
-            %
-          </h2>
-
+        <HealthMetricCard
+          icon={HardDrive}
+          title="Memory Usage"
+          value={formatPercentage(
+            health.memory
+              ?.percentage
+          )}
+        >
           <ProgressBar
             value={
               health.memory
                 ?.percentage
             }
             color="#10b981"
+            label="Memory usage"
           />
 
           <small>
             {formatBytes(
-              health.memory
-                ?.used
+              health.memory?.used
             )}
             {" / "}
             {formatBytes(
-              health.memory
-                ?.total
+              health.memory?.total
             )}
           </small>
-        </Card>
+        </HealthMetricCard>
 
-        <Card className="metric-card">
-          <Activity
-            size={28}
-          />
+        <HealthMetricCard
+          icon={Activity}
+          title="Requests / Min"
+          value={formatNumber(
+            health.metrics
+              ?.requestsPerMinute
+          )}
+        />
 
-          <h3>
-            Requests/Min
-          </h3>
+        <HealthMetricCard
+          icon={Shield}
+          title="Error Rate"
+          value={formatPercentage(
+            health.metrics
+              ?.errorRate
+          )}
+        />
 
-          <h2>
-            {
-              health
-                .metrics
-                ?.requestsPerMinute
-            }
-          </h2>
-        </Card>
-
-        <Card className="metric-card">
-          <Shield
-            size={28}
-          />
-
-          <h3>
-            Error Rate
-          </h3>
-
-          <h2>
-            {
-              health
-                .metrics
-                ?.errorRate
-            }
-            %
-          </h2>
-        </Card>
-
-        <Card className="metric-card">
-          <Clock
-            size={28}
-          />
-
-          <h3>
-            Active Users
-          </h3>
-
-          <h2>
-            {
-              health
-                .metrics
-                ?.activeUsers
-            }
-          </h2>
-        </Card>
+        <HealthMetricCard
+          icon={Clock}
+          title="Active Users"
+          value={formatNumber(
+            health.metrics
+              ?.activeUsers
+          )}
+        />
       </section>
 
-      {/* ================================================================ */}
-      {/* Dependencies */}
-      {/* ================================================================ */}
+      {/* ================================================================== */}
+      {/* Core Dependencies */}
+      {/* ================================================================== */}
 
-      <section className="dependency-grid">
-        <Card className="dependency-card">
-          <Database />
+      <section
+        className="dependency-grid"
+        aria-label="Core platform dependencies"
+      >
+        <DependencyCard
+          icon={Database}
+          title="Database"
+          status={
+            health.database
+              ?.status
+          }
+          latency={
+            health.database
+              ?.latency
+          }
+        />
 
-          <div>
-            <h3>
-              Database
-            </h3>
-
-            <p>
-              Latency:{" "}
-              {
-                health
-                  .database
-                  ?.latency
-              }
-              ms
-            </p>
-          </div>
-
-          <StatusBadge
-            status={getStatusVariant(
-              health
-                .database
-                ?.status
-            )}
-          >
-            {
-              health
-                .database
-                ?.status
-            }
-          </StatusBadge>
-        </Card>
-
-        <Card className="dependency-card">
-          <Network />
-
-          <div>
-            <h3>
-              Redis Cache
-            </h3>
-
-            <p>
-              Latency:{" "}
-              {
-                health.redis
-                  ?.latency
-              }
-              ms
-            </p>
-          </div>
-
-          <StatusBadge
-            status={getStatusVariant(
-              health.redis
-                ?.status
-            )}
-          >
-            {
-              health.redis
-                ?.status
-            }
-          </StatusBadge>
-        </Card>
+        <DependencyCard
+          icon={Network}
+          title="Redis Cache"
+          status={
+            health.redis?.status
+          }
+          latency={
+            health.redis?.latency
+          }
+        />
       </section>
 
-      {/* ================================================================ */}
+      {/* ================================================================== */}
       {/* Microservices */}
-      {/* ================================================================ */}
+      {/* ================================================================== */}
 
-      <Card>
+      <Card className="system-services-card">
         <div className="services-header">
-          <Server />
+          <Server
+            aria-hidden="true"
+          />
 
-          <h2>
-            Microservices
-          </h2>
+          <div>
+            <h2>
+              Microservices
+            </h2>
+
+            <p>
+              Current availability
+              and response health of
+              registered platform
+              services.
+            </p>
+          </div>
         </div>
 
-        <div className="services-list">
-          {health.services
-            ?.length ? (
+        <div
+          className="services-list"
+          role="list"
+        >
+          {health.services.length >
+          0 ? (
             health.services.map(
               (
-                service
-              ) => (
-                <div
-                  key={
-                    service.name
-                  }
-                  className="service-item"
-                >
-                  <div>
-                    <h4>
-                      {
-                        service.name
-                      }
-                    </h4>
+                service,
+                index
+              ) => {
+                const serviceKey =
+                  service.id ||
+                  service.name ||
+                  `service-${index}`;
 
-                    <p>
-                      Latency:
-                      {" "}
-                      {
-                        service.latency
-                      }
-                      ms
-                    </p>
-                  </div>
-
-                  <StatusBadge
-                    status={getStatusVariant(
-                      service.status
-                    )}
-                  >
-                    {
-                      service.status
+                return (
+                  <div
+                    key={
+                      serviceKey
                     }
-                  </StatusBadge>
-                </div>
-              )
+                    className="service-item"
+                    role="listitem"
+                  >
+                    <div className="service-info">
+                      <h4>
+                        {
+                          service.name
+                        }
+                      </h4>
+
+                      <p>
+                        Latency:{" "}
+                        {formatLatency(
+                          service.latency
+                        )}
+                      </p>
+                    </div>
+
+                    <StatusBadge
+                      status={getStatusVariant(
+                        service.status
+                      )}
+                    >
+                      {getStatusLabel(
+                        service.status
+                      )}
+                    </StatusBadge>
+                  </div>
+                );
+              }
             )
           ) : (
-            <div className="empty-services">
+            <div
+              className="empty-services"
+              role="status"
+            >
               No registered
               services.
             </div>
           )}
         </div>
       </Card>
-    </div>
+    </main>
   );
 }
+
+// ============================================================================
+// Memoized Export
+// ============================================================================
+
+export default memo(
+  SystemHealth
+);

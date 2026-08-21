@@ -1,16 +1,35 @@
 // ============================================================================
 // TITech Community Capital
-// Production-grade Logger & Observability Service
+// Enterprise Production Logger & Observability Service
 // File: backend/utils/logger.js
-// Multi-Tenant | Distributed Tracing | Audit | OpenTelemetry Ready
+//
+// Production Grade
+// ----------------------------------------------------------------------------
+// Responsibilities
+// - Structured Winston logging
+// - Safe startup before request context exists
+// - Request/correlation/tenant context enrichment
+// - Sensitive-data redaction
+// - Console and file logging
+// - Optional MongoDB audit transport
+// - Child/request loggers
+// - Security/audit/performance logging
+// - Safe exception handling
+// - No circular bootstrap dependency
+// - TITech terminology consistency
 // ============================================================================
 
 'use strict';
 
-const path = require('path');
-const fs = require('fs');
-const os = require('os');
-const { createLogger, format, transports } = require('winston');
+const path = require('node:path');
+const fs = require('node:fs');
+const os = require('node:os');
+
+const {
+  createLogger,
+  format,
+  transports,
+} = require('winston');
 
 const {
   combine,
@@ -21,64 +40,64 @@ const {
   colorize,
   splat,
   metadata,
-  label,
 } = format;
 
-// Optional dependencies
-let MongoDBTransport;
-let DailyRotateFile;
+/* ============================================================================
+ * Optional dependencies
+ * ========================================================================== */
+
+let MongoDBTransport = null;
+let DailyRotateFile = null;
 
 try {
   MongoDBTransport =
     require('winston-mongodb').MongoDB;
-} catch (_) {
+} catch {
   MongoDBTransport = null;
 }
 
 try {
   DailyRotateFile =
     require('winston-daily-rotate-file');
-} catch (_) {
+} catch {
   DailyRotateFile = null;
 }
 
-// Optional context integration
-let requestContext = null;
-
-function loadRequestContext() {
-  if (requestContext) {
-    return requestContext;
-  }
-
-  try {
-    requestContext = require('../middleware/requestContext');
-  } catch (_) {
-    requestContext = null;
-  }
-
-  return requestContext;
-}
+/* ============================================================================
+ * Runtime configuration
+ * ========================================================================== */
 
 const LOG_LEVEL =
-  process.env.LOG_LEVEL || 'info';
+  String(
+    process.env.LOG_LEVEL ||
+      'info',
+  )
+    .trim()
+    .toLowerCase();
 
 const NODE_ENV =
-  process.env.NODE_ENV ||
-  'development';
+  String(
+    process.env.NODE_ENV ||
+      'development',
+  )
+    .trim()
+    .toLowerCase();
 
 const LOG_DIR =
   process.env.LOG_DIR ||
   path.join(
     process.cwd(),
-    'logs'
+    'logs',
   );
 
 const SERVICE_NAME =
   process.env.SERVICE_NAME ||
-  'titech-fintech-api';
+  process.env.OTEL_SERVICE_NAME ||
+  'titech-community-capital-backend';
 
 const SERVICE_VERSION =
   process.env.SERVICE_VERSION ||
+  process.env.APP_VERSION ||
   '1.0.0';
 
 const HOSTNAME =
@@ -90,118 +109,207 @@ const AUDIT_LOG_URI =
   null;
 
 const ENABLE_FILE_LOGGING =
-  process.env
-    .ENABLE_FILE_LOGGING !==
+  process.env.ENABLE_FILE_LOGGING !==
   'false';
 
 const ENABLE_CONSOLE_LOGGING =
-  process.env
-    .ENABLE_CONSOLE_LOGGING !==
+  process.env.ENABLE_CONSOLE_LOGGING !==
   'false';
 
-/**
- * ============================================================================
- * Ensure Log Directory
- * ============================================================================
- */
+const ENABLE_MONGODB_AUDIT =
+  Boolean(
+    AUDIT_LOG_URI &&
+      MongoDBTransport,
+  );
 
-if (
-  ENABLE_FILE_LOGGING &&
-  !fs.existsSync(LOG_DIR)
-) {
-  try {
-    fs.mkdirSync(LOG_DIR, {
-      recursive: true,
-    });
-  } catch (_) {}
-}
+/* ============================================================================
+ * Sensitive data protection
+ * ========================================================================== */
 
-/**
- * ============================================================================
- * Sensitive Data Redaction
- * ============================================================================
- */
-
-const SENSITIVE_KEYS = [
+const SENSITIVE_KEYS = Object.freeze([
   'authorization',
   'password',
+  'passwd',
+  'passcode',
   'token',
-  'accessToken',
+  'accesstoken',
   'refreshToken',
+  'refresh_token',
   'cookie',
   'set-cookie',
   'pin',
   'otp',
   'secret',
   'privatekey',
+  'private_key',
   'apikey',
+  'api_key',
   'api-key',
+  'clientsecret',
+  'client_secret',
   'cardnumber',
+  'card_number',
   'cvv',
   'nationalid',
+  'national_id',
   'nin',
   'ssn',
-];
+  'mongouri',
+  'mongo_uri',
+  'databaseurl',
+  'database_url',
+  'redisurl',
+  'redis_uri',
+  'connectionstring',
+]);
 
-function redactMeta(
-  meta = {}
+function isSensitiveKey(
+  key,
 ) {
+  const normalized =
+    String(key)
+      .replace(/[-\s]/g, '')
+      .toLowerCase();
+
+  return SENSITIVE_KEYS.some(
+    (sensitive) =>
+      normalized.includes(
+        sensitive
+          .replace(
+            /[-\s]/g,
+            '',
+          )
+          .toLowerCase(),
+      ),
+  );
+}
+
+/**
+ * Deep-redact an object without throwing.
+ */
+function redactMeta(
+  meta = {},
+) {
+  if (
+    !meta ||
+    typeof meta !==
+      'object'
+  ) {
+    return {};
+  }
+
   try {
     const clone =
       JSON.parse(
-        JSON.stringify(meta)
+        JSON.stringify(meta),
       );
 
-    function scrub(obj) {
+    const scrub = (
+      value,
+    ) => {
       if (
-        !obj ||
-        typeof obj !== 'object'
+        !value ||
+        typeof value !==
+          'object'
       ) {
         return;
       }
 
-      for (const key of Object.keys(
-        obj
-      )) {
-        const lower =
-          key.toLowerCase();
+      for (
+        const key of Object.keys(
+          value,
+        )
+      ) {
+        if (
+          isSensitiveKey(key)
+        ) {
+          value[key] =
+            '[REDACTED]';
+
+          continue;
+        }
 
         if (
-          SENSITIVE_KEYS.includes(
-            lower
-          ) ||
-          SENSITIVE_KEYS.some(
-            k =>
-              lower.includes(
-                k
-              )
-          )
+          value[key] &&
+          typeof value[key] ===
+            'object'
         ) {
-          obj[key] =
-            '[REDACTED]';
-        } else if (
-          typeof obj[
-            key
-          ] === 'object'
-        ) {
-          scrub(obj[key]);
+          scrub(
+            value[key],
+          );
         }
       }
-    }
+    };
 
     scrub(clone);
 
     return clone;
-  } catch (_) {
+  } catch {
     return {};
   }
 }
 
+/* ============================================================================
+ * Request context integration
+ * ========================================================================== */
+
 /**
- * ============================================================================
- * Request Context Injection
+ * IMPORTANT
+ * ----------------------------------------------------------------------------
+ *
+ * Do not require requestContext while logger.js itself is initializing.
+ *
+ * requestContext.js has a lazy dependency back to logger.js. Requiring it
+ * here during logger startup creates:
+ *
+ * logger.js
+ *   -> requestContext.js
+ *        -> logger.js
+ *
+ * That produces CommonJS circular-dependency warnings and can expose
+ * partially initialized module exports.
+ *
+ * We therefore inspect require.cache instead.
+ *
+ * During application startup requestContext normally is not cached yet, so
+ * logger initialization proceeds with empty request metadata.
+ *
+ * Once requestContext has been loaded by the HTTP layer, it is already cached
+ * and its context becomes available to subsequent log messages.
  * ============================================================================
  */
+
+let requestContext = null;
+
+function loadRequestContext() {
+  if (requestContext) {
+    return requestContext;
+  }
+
+  try {
+    const requestContextPath =
+      require.resolve(
+        '../middleware/requestContext',
+      );
+
+    const cachedModule =
+      require.cache[
+        requestContextPath
+      ];
+
+    if (!cachedModule) {
+      return null;
+    }
+
+    requestContext =
+      cachedModule.exports ||
+      null;
+
+    return requestContext;
+  } catch {
+    return null;
+  }
+}
 
 function getRequestMeta() {
   try {
@@ -216,70 +324,103 @@ function getRequestMeta() {
       return {};
     }
 
-    const ctx =
-      contextModule.getContext() || {};
+    const context =
+      contextModule.getContext() ||
+      {};
 
     return {
       requestId:
-        ctx.requestId,
+        context.requestId,
+
       correlationId:
-        ctx.correlationId,
+        context.correlationId,
+
       traceId:
-        ctx.traceId,
+        context.traceId,
+
       spanId:
-        ctx.spanId,
+        context.spanId,
+
       tenantId:
-        ctx.tenantId,
+        context.tenantId,
+
+      organizationId:
+        context.organizationId,
+
       userId:
-        ctx.userId,
+        context.userId,
     };
-  } catch (_) {
+  } catch {
     return {};
   }
 }
 
-/**
- * ============================================================================
- * Development Console Formatter
- * ============================================================================
- */
+/* ============================================================================
+ * Log directory
+ * ========================================================================== */
+
+if (
+  ENABLE_FILE_LOGGING &&
+  !fs.existsSync(LOG_DIR)
+) {
+  try {
+    fs.mkdirSync(
+      LOG_DIR,
+      {
+        recursive:
+          true,
+      },
+    );
+  } catch {
+    /*
+     * File logging is optional. Console logging remains available.
+     */
+  }
+}
+
+/* ============================================================================
+ * Formatters
+ * ========================================================================== */
 
 const devConsoleFormat =
   printf(
     ({
       level,
       message,
-      timestamp: ts,
+      timestamp:
+        logTimestamp,
       stack,
       ...meta
     }) => {
-      const metadata =
-        redactMeta(meta);
+      const safeMeta =
+        redactMeta(
+          meta,
+        );
 
-      const metaString =
+      const metadataString =
         Object.keys(
-          metadata
+          safeMeta,
         ).length
           ? `\n${JSON.stringify(
-              metadata,
+              safeMeta,
               null,
-              2
+              2,
             )}`
           : '';
 
-      return `${ts} [${SERVICE_NAME}] ${level}: ${message}${
-        stack
-          ? `\n${stack}`
-          : ''
-      }${metaString}`;
-    }
+      return (
+        `${logTimestamp} ` +
+        `[${SERVICE_NAME}] ` +
+        `${level}: ${message}` +
+        (
+          stack
+            ? `\n${stack}`
+            : ''
+        ) +
+        metadataString
+      );
+    },
   );
-
-/**
- * ============================================================================
- * Production JSON Formatter
- * ============================================================================
- */
 
 const productionFormat =
   combine(
@@ -289,20 +430,19 @@ const productionFormat =
     }),
     splat(),
     metadata(),
-    json()
+    json(),
   );
 
-/**
- * ============================================================================
- * Transport Configuration
- * ============================================================================
- */
+/* ============================================================================
+ * Transport configuration
+ * ========================================================================== */
 
 const transportList = [];
 
-/**
- * Console
- */
+/* ----------------------------------------------------------------------------
+ * Console transport
+ * -------------------------------------------------------------------------- */
+
 if (
   ENABLE_CONSOLE_LOGGING
 ) {
@@ -310,8 +450,10 @@ if (
     new transports.Console({
       level:
         LOG_LEVEL,
+
       handleExceptions:
         true,
+
       format:
         NODE_ENV ===
         'production'
@@ -320,18 +462,20 @@ if (
               colorize(),
               timestamp(),
               errors({
-                stack: true,
+                stack:
+                  true,
               }),
               splat(),
-              devConsoleFormat
+              devConsoleFormat,
             ),
-    })
+    }),
   );
 }
 
-/**
- * Daily Rotation
- */
+/* ----------------------------------------------------------------------------
+ * File transports
+ * -------------------------------------------------------------------------- */
+
 if (
   ENABLE_FILE_LOGGING
 ) {
@@ -339,244 +483,277 @@ if (
     DailyRotateFile
   ) {
     transportList.push(
-      new DailyRotateFile(
-        {
-          level:
-            LOG_LEVEL,
-          filename:
-            path.join(
-              LOG_DIR,
-              '%DATE%-application.log'
-            ),
-          datePattern:
-            'YYYY-MM-DD',
-          zippedArchive:
-            true,
-          maxSize:
-            '20m',
-          maxFiles:
-            '30d',
-          handleExceptions:
-            true,
-          format:
-            productionFormat,
-        }
-      )
+      new DailyRotateFile({
+        level:
+          LOG_LEVEL,
+
+        filename:
+          path.join(
+            LOG_DIR,
+            '%DATE%-application.log',
+          ),
+
+        datePattern:
+          'YYYY-MM-DD',
+
+        zippedArchive:
+          true,
+
+        maxSize:
+          '20m',
+
+        maxFiles:
+          '30d',
+
+        handleExceptions:
+          true,
+
+        format:
+          productionFormat,
+      }),
     );
 
     transportList.push(
-      new DailyRotateFile(
-        {
-          level:
-            'error',
-          filename:
-            path.join(
-              LOG_DIR,
-              '%DATE%-error.log'
-            ),
-          datePattern:
-            'YYYY-MM-DD',
-          zippedArchive:
-            true,
-          maxSize:
-            '20m',
-          maxFiles:
-            '60d',
-          handleExceptions:
-            true,
-          format:
-            productionFormat,
-        }
-      )
+      new DailyRotateFile({
+        level:
+          'error',
+
+        filename:
+          path.join(
+            LOG_DIR,
+            '%DATE%-error.log',
+          ),
+
+        datePattern:
+          'YYYY-MM-DD',
+
+        zippedArchive:
+          true,
+
+        maxSize:
+          '20m',
+
+        maxFiles:
+          '60d',
+
+        handleExceptions:
+          true,
+
+        format:
+          productionFormat,
+      }),
     );
   } else {
     transportList.push(
       new transports.File({
         level:
           LOG_LEVEL,
+
         filename:
           path.join(
             LOG_DIR,
-            'application.log'
+            'application.log',
           ),
+
         maxsize:
           20 *
           1024 *
           1024,
+
         maxFiles:
           10,
+
         handleExceptions:
           true,
+
         format:
           productionFormat,
-      })
+      }),
     );
   }
 }
 
-/**
- * MongoDB Audit Logs
- */
+/* ----------------------------------------------------------------------------
+ * Optional MongoDB audit transport
+ * -------------------------------------------------------------------------- */
+
 if (
-  AUDIT_LOG_URI &&
-  MongoDBTransport
+  ENABLE_MONGODB_AUDIT
 ) {
-  transportList.push(
-    new MongoDBTransport({
-      db: AUDIT_LOG_URI,
-      collection:
-        'auditlogs',
-      level: 'info',
-      tryReconnect:
-        true,
-      options: {
-        useUnifiedTopology:
+  try {
+    transportList.push(
+      new MongoDBTransport({
+        db:
+          AUDIT_LOG_URI,
+
+        collection:
+          'auditlogs',
+
+        level:
+          'info',
+
+        tryReconnect:
           true,
-      },
-      format:
-        productionFormat,
-    })
-  );
+
+        options: {
+          useUnifiedTopology:
+            true,
+        },
+
+        format:
+          productionFormat,
+      }),
+    );
+  } catch {
+    /*
+     * Never allow an optional audit transport to prevent application startup.
+     */
+  }
 }
 
-/**
- * ============================================================================
- * Logger Instance
- * ============================================================================
- */
+/* ============================================================================
+ * Winston logger
+ * ========================================================================== */
 
 const logger =
   createLogger({
-    level: LOG_LEVEL,
+    level:
+      LOG_LEVEL,
+
     defaultMeta: {
       service:
         SERVICE_NAME,
+
       version:
         SERVICE_VERSION,
+
       environment:
         NODE_ENV,
+
       hostname:
         HOSTNAME,
     },
+
     transports:
       transportList,
+
     exitOnError:
       false,
   });
 
-/**
- * ============================================================================
- * Request Context Injection
- * ============================================================================
- */
+/* ============================================================================
+ * Safe metadata enrichment
+ * ========================================================================== */
 
-function enrich(meta = {}) {
-  return {
+function enrich(
+  meta = {},
+) {
+  return redactMeta({
     ...getRequestMeta(),
-    ...redactMeta(meta),
-  };
+    ...meta,
+  });
 }
 
-/**
- * ============================================================================
- * Morgan Stream
- * ============================================================================
- */
+/* ============================================================================
+ * Morgan compatibility
+ * ========================================================================== */
 
 logger.stream = {
-  write(message) {
+  write(
+    message,
+  ) {
     logger.info(
-      message.trim()
+      String(
+        message,
+      ).trim(),
     );
   },
 };
 
-/**
- * ============================================================================
- * Child Logger
- * ============================================================================
- */
+/* ============================================================================
+ * Child logger
+ * ========================================================================== */
 
 logger.child =
-  function (
-    baseMeta = {}
+  function child(
+    baseMeta = {},
   ) {
-    const meta =
-      enrich(baseMeta);
+    const base =
+      enrich(
+        baseMeta,
+      );
 
     return {
       info(
-        msg,
-        extra = {}
+        message,
+        extra = {},
       ) {
         logger.info(
-          msg,
+          message,
           {
-            ...meta,
+            ...base,
             ...enrich(
-              extra
+              extra,
             ),
-          }
+          },
         );
       },
 
       warn(
-        msg,
-        extra = {}
+        message,
+        extra = {},
       ) {
         logger.warn(
-          msg,
+          message,
           {
-            ...meta,
+            ...base,
             ...enrich(
-              extra
+              extra,
             ),
-          }
+          },
         );
       },
 
       error(
-        msg,
-        extra = {}
+        message,
+        extra = {},
       ) {
         logger.error(
-          msg,
+          message,
           {
-            ...meta,
+            ...base,
             ...enrich(
-              extra
+              extra,
             ),
-          }
+          },
         );
       },
 
       debug(
-        msg,
-        extra = {}
+        message,
+        extra = {},
       ) {
         logger.debug(
-          msg,
+          message,
           {
-            ...meta,
+            ...base,
             ...enrich(
-              extra
+              extra,
             ),
-          }
+          },
         );
       },
     };
   };
 
-/**
- * ============================================================================
- * Request Logger
- * ============================================================================
- */
+/* ============================================================================
+ * Request-scoped logger
+ * ========================================================================== */
 
 logger.withRequest =
-  function (
+  function withRequest(
     requestId,
-    extra = {}
+    extra = {},
   ) {
     return logger.child({
       requestId,
@@ -585,157 +762,161 @@ logger.withRequest =
   };
 
 logger.infoWith =
-  (
+  function infoWith(
     requestId,
-    msg,
-    meta = {}
-  ) =>
-    logger
+    message,
+    meta = {},
+  ) {
+    return logger
       .withRequest(
-        requestId
+        requestId,
       )
       .info(
-        msg,
-        meta
+        message,
+        meta,
       );
+  };
 
 logger.warnWith =
-  (
+  function warnWith(
     requestId,
-    msg,
-    meta = {}
-  ) =>
-    logger
+    message,
+    meta = {},
+  ) {
+    return logger
       .withRequest(
-        requestId
+        requestId,
       )
       .warn(
-        msg,
-        meta
+        message,
+        meta,
       );
+  };
 
 logger.errorWith =
-  (
+  function errorWith(
     requestId,
-    msg,
-    meta = {}
-  ) =>
-    logger
+    message,
+    meta = {},
+  ) {
+    return logger
       .withRequest(
-        requestId
+        requestId,
       )
       .error(
-        msg,
-        meta
+        message,
+        meta,
       );
+  };
 
-/**
- * ============================================================================
- * Structured Audit Logging
- * ============================================================================
- */
+/* ============================================================================
+ * Audit logging
+ * ========================================================================== */
 
 logger.audit =
-  function (
+  function audit(
     action,
-    metadata = {}
+    metadata = {},
   ) {
     logger.info(
       `AUDIT:${action}`,
       enrich({
-        audit: true,
+        audit:
+          true,
+
         action,
+
         ...metadata,
-      })
+      }),
     );
   };
 
-/**
- * ============================================================================
- * Performance Logging
- * ============================================================================
- */
+/* ============================================================================
+ * Performance logging
+ * ========================================================================== */
 
 logger.performance =
-  function (
+  function performance(
     operation,
     duration,
-    metadata = {}
+    metadata = {},
   ) {
     logger.info(
       `PERFORMANCE:${operation}`,
       enrich({
-        duration,
         operation,
+        duration,
         ...metadata,
-      })
+      }),
     );
   };
 
-/**
- * ============================================================================
- * Security Logging
- * ============================================================================
- */
+/* ============================================================================
+ * Security logging
+ * ========================================================================== */
 
 logger.security =
-  function (
+  function security(
     event,
-    metadata = {}
+    metadata = {},
   ) {
     logger.warn(
       `SECURITY:${event}`,
-      enrich(metadata)
+      enrich(
+        metadata,
+      ),
     );
   };
 
-/**
- * ============================================================================
- * Startup Banner
- * ============================================================================
- */
+/* ============================================================================
+ * Startup logging
+ * ========================================================================== */
 
 logger.startup =
-  function (
+  function startup(
     message,
-    metadata = {}
+    metadata = {},
   ) {
+    /*
+     * Startup logs intentionally use enrich(), but enrich() no longer
+     * initializes requestContext and therefore cannot create a logger cycle.
+     */
     logger.info(
       `STARTUP:${message}`,
-      enrich(metadata)
+      enrich(
+        metadata,
+      ),
     );
   };
 
-/**
- * ============================================================================
- * Shutdown Banner
- * ============================================================================
- */
+/* ============================================================================
+ * Shutdown logging
+ * ========================================================================== */
 
 logger.shutdown =
-  function (
+  function shutdown(
     message,
-    metadata = {}
+    metadata = {},
   ) {
     logger.info(
       `SHUTDOWN:${message}`,
-      enrich(metadata)
+      enrich(
+        metadata,
+      ),
     );
   };
 
-/**
- * ============================================================================
- * Degraded Mode Logging
- * ============================================================================
- */
+/* ============================================================================
+ * Degraded mode logging
+ * ========================================================================== */
 
 let degradedLogged =
   false;
 
 logger.logDegradedOnce =
-  function (
+  function logDegradedOnce(
     message,
-    metadata = {}
+    metadata = {},
   ) {
     if (
       degradedLogged
@@ -748,81 +929,83 @@ logger.logDegradedOnce =
 
     logger.warn(
       message,
-      enrich(metadata)
+      enrich(
+        metadata,
+      ),
     );
   };
 
-/**
- * ============================================================================
- * Process Exception Handling
- * ============================================================================
- */
+/* ============================================================================
+ * Process exception handling
+ * ========================================================================== */
 
 logger.handleUncaught =
-  function () {
+  function handleUncaught() {
     process.on(
       'unhandledRejection',
-      reason => {
+      (reason) => {
         logger.error(
-          'Unhandled Rejection',
+          'Unhandled promise rejection.',
           {
             reason:
               reason?.stack ||
               reason,
-          }
+          },
         );
-      }
+      },
     );
 
     process.on(
       'uncaughtException',
-      error => {
+      (error) => {
         logger.error(
-          'Uncaught Exception',
+          'Uncaught exception.',
           {
             error:
               error?.stack ||
               error,
-          }
+          },
         );
 
         setTimeout(
-          () =>
+          () => {
             process.exit(
-              1
-            ),
-          1000
-        );
-      }
+              1,
+            );
+          },
+          1_000,
+        ).unref?.();
+      },
     );
   };
 
-/**
- * ============================================================================
- * Startup Log
- * ============================================================================
- */
+/* ============================================================================
+ * Startup banner
+ * ========================================================================== */
 
 logger.startup(
   'Logger initialized',
   {
-    level:
-      LOG_LEVEL,
-    environment:
-      NODE_ENV,
     service:
       SERVICE_NAME,
+
     version:
       SERVICE_VERSION,
+
+    environment:
+      NODE_ENV,
+
     hostname:
       HOSTNAME,
-  }
+
+    level:
+      LOG_LEVEL,
+  },
 );
 
-/**
- * ============================================================================
+/* ============================================================================
  * Export
- * ============================================================================
- */
+ * ========================================================================== */
 
-module.exports = logger;
+module.exports =
+  logger;

@@ -1,23 +1,119 @@
-// ============================================================================
-// TITech Community Capital
-// Enterprise Input Component
-// File: src/components/ui/Input.jsx
-// Production Grade
-// ============================================================================
+"use strict";
+
+/**
+ * ============================================================================
+ * TITech Community Capital LTD
+ * Enterprise Input Component
+ * ============================================================================
+ *
+ * File:
+ *   frontend/src/components/ui/Input.jsx
+ *
+ * Purpose:
+ * ----------------------------------------------------------------------------
+ * Enterprise-grade reusable input control for TITech applications.
+ *
+ * Features:
+ * ----------------------------------------------------------------------------
+ * ✓ Controlled and uncontrolled input support
+ * ✓ React ref forwarding
+ * ✓ Accessible labels
+ * ✓ Automatic stable ID generation
+ * ✓ Error / warning / success states
+ * ✓ Help and validation messaging
+ * ✓ Required-field semantics
+ * ✓ Disabled / read-only states
+ * ✓ Loading state
+ * ✓ Prefix / suffix support
+ * ✓ Password visibility toggle
+ * ✓ Character counter
+ * ✓ Maximum/minimum length
+ * ✓ Input mode support
+ * ✓ Auto-complete support
+ * ✓ Native input attributes passthrough
+ * ✓ Form integration
+ * ✓ Keyboard accessible
+ * ✓ Screen-reader friendly
+ * ✓ Enterprise styling hooks
+ * ✓ Safe event handling
+ *
+ * Security:
+ * ----------------------------------------------------------------------------
+ * This component does not perform business validation or trust user input.
+ * Validation and sanitization must also be enforced by the backend.
+ *
+ * ============================================================================
+ */
 
 import React, {
   forwardRef,
   memo,
+  useId,
   useMemo,
+  useState,
 } from "react";
 
 import PropTypes from "prop-types";
+
 import {
-  AlertCircle,
   Eye,
   EyeOff,
-  Search,
+  Loader2,
 } from "lucide-react";
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+const INPUT_TYPES = [
+  "text",
+  "email",
+  "password",
+  "number",
+  "tel",
+  "url",
+  "search",
+  "date",
+  "datetime-local",
+  "month",
+  "week",
+  "time",
+];
+
+const VALIDATION_STATES = [
+  "default",
+  "success",
+  "warning",
+  "error",
+];
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+function normalizeId(
+  value
+) {
+  if (
+    typeof value !== "string"
+  ) {
+    return "";
+  }
+
+  return value
+    .trim()
+    .replace(
+      /[^a-zA-Z0-9_-]/g,
+      "-"
+    );
+}
+
+function buildDescriptionId(
+  id,
+  suffix
+) {
+  return `${id}-${suffix}`;
+}
 
 // ============================================================================
 // Component
@@ -26,129 +122,391 @@ import {
 const Input = forwardRef(
   (
     {
-      label,
+      id,
       name,
-      value,
+      label,
       type = "text",
+
+      value,
+      defaultValue,
+
       placeholder,
+
       disabled = false,
       readOnly = false,
       required = false,
-      error,
-      helperText,
-      leftIcon,
-      rightIcon,
-      fullWidth = true,
+
+      autoFocus = false,
+      autoComplete,
+
+      min,
+      max,
+      step,
+
+      minLength,
+      maxLength,
+
+      pattern,
+
+      inputMode,
+
       size = "md",
-      variant = "default",
+
+      state = "default",
+
+      error,
+      warning,
+      success,
+      helperText,
+
+      prefix,
+      suffix,
+
+      loading = false,
+
+      showPasswordToggle = false,
+
+      showCharacterCount = false,
+
+      fullWidth = true,
+
       className = "",
-      containerClassName = "",
-      showPasswordToggle = true,
+      inputClassName = "",
+      labelClassName = "",
+
+      ariaLabel,
+      ariaLabelledBy,
+      ariaDescribedBy,
+
       onChange,
-      onBlur,
       onFocus,
+      onBlur,
+      onKeyDown,
+      onKeyUp,
+
       ...props
     },
     ref
   ) => {
+    // ========================================================================
+    // Internal State
+    // ========================================================================
+
+    const generatedId =
+      useId();
+
+    const normalizedGeneratedId =
+      useMemo(
+        () =>
+          normalizeId(
+            `tt-input-${generatedId}`
+          ),
+        [generatedId]
+      );
+
+    const inputId =
+      normalizeId(id) ||
+      normalizedGeneratedId;
+
     const [
-      showPassword,
-      setShowPassword,
-    ] = React.useState(false);
+      passwordVisible,
+      setPasswordVisible,
+    ] = useState(false);
 
-    const resolvedType =
-      useMemo(() => {
-        if (
-          type ===
-            "password" &&
-          showPassword
-        ) {
-          return "text";
-        }
+    // ========================================================================
+    // Derived State
+    // ========================================================================
 
-        return type;
-      }, [
-        type,
-        showPassword,
-      ]);
+    const effectiveState =
+      VALIDATION_STATES.includes(
+        state
+      )
+        ? state
+        : "default";
+
+    const hasError =
+      Boolean(error);
+
+    const hasWarning =
+      Boolean(warning);
+
+    const hasSuccess =
+      Boolean(success);
+
+    const validationState =
+      hasError
+        ? "error"
+        : hasWarning
+        ? "warning"
+        : hasSuccess
+        ? "success"
+        : effectiveState;
+
+    const isPassword =
+      type === "password";
+
+    const effectiveType =
+      isPassword &&
+      showPasswordToggle &&
+      passwordVisible
+        ? "text"
+        : type;
+
+    const isDisabled =
+      disabled || loading;
+
+    // ========================================================================
+    // Accessibility IDs
+    // ========================================================================
+
+    const errorId =
+      buildDescriptionId(
+        inputId,
+        "error"
+      );
+
+    const warningId =
+      buildDescriptionId(
+        inputId,
+        "warning"
+      );
+
+    const successId =
+      buildDescriptionId(
+        inputId,
+        "success"
+      );
+
+    const helperId =
+      buildDescriptionId(
+        inputId,
+        "help"
+      );
+
+    const countId =
+      buildDescriptionId(
+        inputId,
+        "count"
+      );
+
+    // ========================================================================
+    // Accessible Description
+    // ========================================================================
+
+    const describedBy =
+      [
+        ariaDescribedBy,
+        hasError
+          ? errorId
+          : null,
+        !hasError &&
+        hasWarning
+          ? warningId
+          : null,
+        !hasError &&
+        !hasWarning &&
+        hasSuccess
+          ? successId
+          : null,
+        helperText
+          ? helperId
+          : null,
+        showCharacterCount &&
+        maxLength
+          ? countId
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" ") ||
+      undefined;
+
+    // ========================================================================
+    // Character Count
+    // ========================================================================
+
+    const currentLength =
+      typeof value ===
+      "string"
+        ? value.length
+        : typeof defaultValue ===
+          "string"
+        ? defaultValue.length
+        : 0;
+
+    // ========================================================================
+    // Classes
+    // ========================================================================
 
     const classes = [
       "tt-input",
       `tt-input-${size}`,
-      `tt-input-${variant}`,
-      error
-        ? "tt-input-error"
+      `tt-input-${validationState}`,
+
+      fullWidth
+        ? "tt-input-full-width"
         : "",
-      disabled
+
+      prefix
+        ? "tt-input-has-prefix"
+        : "",
+
+      suffix
+        ? "tt-input-has-suffix"
+        : "",
+
+      loading
+        ? "tt-input-loading"
+        : "",
+
+      isDisabled
         ? "tt-input-disabled"
         : "",
-      leftIcon
-        ? "tt-input-has-left-icon"
+
+      readOnly
+        ? "tt-input-readonly"
         : "",
-      (rightIcon ||
-        (type ===
-          "password" &&
-          showPasswordToggle))
-        ? "tt-input-has-right-icon"
+
+      inputClassName,
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    const wrapperClasses = [
+      "tt-input-wrapper",
+
+      fullWidth
+        ? "tt-input-wrapper-full-width"
         : "",
+
       className,
     ]
       .filter(Boolean)
       .join(" ");
 
+    // ========================================================================
+    // Password Visibility
+    // ========================================================================
+
+    const togglePasswordVisibility =
+      () => {
+        if (
+          isDisabled ||
+          readOnly
+        ) {
+          return;
+        }
+
+        setPasswordVisible(
+          (previous) =>
+            !previous
+        );
+      };
+
+    // ========================================================================
+    // Event Handlers
+    // ========================================================================
+
+    const handleChange =
+      (event) => {
+        if (
+          typeof onChange ===
+          "function"
+        ) {
+          onChange(event);
+        }
+      };
+
+    const handleFocus =
+      (event) => {
+        if (
+          typeof onFocus ===
+          "function"
+        ) {
+          onFocus(event);
+        }
+      };
+
+    const handleBlur =
+      (event) => {
+        if (
+          typeof onBlur ===
+          "function"
+        ) {
+          onBlur(event);
+        }
+      };
+
+    // ========================================================================
+    // Render
+    // ========================================================================
+
     return (
       <div
-        className={`tt-input-container ${containerClassName} ${
-          fullWidth
-            ? "tt-input-full"
-            : ""
-        }`}
+        className={
+          wrapperClasses
+        }
       >
         {label && (
           <label
-            htmlFor={name}
-            className="tt-input-label"
+            htmlFor={inputId}
+            className={[
+              "tt-input-label",
+              labelClassName,
+            ]
+              .filter(Boolean)
+              .join(" ")}
           >
-            {label}
+            <span>
+              {label}
+            </span>
 
             {required && (
-              <span className="tt-input-required">
+              <span
+                className="tt-input-required"
+                aria-hidden="true"
+              >
+                {" "}
                 *
               </span>
             )}
           </label>
         )}
 
-        <div className="tt-input-wrapper">
-          {leftIcon && (
-            <span className="tt-input-icon tt-input-icon-left">
-              {leftIcon}
+        <div
+          className={[
+            "tt-input-control",
+            `tt-input-control-${size}`,
+            `tt-input-control-${validationState}`,
+            isDisabled
+              ? "tt-input-control-disabled"
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
+          {prefix && (
+            <span
+              className="tt-input-prefix"
+              aria-hidden="true"
+            >
+              {prefix}
             </span>
           )}
 
-          {!leftIcon &&
-            type ===
-              "search" && (
-              <span className="tt-input-icon tt-input-icon-left">
-                <Search
-                  size={18}
-                />
-              </span>
-            )}
-
           <input
             ref={ref}
-            id={name}
+            id={inputId}
             name={name}
-            type={
-              resolvedType
-            }
+            type={effectiveType}
             value={value}
+            defaultValue={
+              defaultValue
+            }
             placeholder={
               placeholder
             }
             disabled={
-              disabled
+              isDisabled
             }
             readOnly={
               readOnly
@@ -156,120 +514,236 @@ const Input = forwardRef(
             required={
               required
             }
+            autoFocus={
+              autoFocus
+            }
+            autoComplete={
+              autoComplete
+            }
+            min={min}
+            max={max}
+            step={step}
+            minLength={
+              minLength
+            }
+            maxLength={
+              maxLength
+            }
+            pattern={
+              pattern
+            }
+            inputMode={
+              inputMode
+            }
             className={
               classes
             }
-            onChange={
-              onChange
+            aria-label={
+              ariaLabel
             }
-            onBlur={
-              onBlur
-            }
-            onFocus={
-              onFocus
-            }
-            aria-invalid={
-              !!error
+            aria-labelledby={
+              ariaLabelledBy
             }
             aria-describedby={
-              helperText ||
-              error
-                ? `${name}-helper`
+              describedBy
+            }
+            aria-invalid={
+              validationState ===
+              "error"
+                ? "true"
+                : "false"
+            }
+            aria-required={
+              required
+                ? "true"
                 : undefined
+            }
+            aria-busy={
+              loading
+                ? "true"
+                : undefined
+            }
+            onChange={
+              handleChange
+            }
+            onFocus={
+              handleFocus
+            }
+            onBlur={
+              handleBlur
+            }
+            onKeyDown={
+              onKeyDown
+            }
+            onKeyUp={
+              onKeyUp
             }
             {...props}
           />
 
-          {type ===
-            "password" &&
-            showPasswordToggle && (
+          {loading && (
+            <span
+              className="tt-input-loading-indicator"
+              aria-hidden="true"
+            >
+              <Loader2
+                size={18}
+                className="tt-input-spinner"
+              />
+            </span>
+          )}
+
+          {isPassword &&
+            showPasswordToggle &&
+            !loading && (
               <button
                 type="button"
-                tabIndex={
-                  -1
+                className="tt-input-password-toggle"
+                onClick={
+                  togglePasswordVisibility
                 }
-                className="tt-input-toggle"
-                onClick={() =>
-                  setShowPassword(
-                    (
-                      previous
-                    ) =>
-                      !previous
-                  )
+                disabled={
+                  isDisabled ||
+                  readOnly
+                }
+                aria-label={
+                  passwordVisible
+                    ? "Hide password"
+                    : "Show password"
+                }
+                aria-pressed={
+                  passwordVisible
+                }
+                tabIndex={
+                  isDisabled
+                    ? -1
+                    : 0
                 }
               >
-                {showPassword ? (
+                {passwordVisible ? (
                   <EyeOff
                     size={18}
+                    aria-hidden="true"
                   />
                 ) : (
                   <Eye
                     size={18}
+                    aria-hidden="true"
                   />
                 )}
               </button>
             )}
 
-          {rightIcon &&
-            type !==
-              "password" && (
-              <span className="tt-input-icon tt-input-icon-right">
-                {rightIcon}
+          {suffix &&
+            !loading &&
+            !(
+              isPassword &&
+              showPasswordToggle
+            ) && (
+              <span
+                className="tt-input-suffix"
+                aria-hidden="true"
+              >
+                {suffix}
               </span>
             )}
         </div>
 
-        {(error ||
-          helperText) && (
-          <div
-            id={`${name}-helper`}
-            className={`tt-input-helper ${
-              error
-                ? "tt-input-helper-error"
-                : ""
-            }`}
-          >
-            {error && (
-              <AlertCircle
-                size={14}
-              />
-            )}
+        {/* ================================================================== */}
+        {/* Validation / Help Message                                         */}
+        {/* ================================================================== */}
 
-            <span>
-              {error ||
-                helperText}
-            </span>
+        {hasError && (
+          <div
+            id={errorId}
+            className="tt-input-message tt-input-error-message"
+            role="alert"
+          >
+            {error}
           </div>
         )}
+
+        {!hasError &&
+          hasWarning && (
+            <div
+              id={warningId}
+              className="tt-input-message tt-input-warning-message"
+              role="status"
+            >
+              {warning}
+            </div>
+          )}
+
+        {!hasError &&
+          !hasWarning &&
+          hasSuccess && (
+            <div
+              id={successId}
+              className="tt-input-message tt-input-success-message"
+              role="status"
+            >
+              {success}
+            </div>
+          )}
+
+        {helperText && (
+          <div
+            id={helperId}
+            className="tt-input-message tt-input-helper-message"
+          >
+            {helperText}
+          </div>
+        )}
+
+        {/* ================================================================== */}
+        {/* Character Counter                                                  */}
+        {/* ================================================================== */}
+
+        {showCharacterCount &&
+          maxLength && (
+            <div
+              id={countId}
+              className="tt-input-character-count"
+              aria-live="polite"
+            >
+              {currentLength}
+              {" / "}
+              {maxLength}
+            </div>
+          )}
       </div>
     );
   }
 );
 
 Input.displayName =
-  "Input";
+  "TITechInput";
 
 // ============================================================================
-// Prop Types
+// PropTypes
 // ============================================================================
 
 Input.propTypes = {
-  label:
-    PropTypes.node,
+  id: PropTypes.string,
 
-  name:
+  name: PropTypes.string,
+
+  label: PropTypes.node,
+
+  type: PropTypes.oneOf(
+    INPUT_TYPES
+  ),
+
+  value: PropTypes.oneOfType([
     PropTypes.string,
+    PropTypes.number,
+  ]),
 
-  value:
-    PropTypes.oneOfType(
-      [
-        PropTypes.string,
-        PropTypes.number,
-      ]
-    ),
-
-  type:
-    PropTypes.string,
+  defaultValue:
+    PropTypes.oneOfType([
+      PropTypes.string,
+      PropTypes.number,
+    ]),
 
   placeholder:
     PropTypes.string,
@@ -283,51 +757,110 @@ Input.propTypes = {
   required:
     PropTypes.bool,
 
-  error:
-    PropTypes.string,
-
-  helperText:
-    PropTypes.string,
-
-  leftIcon:
-    PropTypes.node,
-
-  rightIcon:
-    PropTypes.node,
-
-  fullWidth:
+  autoFocus:
     PropTypes.bool,
 
-  size:
-    PropTypes.oneOf([
-      "sm",
-      "md",
-      "lg",
-    ]),
-
-  variant:
-    PropTypes.oneOf([
-      "default",
-      "filled",
-      "outlined",
-    ]),
-
-  className:
+  autoComplete:
     PropTypes.string,
 
-  containerClassName:
+  min: PropTypes.oneOfType([
     PropTypes.string,
+    PropTypes.number,
+  ]),
+
+  max: PropTypes.oneOfType([
+    PropTypes.string,
+    PropTypes.number,
+  ]),
+
+  step: PropTypes.oneOfType([
+    PropTypes.string,
+    PropTypes.number,
+  ]),
+
+  minLength:
+    PropTypes.number,
+
+  maxLength:
+    PropTypes.number,
+
+  pattern:
+    PropTypes.string,
+
+  inputMode:
+    PropTypes.string,
+
+  size: PropTypes.oneOf([
+    "sm",
+    "md",
+    "lg",
+  ]),
+
+  state: PropTypes.oneOf(
+    VALIDATION_STATES
+  ),
+
+  error:
+    PropTypes.node,
+
+  warning:
+    PropTypes.node,
+
+  success:
+    PropTypes.node,
+
+  helperText:
+    PropTypes.node,
+
+  prefix:
+    PropTypes.node,
+
+  suffix:
+    PropTypes.node,
+
+  loading:
+    PropTypes.bool,
 
   showPasswordToggle:
     PropTypes.bool,
 
+  showCharacterCount:
+    PropTypes.bool,
+
+  fullWidth:
+    PropTypes.bool,
+
+  className:
+    PropTypes.string,
+
+  inputClassName:
+    PropTypes.string,
+
+  labelClassName:
+    PropTypes.string,
+
+  ariaLabel:
+    PropTypes.string,
+
+  ariaLabelledBy:
+    PropTypes.string,
+
+  ariaDescribedBy:
+    PropTypes.string,
+
   onChange:
+    PropTypes.func,
+
+  onFocus:
     PropTypes.func,
 
   onBlur:
     PropTypes.func,
 
-  onFocus:
+  onKeyDown:
+    PropTypes.func,
+
+  onKeyUp:
     PropTypes.func,
 };
 
@@ -335,6 +868,4 @@ Input.propTypes = {
 // Export
 // ============================================================================
 
-export default memo(
-  Input
-);
+export default memo(Input);

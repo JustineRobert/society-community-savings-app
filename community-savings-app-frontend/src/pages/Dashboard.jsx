@@ -1,9 +1,20 @@
-// frontend/src/pages/Dashboard.jsx
 // ============================================================================
 // TITech Community Capital
 // Enterprise Dashboard
-// File: src/pages/Dashboard.jsx
+// File: frontend/src/pages/Dashboard.jsx
 // Production Grade
+//
+// Responsibilities:
+// - Authenticated community dashboard
+// - Group overview
+// - Savings/member/loan KPIs
+// - Admin analytics
+// - Notification monitoring
+// - Automatic refresh
+// - Defensive API response handling
+// - Abortable requests
+// - Accessible responsive UI
+// - Graceful loading/error/empty states
 // ============================================================================
 
 import React, {
@@ -14,13 +25,13 @@ import React, {
   useState,
 } from "react";
 
-import {
-  useNavigate,
-} from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 
 import {
   AlertCircle,
   Bell,
+  CheckCircle2,
+  ChevronRight,
   CreditCard,
   LogOut,
   Menu,
@@ -32,15 +43,15 @@ import {
 } from "lucide-react";
 
 import {
-  ResponsiveContainer,
-  BarChart,
   Bar,
+  BarChart,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  Tooltip,
-  PieChart,
-  Pie,
-  Cell,
 } from "recharts";
 
 import { toast } from "react-toastify";
@@ -54,30 +65,140 @@ import "./Dashboard.css";
 // Constants
 // ============================================================================
 
-const AUTO_REFRESH_INTERVAL = 60000;
+const AUTO_REFRESH_INTERVAL = 60_000;
+const MAX_RETRIES = 3;
+
+const DEFAULT_FRAUD_DATA = [
+  {
+    name: "Clean",
+    value: 100,
+  },
+  {
+    name: "Flagged",
+    value: 0,
+  },
+];
 
 const DEFAULT_STATS = {
   savings: 0,
   loans: [],
-  fraud: [
-    {
-      name: "Clean",
-      value: 100,
-    },
-    {
-      name: "Flagged",
-      value: 0,
-    },
-  ],
+  fraud: DEFAULT_FRAUD_DATA,
   members: 0,
   activeLoans: 0,
   totalDisbursed: 0,
 };
 
-const FRAUD_COLORS = [
-  "#10b981",
-  "#ef4444",
-];
+const FRAUD_COLORS = ["#10b981", "#ef4444"];
+
+// ============================================================================
+// Utility Helpers
+// ============================================================================
+
+function isAbortError(error) {
+  return (
+    error?.name === "AbortError" ||
+    error?.code === "ERR_CANCELED" ||
+    error?.code === "ECONNABORTED" ||
+    error?.message?.toLowerCase?.().includes("canceled")
+  );
+}
+
+function getErrorMessage(error, fallback = "Something went wrong.") {
+  return (
+    error?.response?.data?.message ||
+    error?.response?.data?.error ||
+    error?.message ||
+    fallback
+  );
+}
+
+function normalizeArrayResponse(response, keys = []) {
+  const payload = response?.data ?? response ?? null;
+
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (payload && typeof payload === "object") {
+    for (const key of keys) {
+      if (Array.isArray(payload[key])) {
+        return payload[key];
+      }
+    }
+
+    if (Array.isArray(payload.data)) {
+      return payload.data;
+    }
+
+    if (Array.isArray(payload.results)) {
+      return payload.results;
+    }
+
+    if (Array.isArray(payload.items)) {
+      return payload.items;
+    }
+  }
+
+  return [];
+}
+
+function normalizeStatsResponse(response) {
+  const payload = response?.data ?? response ?? {};
+
+  if (!payload || typeof payload !== "object") {
+    return DEFAULT_STATS;
+  }
+
+  return {
+    ...DEFAULT_STATS,
+    ...payload,
+    loans: Array.isArray(payload.loans)
+      ? payload.loans
+      : DEFAULT_STATS.loans,
+    fraud: Array.isArray(payload.fraud)
+      ? payload.fraud
+      : DEFAULT_STATS.fraud,
+  };
+}
+
+function getEntityId(entity) {
+  if (!entity || typeof entity !== "object") {
+    return null;
+  }
+
+  return entity._id ?? entity.id ?? entity.groupId ?? null;
+}
+
+function getUserDisplayName(user) {
+  if (!user) {
+    return "Member";
+  }
+
+  return (
+    user.name ||
+    user.fullName ||
+    user.displayName ||
+    user.firstName ||
+    user.email ||
+    "Member"
+  );
+}
+
+function getGroupMemberCount(group) {
+  if (!group || typeof group !== "object") {
+    return 0;
+  }
+
+  if (Number.isFinite(Number(group.memberCount))) {
+    return Number(group.memberCount);
+  }
+
+  if (Array.isArray(group.members)) {
+    return group.members.length;
+  }
+
+  return 0;
+}
 
 // ============================================================================
 // Skeleton
@@ -85,11 +206,79 @@ const FRAUD_COLORS = [
 
 function GroupCardSkeleton() {
   return (
-    <div className="group-card-skeleton">
+    <div
+      className="group-card-skeleton"
+      aria-hidden="true"
+    >
       <div className="skeleton-title" />
       <div className="skeleton-line" />
       <div className="skeleton-line" />
       <div className="skeleton-line" />
+    </div>
+  );
+}
+
+function DashboardLoadingState() {
+  return (
+    <main
+      className="dashboard-loading"
+      aria-busy="true"
+      aria-label="Loading dashboard"
+    >
+      <div className="dashboard-loading-header">
+        <div className="skeleton-title" />
+        <div className="skeleton-line" />
+      </div>
+
+      <div className="stats-grid">
+        <GroupCardSkeleton />
+        <GroupCardSkeleton />
+        <GroupCardSkeleton />
+        <GroupCardSkeleton />
+      </div>
+
+      <div className="groups-grid">
+        <GroupCardSkeleton />
+        <GroupCardSkeleton />
+        <GroupCardSkeleton />
+      </div>
+    </main>
+  );
+}
+
+// ============================================================================
+// Empty State
+// ============================================================================
+
+function EmptyGroupsState({ onCreateGroup }) {
+  return (
+    <div className="dashboard-empty-state">
+      <Users
+        size={40}
+        aria-hidden="true"
+      />
+
+      <h3>No community groups yet</h3>
+
+      <p>
+        You are not currently viewing any community groups.
+        Create a group to start managing members, contributions,
+        savings, and community activities.
+      </p>
+
+      {typeof onCreateGroup === "function" && (
+        <button
+          type="button"
+          className="btn-primary"
+          onClick={onCreateGroup}
+        >
+          Create Group
+          <ChevronRight
+            size={18}
+            aria-hidden="true"
+          />
+        </button>
+      )}
     </div>
   );
 }
@@ -102,15 +291,31 @@ function StatCard({
   icon: Icon,
   title,
   value,
+  description,
 }) {
   return (
-    <div className="stat-card">
-      <Icon size={28} />
+    <article className="stat-card">
+      <div
+        className="stat-card-icon"
+        aria-hidden="true"
+      >
+        <Icon size={26} />
+      </div>
 
-      <h3>{title}</h3>
+      <div className="stat-card-content">
+        <h3>{title}</h3>
 
-      <p>{value}</p>
-    </div>
+        <p className="stat-card-value">
+          {value}
+        </p>
+
+        {description && (
+          <span className="stat-card-description">
+            {description}
+          </span>
+        )}
+      </div>
+    </article>
   );
 }
 
@@ -118,91 +323,310 @@ function StatCard({
 // Admin Analytics
 // ============================================================================
 
-function AdminDashboard({
-  stats,
-}) {
-  const loanData =
-    stats?.loans || [];
+function AdminDashboard({ stats }) {
+  const loanData = useMemo(() => {
+    if (!Array.isArray(stats?.loans)) {
+      return [];
+    }
 
-  const fraudData =
-    stats?.fraud ||
-    DEFAULT_STATS.fraud;
+    return stats.loans
+      .map((loan) => ({
+        status:
+          loan?.status ||
+          loan?.name ||
+          "Unknown",
+        count: Number(
+          loan?.count ??
+            loan?.value ??
+            0
+        ),
+      }))
+      .filter(
+        (loan) =>
+          loan.count >= 0
+      );
+  }, [stats?.loans]);
+
+  const fraudData = useMemo(() => {
+    if (
+      !Array.isArray(stats?.fraud) ||
+      stats.fraud.length === 0
+    ) {
+      return DEFAULT_FRAUD_DATA;
+    }
+
+    return stats.fraud
+      .map((entry) => ({
+        name:
+          entry?.name ||
+          "Unknown",
+        value: Number(
+          entry?.value ?? 0
+        ),
+      }))
+      .filter(
+        (entry) =>
+          Number.isFinite(
+            entry.value
+          ) &&
+          entry.value >= 0
+      );
+  }, [stats?.fraud]);
 
   return (
-    <section className="admin-dashboard">
-      <h2>
-        Administration Analytics
-      </h2>
+    <section
+      className="admin-dashboard"
+      aria-labelledby="admin-analytics-heading"
+    >
+      <div className="section-heading">
+        <div>
+          <span className="section-eyebrow">
+            TITech Administration
+          </span>
 
-      <div className="chart-grid">
-        <div className="chart-card">
-          <h3>
-            Loan Distribution
-          </h3>
-
-          <ResponsiveContainer
-            width="100%"
-            height={320}
-          >
-            <BarChart
-              data={loanData}
-            >
-              <XAxis
-                dataKey="status"
-              />
-
-              <YAxis />
-
-              <Tooltip />
-
-              <Bar
-                dataKey="count"
-              />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div className="chart-card">
-          <h3>
-            Fraud Monitoring
-          </h3>
-
-          <ResponsiveContainer
-            width="100%"
-            height={320}
-          >
-            <PieChart>
-              <Pie
-                data={fraudData}
-                dataKey="value"
-                outerRadius={100}
-              >
-                {fraudData.map(
-                  (
-                    entry,
-                    index
-                  ) => (
-                    <Cell
-                      key={
-                        index
-                      }
-                      fill={
-                        FRAUD_COLORS[
-                          index %
-                            FRAUD_COLORS.length
-                        ]
-                      }
-                    />
-                  )
-                )}
-              </Pie>
-
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
+          <h2 id="admin-analytics-heading">
+            Administration Analytics
+          </h2>
         </div>
       </div>
+
+      <div className="chart-grid">
+        <article className="chart-card">
+          <div className="chart-card-header">
+            <div>
+              <h3>Loan Distribution</h3>
+
+              <p>
+                Current loan portfolio status.
+              </p>
+            </div>
+          </div>
+
+          {loanData.length === 0 ? (
+            <div className="chart-empty-state">
+              <CreditCard
+                size={32}
+                aria-hidden="true"
+              />
+
+              <span>
+                No loan analytics available.
+              </span>
+            </div>
+          ) : (
+            <div
+              className="chart-container"
+              role="img"
+              aria-label="Loan distribution chart"
+            >
+              <ResponsiveContainer
+                width="100%"
+                height={320}
+              >
+                <BarChart
+                  data={loanData}
+                  margin={{
+                    top: 16,
+                    right: 16,
+                    left: 0,
+                    bottom: 16,
+                  }}
+                >
+                  <XAxis
+                    dataKey="status"
+                    tickLine={false}
+                    axisLine={false}
+                  />
+
+                  <YAxis
+                    allowDecimals={false}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+
+                  <Tooltip />
+
+                  <Bar
+                    dataKey="count"
+                    name="Loans"
+                    radius={[
+                      4,
+                      4,
+                      0,
+                      0,
+                    ]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </article>
+
+        <article className="chart-card">
+          <div className="chart-card-header">
+            <div>
+              <h3>Fraud Monitoring</h3>
+
+              <p>
+                Current transaction monitoring summary.
+              </p>
+            </div>
+          </div>
+
+          <div
+            className="chart-container"
+            role="img"
+            aria-label="Fraud monitoring chart"
+          >
+            <ResponsiveContainer
+              width="100%"
+              height={320}
+            >
+              <PieChart>
+                <Pie
+                  data={fraudData}
+                  dataKey="value"
+                  nameKey="name"
+                  cx="50%"
+                  cy="50%"
+                  outerRadius={100}
+                  innerRadius={55}
+                  paddingAngle={2}
+                >
+                  {fraudData.map(
+                    (entry, index) => (
+                      <Cell
+                        key={`${entry.name}-${index}`}
+                        fill={
+                          FRAUD_COLORS[
+                            index %
+                              FRAUD_COLORS.length
+                          ]
+                        }
+                      />
+                    )
+                  )}
+                </Pie>
+
+                <Tooltip />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </article>
+      </div>
     </section>
+  );
+}
+
+// ============================================================================
+// Group Card
+// ============================================================================
+
+function GroupCard({
+  group,
+  formatCurrency,
+  formatDate,
+  onOpen,
+}) {
+  const groupId =
+    getEntityId(group);
+
+  const memberCount =
+    getGroupMemberCount(group);
+
+  const contribution =
+    Number(
+      group?.totalContributions ??
+        group?.contributions ??
+        group?.totalSavings ??
+        0
+    );
+
+  return (
+    <article
+      className="group-card"
+      tabIndex={groupId ? 0 : -1}
+      role={groupId ? "button" : undefined}
+      aria-label={
+        groupId
+          ? `Open ${group?.name || "community group"}`
+          : undefined
+      }
+      onClick={() => {
+        if (groupId) {
+          onOpen(groupId);
+        }
+      }}
+      onKeyDown={(event) => {
+        if (
+          groupId &&
+          (event.key === "Enter" ||
+            event.key === " ")
+        ) {
+          event.preventDefault();
+          onOpen(groupId);
+        }
+      }}
+    >
+      <div className="group-card-header">
+        <div>
+          <h3>
+            {group?.name ||
+              "Unnamed Group"}
+          </h3>
+
+          {group?.type && (
+            <span className="group-type">
+              {String(group.type)}
+            </span>
+          )}
+        </div>
+
+        {groupId && (
+          <ChevronRight
+            size={20}
+            aria-hidden="true"
+          />
+        )}
+      </div>
+
+      <p className="group-description">
+        {group?.description ||
+          "No group description available."}
+      </p>
+
+      <div className="group-card-metrics">
+        <div>
+          <span>Members</span>
+
+          <strong>
+            {memberCount}
+          </strong>
+        </div>
+
+        <div>
+          <span>Contributions</span>
+
+          <strong>
+            {formatCurrency(
+              contribution
+            )}
+          </strong>
+        </div>
+      </div>
+
+      <div className="group-card-footer">
+        <span>
+          Next contribution
+        </span>
+
+        <strong>
+          {formatDate(
+            group?.nextContributionDate
+          )}
+        </strong>
+      </div>
+    </article>
   );
 }
 
@@ -222,13 +646,27 @@ export default function Dashboard() {
   const mountedRef =
     useRef(false);
 
-  const refreshRef =
-    useRef();
+  const requestControllerRef =
+    useRef(null);
+
+  const refreshTimerRef =
+    useRef(null);
+
+  const refreshInFlightRef =
+    useRef(false);
+
+  const notificationCleanupRef =
+    useRef(null);
 
   const [
     loading,
     setLoading,
   ] = useState(true);
+
+  const [
+    refreshing,
+    setRefreshing,
+  ] = useState(false);
 
   const [
     groups,
@@ -262,86 +700,120 @@ export default function Dashboard() {
     setNotifCount,
   ] = useState(0);
 
-  // ===========================================================================
+  // ==========================================================================
   // Role
-  // ===========================================================================
+  // ==========================================================================
 
-  const isAdmin =
-    useMemo(() => {
-      return [
-        "admin",
-        "ADMIN",
-        "super_admin",
-      ].includes(
-        user?.role
-      );
-    }, [user]);
+  const isAdmin = useMemo(() => {
+    const role = String(
+      user?.role || ""
+    ).toLowerCase();
 
-  // ===========================================================================
+    return [
+      "admin",
+      "super_admin",
+    ].includes(role);
+  }, [user?.role]);
+
+  // ==========================================================================
   // Formatters
-  // ===========================================================================
+  // ==========================================================================
+
+  const currencyFormatter = useMemo(
+    () =>
+      new Intl.NumberFormat(
+        "en-UG",
+        {
+          style: "currency",
+          currency: "UGX",
+          maximumFractionDigits: 0,
+        }
+      ),
+    []
+  );
+
+  const dateFormatter = useMemo(
+    () =>
+      new Intl.DateTimeFormat(
+        "en-UG",
+        {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+        }
+      ),
+    []
+  );
 
   const formatCurrency =
     useCallback(
       (value) => {
-        return new Intl.NumberFormat(
-          "en-UG",
-          {
-            style:
-              "currency",
-            currency:
-              "UGX",
-            maximumFractionDigits: 0,
-          }
-        ).format(
-          Number(
-            value || 0
+        const numericValue =
+          Number(value);
+
+        if (
+          !Number.isFinite(
+            numericValue
           )
+        ) {
+          return currencyFormatter.format(
+            0
+          );
+        }
+
+        return currencyFormatter.format(
+          numericValue
         );
       },
-      []
+      [currencyFormatter]
     );
 
   const formatDate =
     useCallback(
       (date) => {
-        if (!date)
-          return "N/A";
-
-        try {
-          return new Date(
-            date
-          ).toLocaleDateString();
-        } catch {
-          return "N/A";
+        if (!date) {
+          return "Not scheduled";
         }
+
+        const parsedDate =
+          new Date(date);
+
+        if (
+          Number.isNaN(
+            parsedDate.getTime()
+          )
+        ) {
+          return "Not scheduled";
+        }
+
+        return dateFormatter.format(
+          parsedDate
+        );
       },
-      []
+      [dateFormatter]
     );
 
-  // ===========================================================================
+  // ==========================================================================
   // API Calls
-  // ===========================================================================
+  // ==========================================================================
 
   const fetchGroups =
     useCallback(
-      async () => {
+      async (signal) => {
         const response =
           await api.get(
-            "/api/groups"
+            "/api/groups",
+            {
+              signal,
+            }
           );
 
-        const data =
-          response?.data ||
-          response ||
-          [];
-
-        setGroups(
-          Array.isArray(
-            data
-          )
-            ? data
-            : []
+        return normalizeArrayResponse(
+          response,
+          [
+            "groups",
+            "communityGroups",
+          ]
         );
       },
       []
@@ -349,58 +821,143 @@ export default function Dashboard() {
 
   const fetchStats =
     useCallback(
-      async () => {
-        if (!isAdmin)
-          return;
+      async (signal) => {
+        if (!isAdmin) {
+          return DEFAULT_STATS;
+        }
 
         const response =
           await api.get(
-            "/api/admin/stats"
+            "/api/admin/stats",
+            {
+              signal,
+            }
           );
 
-        setStats({
-          ...DEFAULT_STATS,
-          ...(response
-            ?.data ||
-            response),
-        });
+        return normalizeStatsResponse(
+          response
+        );
       },
       [isAdmin]
     );
 
+  // ==========================================================================
+  // Dashboard Loader
+  // ==========================================================================
+
   const loadDashboard =
     useCallback(
-      async () => {
-        try {
-          setError("");
+      async ({
+        silent = false,
+        isRetry = false,
+      } = {}) => {
+        if (!mountedRef.current) {
+          return;
+        }
 
-          await Promise.all(
-            [
-              fetchGroups(),
-              fetchStats(),
-            ]
-          );
-        } catch (
-          err
+        if (
+          refreshInFlightRef.current
         ) {
-          console.error(
-            err
+          return;
+        }
+
+        refreshInFlightRef.current =
+          true;
+
+        if (!silent) {
+          setLoading(true);
+        }
+
+        if (silent) {
+          setRefreshing(true);
+        }
+
+        setError("");
+
+        // Cancel previous dashboard request.
+        if (
+          requestControllerRef.current
+        ) {
+          requestControllerRef.current.abort();
+        }
+
+        const controller =
+          new AbortController();
+
+        requestControllerRef.current =
+          controller;
+
+        try {
+          const [
+            groupsResult,
+            statsResult,
+          ] = await Promise.all([
+            fetchGroups(
+              controller.signal
+            ),
+            fetchStats(
+              controller.signal
+            ),
+          ]);
+
+          if (
+            !mountedRef.current ||
+            controller.signal.aborted
+          ) {
+            return;
+          }
+
+          setGroups(
+            Array.isArray(
+              groupsResult
+            )
+              ? groupsResult
+              : []
           );
 
-          setError(
-            err?.response
-              ?.data
-              ?.message ||
-              "Failed to load dashboard."
+          setStats(
+            statsResult ||
+              DEFAULT_STATS
           );
+
+          setRetryCount(0);
+        } catch (err) {
+          if (
+            isAbortError(err) ||
+            controller.signal.aborted
+          ) {
+            return;
+          }
+
+          const message =
+            getErrorMessage(
+              err,
+              "Failed to load the TITech Community Capital dashboard."
+            );
+
+          if (
+            mountedRef.current
+          ) {
+            setError(message);
+
+            if (
+              isRetry
+            ) {
+              toast.error(
+                message
+              );
+            }
+          }
         } finally {
           if (
             mountedRef.current
           ) {
-            setLoading(
-              false
-            );
+            setLoading(false);
+            setRefreshing(false);
           }
+
+          refreshInFlightRef.current =
+            false;
         }
       },
       [
@@ -409,100 +966,195 @@ export default function Dashboard() {
       ]
     );
 
-  // ===========================================================================
-  // Initialize
-  // ===========================================================================
+  // ==========================================================================
+  // Initial Load + Auto Refresh
+  // ==========================================================================
 
   useEffect(() => {
     mountedRef.current =
       true;
 
-    loadDashboard();
+    void loadDashboard();
 
-    refreshRef.current =
-      setInterval(
-        loadDashboard,
-        AUTO_REFRESH_INTERVAL
-      );
+    refreshTimerRef.current =
+      window.setInterval(() => {
+        void loadDashboard({
+          silent: true,
+        });
+      }, AUTO_REFRESH_INTERVAL);
 
     return () => {
       mountedRef.current =
         false;
 
-      clearInterval(
-        refreshRef.current
-      );
-    };
-  }, [
-    loadDashboard,
-  ]);
+      if (
+        refreshTimerRef.current
+      ) {
+        window.clearInterval(
+          refreshTimerRef.current
+        );
 
-  // ===========================================================================
-  // Notifications
-  // ===========================================================================
+        refreshTimerRef.current =
+          null;
+      }
+
+      if (
+        requestControllerRef.current
+      ) {
+        requestControllerRef.current.abort();
+
+        requestControllerRef.current =
+          null;
+      }
+
+      refreshInFlightRef.current =
+        false;
+    };
+  }, [loadDashboard]);
+
+  // ==========================================================================
+  // Socket Notifications
+  // ==========================================================================
 
   useEffect(() => {
-    let cleanup;
+    let active = true;
 
-    import(
-      "../services/socket"
-    )
-      .then(
-        ({
-          default:
-            socket,
-        }) => {
-          const handler =
-            () =>
+    const initializeNotifications =
+      async () => {
+        try {
+          const module =
+            await import(
+              "../services/socket"
+            );
+
+          if (!active) {
+            return;
+          }
+
+          const socket =
+            module?.default ||
+            module?.socket;
+
+          if (
+            !socket ||
+            typeof socket.on !==
+              "function"
+          ) {
+            return;
+          }
+
+          const handleNotification =
+            () => {
+              if (
+                !mountedRef.current
+              ) {
+                return;
+              }
+
               setNotifCount(
-                (
-                  prev
-                ) =>
-                  prev +
-                  1
+                (previous) =>
+                  previous + 1
               );
+            };
 
           socket.on(
             "notification",
-            handler
+            handleNotification
           );
 
-          cleanup =
-            () =>
-              socket.off(
-                "notification",
-                handler
-              );
+          notificationCleanupRef.current =
+            () => {
+              try {
+                socket.off?.(
+                  "notification",
+                  handleNotification
+                );
+              } catch {
+                // Socket cleanup should never break dashboard unmounting.
+              }
+            };
+        } catch {
+          // Notifications are optional. Dashboard functionality must continue.
         }
-      )
-      .catch(() => {});
+      };
+
+    void initializeNotifications();
 
     return () => {
-      cleanup?.();
+      active = false;
+
+      notificationCleanupRef.current?.();
+
+      notificationCleanupRef.current =
+        null;
     };
   }, []);
 
-  // ===========================================================================
+  // ==========================================================================
+  // Menu
+  // ==========================================================================
+
+  useEffect(() => {
+    if (!menuOpen) {
+      return undefined;
+    }
+
+    const handleEscape =
+      (event) => {
+        if (
+          event.key ===
+          "Escape"
+        ) {
+          setMenuOpen(false);
+        }
+      };
+
+    document.addEventListener(
+      "keydown",
+      handleEscape
+    );
+
+    return () => {
+      document.removeEventListener(
+        "keydown",
+        handleEscape
+      );
+    };
+  }, [menuOpen]);
+
+  // ==========================================================================
   // Logout
-  // ===========================================================================
+  // ==========================================================================
 
   const handleLogout =
     useCallback(
       async () => {
         try {
+          setMenuOpen(false);
+
           await logout();
 
-          navigate(
-            "/login",
-            {
-              replace:
-                true,
-            }
-          );
-        } catch {
-          toast.error(
-            "Logout failed."
-          );
+          if (
+            mountedRef.current
+          ) {
+            navigate(
+              "/login",
+              {
+                replace: true,
+              }
+            );
+          }
+        } catch (err) {
+          if (
+            !isAbortError(err)
+          ) {
+            toast.error(
+              getErrorMessage(
+                err,
+                "Logout failed. Please try again."
+              )
+            );
+          }
         }
       },
       [
@@ -511,32 +1163,32 @@ export default function Dashboard() {
       ]
     );
 
-  // ===========================================================================
+  // ==========================================================================
   // Retry
-  // ===========================================================================
+  // ==========================================================================
 
   const handleRetry =
     useCallback(
       async () => {
         if (
           retryCount >=
-          3
+          MAX_RETRIES
         ) {
           toast.error(
-            "Maximum retries reached."
+            "Maximum retry attempts reached. Please refresh the page or try again later."
           );
+
           return;
         }
 
         setRetryCount(
-          (
-            previous
-          ) =>
-            previous +
-            1
+          (previous) =>
+            previous + 1
         );
 
-        await loadDashboard();
+        await loadDashboard({
+          isRetry: true,
+        });
       },
       [
         retryCount,
@@ -544,145 +1196,432 @@ export default function Dashboard() {
       ]
     );
 
-  // ===========================================================================
-  // Loading
-  // ===========================================================================
+  // ==========================================================================
+  // Manual Refresh
+  // ==========================================================================
 
-  if (loading) {
-    return (
-      <div className="dashboard-loading">
-        <GroupCardSkeleton />
-        <GroupCardSkeleton />
-        <GroupCardSkeleton />
-      </div>
+  const handleRefresh =
+    useCallback(
+      async () => {
+        await loadDashboard({
+          silent: true,
+        });
+
+        if (
+          mountedRef.current &&
+          !error
+        ) {
+          toast.success(
+            "Dashboard refreshed."
+          );
+        }
+      },
+      [
+        loadDashboard,
+        error,
+      ]
     );
-  }
 
-  // ===========================================================================
-  // Authentication
-  // ===========================================================================
+  // ==========================================================================
+  // Navigation
+  // ==========================================================================
+
+  const handleOpenGroup =
+    useCallback(
+      (groupId) => {
+        if (!groupId) {
+          toast.error(
+            "Unable to open this group."
+          );
+
+          return;
+        }
+
+        navigate(
+          `/groups/${encodeURIComponent(
+            String(groupId)
+          )}`
+        );
+      },
+      [navigate]
+    );
+
+  const handleCreateGroup =
+    useCallback(() => {
+      navigate(
+        "/groups/create"
+      );
+    }, [navigate]);
+
+  // ==========================================================================
+  // Derived Values
+  // ==========================================================================
+
+  const displayName =
+    useMemo(
+      () =>
+        getUserDisplayName(
+          user
+        ),
+      [user]
+    );
+
+  const groupCount =
+    groups.length;
+
+  const memberCount =
+    Number(
+      stats?.members ?? 0
+    );
+
+  const activeLoans =
+    Number(
+      stats?.activeLoans ?? 0
+    );
+
+  // ==========================================================================
+  // Authentication State
+  // ==========================================================================
 
   if (!user) {
     return (
-      <div className="dashboard-error">
+      <main className="dashboard-error">
         <AlertCircle
           size={48}
+          aria-hidden="true"
         />
 
-        <h2>
-          Authentication
-          Required
-        </h2>
+        <h1>
+          Authentication Required
+        </h1>
+
+        <p>
+          Your session is no longer
+          available. Please sign in again
+          to continue using TITech
+          Community Capital.
+        </p>
 
         <button
+          type="button"
+          className="btn-primary"
           onClick={() =>
             navigate(
-              "/login"
+              "/login",
+              {
+                replace: true,
+              }
             )
           }
         >
-          Login
+          Go to Login
         </button>
-      </div>
+      </main>
     );
   }
 
-  // ===========================================================================
+  // ==========================================================================
+  // Loading State
+  // ==========================================================================
+
+  if (loading) {
+    return (
+      <DashboardLoadingState />
+    );
+  }
+
+  // ==========================================================================
   // Render
-  // ===========================================================================
+  // ==========================================================================
 
   return (
-    <div className="dashboard-container">
+    <main className="dashboard-container">
+      {/* ================================================================== */}
+      {/* Header */}
+      {/* ================================================================== */}
+
       <header className="dashboard-header">
-        <h1>
-          Welcome,{" "}
-          {user?.name}
-        </h1>
+        <div className="dashboard-header-content">
+          <div>
+            <span className="dashboard-eyebrow">
+              TITech Community Capital
+            </span>
 
-        <div className="dashboard-actions">
-          <button
-            onClick={() =>
-              setMenuOpen(
-                !menuOpen
-              )
-            }
-          >
-            {menuOpen ? (
-              <X />
-            ) : (
-              <Menu />
-            )}
-          </button>
+            <h1>
+              Welcome,{" "}
+              {displayName}
+            </h1>
 
-          <button>
-            <Bell />
+            <p>
+              Manage your community groups,
+              savings, members, and financial
+              activity.
+            </p>
+          </div>
 
-            {notifCount >
-              0 && (
-              <span>
-                {
-                  notifCount
+          <div className="dashboard-actions">
+            <button
+              type="button"
+              className="dashboard-icon-button"
+              onClick={
+                handleRefresh
+              }
+              disabled={
+                refreshing
+              }
+              aria-label={
+                refreshing
+                  ? "Refreshing dashboard"
+                  : "Refresh dashboard"
+              }
+              title="Refresh dashboard"
+            >
+              <RefreshCw
+                size={20}
+                className={
+                  refreshing
+                    ? "spin"
+                    : ""
                 }
-              </span>
-            )}
-          </button>
+                aria-hidden="true"
+              />
+            </button>
+
+            <button
+              type="button"
+              className="dashboard-icon-button notification-button"
+              onClick={() =>
+                setNotifCount(
+                  0
+                )
+              }
+              aria-label={
+                notifCount > 0
+                  ? `${notifCount} unread notifications`
+                  : "Notifications"
+              }
+              title="Notifications"
+            >
+              <Bell
+                size={20}
+                aria-hidden="true"
+              />
+
+              {notifCount > 0 && (
+                <span
+                  className="notification-badge"
+                  aria-hidden="true"
+                >
+                  {notifCount >
+                  99
+                    ? "99+"
+                    : notifCount}
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              className="dashboard-icon-button"
+              onClick={() =>
+                setMenuOpen(
+                  (previous) =>
+                    !previous
+                )
+              }
+              aria-expanded={
+                menuOpen
+              }
+              aria-controls="dashboard-navigation-menu"
+              aria-label={
+                menuOpen
+                  ? "Close dashboard menu"
+                  : "Open dashboard menu"
+              }
+            >
+              {menuOpen ? (
+                <X
+                  aria-hidden="true"
+                />
+              ) : (
+                <Menu
+                  aria-hidden="true"
+                />
+              )}
+            </button>
+          </div>
         </div>
+
+        {menuOpen && (
+          <nav
+            id="dashboard-navigation-menu"
+            className="dashboard-menu"
+            aria-label="Dashboard navigation"
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setMenuOpen(false);
+                navigate(
+                  "/dashboard"
+                );
+              }}
+            >
+              Dashboard
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setMenuOpen(false);
+                navigate(
+                  "/groups"
+                );
+              }}
+            >
+              Community Groups
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setMenuOpen(false);
+                navigate(
+                  "/groups/create"
+                );
+              }}
+            >
+              Create Group
+            </button>
+
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false);
+                  navigate(
+                    "/admin"
+                  );
+                }}
+              >
+                Administration
+              </button>
+            )}
+
+            <button
+              type="button"
+              className="dashboard-menu-danger"
+              onClick={
+                handleLogout
+              }
+            >
+              <LogOut
+                size={18}
+                aria-hidden="true"
+              />
+              Sign Out
+            </button>
+          </nav>
+        )}
       </header>
 
-      <section className="stats-grid">
+      {/* ================================================================== */}
+      {/* Error Banner */}
+      {/* ================================================================== */}
+
+      {error && (
+        <section
+          className="error-box"
+          role="alert"
+          aria-live="assertive"
+        >
+          <div className="error-box-icon">
+            <AlertCircle
+              size={22}
+              aria-hidden="true"
+            />
+          </div>
+
+          <div className="error-box-content">
+            <strong>
+              Dashboard data could not
+              be fully loaded
+            </strong>
+
+            <p>{error}</p>
+          </div>
+
+          <button
+            type="button"
+            onClick={
+              handleRetry
+            }
+            disabled={
+              retryCount >=
+              MAX_RETRIES ||
+              refreshing
+            }
+            className="error-retry-button"
+          >
+            <RefreshCw
+              size={17}
+              aria-hidden="true"
+            />
+
+            Retry
+          </button>
+        </section>
+      )}
+
+      {/* ================================================================== */}
+      {/* KPI Cards */}
+      {/* ================================================================== */}
+
+      <section
+        className="stats-grid"
+        aria-labelledby="dashboard-overview-heading"
+      >
+        <h2
+          id="dashboard-overview-heading"
+          className="sr-only"
+        >
+          Dashboard Overview
+        </h2>
+
         <StatCard
-          icon={
-            PiggyBank
-          }
-          title="Savings"
+          icon={PiggyBank}
+          title="Total Savings"
           value={formatCurrency(
-            stats.savings
+            stats?.savings
           )}
+          description="Community savings balance"
         />
 
         <StatCard
           icon={Wallet}
           title="Groups"
-          value={
-            groups.length
-          }
+          value={groupCount}
+          description="Accessible community groups"
         />
 
         <StatCard
           icon={Users}
           title="Members"
-          value={
-            stats.members
-          }
+          value={memberCount}
+          description="Registered community members"
         />
 
         <StatCard
-          icon={
-            CreditCard
-          }
+          icon={CreditCard}
           title="Active Loans"
-          value={
-            stats.activeLoans
-          }
+          value={activeLoans}
+          description="Currently active loans"
         />
       </section>
 
-      {error && (
-        <div className="error-box">
-          <AlertCircle />
-
-          <p>{error}</p>
-
-          <button
-            onClick={
-              handleRetry
-            }
-          >
-            <RefreshCw />
-            Retry
-          </button>
-        </div>
-      )}
+      {/* ================================================================== */}
+      {/* Admin Analytics */}
+      {/* ================================================================== */}
 
       {isAdmin && (
         <AdminDashboard
@@ -690,76 +1629,128 @@ export default function Dashboard() {
         />
       )}
 
-      <section className="groups-section">
-        <h2>
-          Community Groups
-        </h2>
+      {/* ================================================================== */}
+      {/* Community Groups */}
+      {/* ================================================================== */}
 
-        <div className="groups-grid">
-          {groups.map(
-            (
-              group
-            ) => (
-              <div
-                key={
-                  group._id
-                }
-                className="group-card"
-                onClick={() =>
-                  navigate(
-                    `/groups/${group._id}`
-                  )
-                }
-              >
-                <h3>
-                  {
-                    group.name
-                  }
-                </h3>
+      <section
+        className="groups-section"
+        aria-labelledby="community-groups-heading"
+      >
+        <div className="section-heading">
+          <div>
+            <span className="section-eyebrow">
+              Community
+            </span>
 
-                <p>
-                  {
-                    group.description
-                  }
-                </p>
+            <h2 id="community-groups-heading">
+              Community Groups
+            </h2>
 
-                <p>
-                  {(
-                    group
-                      ?.members ||
-                    []
-                  ).length}{" "}
-                  members
-                </p>
+            <p>
+              Groups you can currently access
+              through TITech Community Capital.
+            </p>
+          </div>
 
-                <p>
-                  {formatCurrency(
-                    group.totalContributions
-                  )}
-                </p>
-
-                <p>
-                  Next:
-                  {" "}
-                  {formatDate(
-                    group.nextContributionDate
-                  )}
-                </p>
-              </div>
-            )
-          )}
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={
+              handleCreateGroup
+            }
+          >
+            Create Group
+            <ChevronRight
+              size={18}
+              aria-hidden="true"
+            />
+          </button>
         </div>
+
+        {groups.length === 0 ? (
+          <EmptyGroupsState
+            onCreateGroup={
+              handleCreateGroup
+            }
+          />
+        ) : (
+          <div className="groups-grid">
+            {groups.map(
+              (group, index) => {
+                const groupId =
+                  getEntityId(
+                    group
+                  );
+
+                return (
+                  <GroupCard
+                    key={
+                      groupId ||
+                      `group-${index}`
+                    }
+                    group={
+                      group
+                    }
+                    formatCurrency={
+                      formatCurrency
+                    }
+                    formatDate={
+                      formatDate
+                    }
+                    onOpen={
+                      handleOpenGroup
+                    }
+                  />
+                );
+              }
+            )}
+          </div>
+        )}
       </section>
 
+      {/* ================================================================== */}
+      {/* Dashboard Footer */}
+      {/* ================================================================== */}
+
+      <footer className="dashboard-footer">
+        <div className="dashboard-footer-status">
+          <CheckCircle2
+            size={17}
+            aria-hidden="true"
+          />
+
+          <span>
+            TITech Community Capital
+            services operational
+          </span>
+        </div>
+
+        <span>
+          Dashboard refreshes automatically
+          every 60 seconds.
+        </span>
+      </footer>
+
+      {/* ================================================================== */}
+      {/* Persistent Logout */}
+      {/* ================================================================== */}
+
       <button
+        type="button"
         className="logout-btn"
         onClick={
           handleLogout
         }
+        aria-label="Sign out of TITech Community Capital"
       >
-        <LogOut />
+        <LogOut
+          size={18}
+          aria-hidden="true"
+        />
+
         Logout
       </button>
-    </div>
+    </main>
   );
 }

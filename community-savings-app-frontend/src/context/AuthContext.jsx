@@ -1,6 +1,6 @@
 // ============================================================================
 // TITech Community Capital
-// Enterprise Auth Context
+// Enterprise Authentication Context
 //
 // File:
 // frontend/src/context/AuthContext.jsx
@@ -9,6 +9,7 @@
 // Secure JWT | HttpOnly Refresh Cookie | Multi-Tenant
 // Single-Flight Refresh | Socket | Session Bootstrap
 // Offline Awareness | Cross-Tab Session Events
+// React StrictMode Safe | Session Recovery | Defensive Cleanup
 //
 // IMPORTANT SECURITY MODEL
 //
@@ -17,13 +18,27 @@
 //   - Never persisted to localStorage/sessionStorage
 //
 // Refresh Token:
-//   - Managed by backend
+//   - Managed exclusively by backend
 //   - Expected in HttpOnly + Secure + SameSite cookie
 //   - Never exposed to JavaScript
 //
 // Axios:
 //   - Centralized in ../services/api
 //   - Do NOT create another Axios instance here
+//
+// AUTHORITY MODEL
+//
+// Backend:
+//   - Authoritative for authentication
+//   - Authoritative for authorization
+//   - Authoritative for tenant access
+//
+// Frontend:
+//   - Maintains short-lived access-token state
+//   - Schedules proactive refresh
+//   - Hydrates current user
+//   - Manages realtime connection lifecycle
+//   - Provides UI/session state
 // ============================================================================
 
 import React, {
@@ -48,7 +63,6 @@ import {
   register as apiRegister,
   logout as apiLogout,
   refreshToken as apiRefreshToken,
-  bootstrapAuthentication,
   getToken,
   setToken,
   clearToken,
@@ -65,10 +79,19 @@ import {
 // ============================================================================
 
 const IS_DEV =
-  import.meta.env.DEV;
+  Boolean(import.meta.env.DEV);
 
 const TOKEN_REFRESH_BUFFER_SECONDS =
   120;
+
+const AUTH_CHANNEL_NAME =
+  "titech-auth";
+
+const AUTH_ME_ENDPOINT =
+  "/api/auth/me";
+
+const REFRESH_RETRY_COOLDOWN_MS =
+  5000;
 
 // ============================================================================
 // Context
@@ -81,24 +104,28 @@ const AuthContext =
 // JWT Helpers
 // ============================================================================
 //
-// These helpers are only used to determine when a short-lived access token
-// should be refreshed.
+// These helpers are used ONLY for client-side refresh scheduling.
 //
-// They are NOT used for authorization decisions.
+// They are NOT authorization mechanisms.
 //
-// The backend remains authoritative.
+// Backend authorization remains authoritative.
 // ============================================================================
 
 function parseJwt(token) {
   try {
-    if (!token) {
+    if (
+      typeof token !== "string" ||
+      !token
+    ) {
       return null;
     }
 
     const parts =
       token.split(".");
 
-    if (parts.length !== 3) {
+    if (
+      parts.length !== 3
+    ) {
       return null;
     }
 
@@ -124,14 +151,13 @@ function parseJwt(token) {
   }
 }
 
-function getTokenExpiry(
-  token
-) {
+function getTokenExpiry(token) {
   const payload =
     parseJwt(token);
 
   if (
-    !payload?.exp
+    !payload ||
+    typeof payload.exp !== "number"
   ) {
     return null;
   }
@@ -139,9 +165,7 @@ function getTokenExpiry(
   return payload.exp * 1000;
 }
 
-function isTokenExpired(
-  token
-) {
+function isTokenExpired(token) {
   const expiry =
     getTokenExpiry(token);
 
@@ -149,14 +173,10 @@ function isTokenExpired(
     return true;
   }
 
-  return (
-    expiry <= Date.now()
-  );
+  return expiry <= Date.now();
 }
 
-function getRefreshDelay(
-  token
-) {
+function getRefreshDelay(token) {
   const expiry =
     getTokenExpiry(token);
 
@@ -177,12 +197,20 @@ function getRefreshDelay(
 }
 
 // ============================================================================
-// Profile Normalization
+// Response Helpers
 // ============================================================================
 
-function normalizeUser(
-  response
-) {
+function extractAccessToken(response) {
+  return (
+    response?.accessToken ||
+    response?.data?.accessToken ||
+    response?.data?.token ||
+    response?.token ||
+    null
+  );
+}
+
+function normalizeUser(response) {
   if (!response) {
     return null;
   }
@@ -190,9 +218,56 @@ function normalizeUser(
   return (
     response.data?.user ||
     response.data?.profile ||
+    response.user ||
+    response.profile ||
     response.data ||
     response
   );
+}
+
+function extractTenantId(
+  response,
+  profile
+) {
+  return (
+    response?.data?.tenantId ||
+    response?.tenantId ||
+    profile?.tenantId ||
+    profile?.tenant?.id ||
+    profile?.tenant?._id ||
+    null
+  );
+}
+
+// ============================================================================
+// Safe Development Logging
+// ============================================================================
+
+function devLog(
+  level,
+  message,
+  metadata
+) {
+  if (!IS_DEV) {
+    return;
+  }
+
+  try {
+    const logger =
+      console[level] ||
+      console.info;
+
+    if (metadata !== undefined) {
+      logger(
+        message,
+        metadata
+      );
+    } else {
+      logger(message);
+    }
+  } catch {
+    // Logging must never affect authentication.
+  }
 }
 
 // ============================================================================
@@ -222,6 +297,15 @@ export function AuthProvider({
       isOnline()
     );
 
+  const [refreshing, setRefreshing] =
+    useState(false);
+
+  const [socketConnected, setSocketConnected] =
+    useState(false);
+
+  const [authError, setAuthError] =
+    useState(null);
+
   // ========================================================================
   // Refs
   // ========================================================================
@@ -229,17 +313,37 @@ export function AuthProvider({
   const mountedRef =
     useRef(false);
 
-  const initializedRef =
-    useRef(false);
-
   const refreshTimerRef =
     useRef(null);
 
-  const logoutInProgressRef =
-    useRef(false);
+  const refreshPromiseRef =
+    useRef(null);
+
+  const logoutPromiseRef =
+    useRef(null);
 
   const socketConnectedRef =
     useRef(false);
+
+  const lastRefreshFailureRef =
+    useRef(0);
+
+  const bootstrapPromiseRef =
+    useRef(null);
+
+  const channelRef =
+    useRef(null);
+
+  // ========================================================================
+  // Mounted State Helper
+  // ========================================================================
+
+  const isMounted =
+    useCallback(
+      () =>
+        mountedRef.current,
+      []
+    );
 
   // ========================================================================
   // Token State
@@ -254,10 +358,16 @@ export function AuthProvider({
   const updateAccessToken =
     useCallback(
       accessToken => {
-        if (!accessToken) {
+        if (
+          !accessToken
+        ) {
           clearToken();
 
-          setTokenState(null);
+          if (
+            mountedRef.current
+          ) {
+            setTokenState(null);
+          }
 
           return;
         }
@@ -266,9 +376,42 @@ export function AuthProvider({
           accessToken
         );
 
-        setTokenState(
-          accessToken
-        );
+        if (
+          mountedRef.current
+        ) {
+          setTokenState(
+            accessToken
+          );
+        }
+      },
+      []
+    );
+
+  // ========================================================================
+  // Tenant Synchronization
+  // ========================================================================
+
+  const synchronizeTenant =
+    useCallback(
+      (
+        response,
+        profile
+      ) => {
+        const tenantId =
+          extractTenantId(
+            response,
+            profile
+          );
+
+        if (tenantId) {
+          setTenant(
+            tenantId
+          );
+
+          return tenantId;
+        }
+
+        return getTenant();
       },
       []
     );
@@ -280,7 +423,7 @@ export function AuthProvider({
   const clearRefreshTimer =
     useCallback(() => {
       if (
-        refreshTimerRef.current
+        refreshTimerRef.current !== null
       ) {
         clearTimeout(
           refreshTimerRef.current
@@ -292,7 +435,165 @@ export function AuthProvider({
     }, []);
 
   // ========================================================================
-  // Schedule Access Token Refresh
+  // Socket State
+  // ========================================================================
+
+  const setSocketConnectionState =
+    useCallback(
+      connected => {
+        socketConnectedRef.current =
+          Boolean(connected);
+
+        if (
+          mountedRef.current
+        ) {
+          setSocketConnected(
+            Boolean(connected)
+          );
+        }
+      },
+      []
+    );
+
+  // ========================================================================
+  // Socket Connection
+  // ========================================================================
+
+  const connectUserSocket =
+    useCallback(() => {
+      const currentToken =
+        getToken();
+
+      if (
+        !currentToken ||
+        isTokenExpired(
+          currentToken
+        )
+      ) {
+        setSocketConnectionState(
+          false
+        );
+
+        return false;
+      }
+
+      if (
+        socketConnectedRef.current
+      ) {
+        return true;
+      }
+
+      try {
+        connectSocket();
+
+        setSocketConnectionState(
+          true
+        );
+
+        devLog(
+          "info",
+          "[AUTH] Socket connection requested"
+        );
+
+        return true;
+      } catch (error) {
+        setSocketConnectionState(
+          false
+        );
+
+        devLog(
+          "error",
+          "[AUTH] Socket connection failed",
+          error
+        );
+
+        return false;
+      }
+    }, [
+      setSocketConnectionState,
+    ]);
+
+  // ========================================================================
+  // Socket Disconnection
+  // ========================================================================
+
+  const disconnectUserSocket =
+    useCallback(() => {
+      try {
+        if (
+          socket &&
+          typeof socket.disconnect ===
+            "function"
+        ) {
+          socket.disconnect();
+        }
+      } catch (error) {
+        devLog(
+          "warn",
+          "[AUTH] Socket disconnect failed",
+          error
+        );
+      } finally {
+        setSocketConnectionState(
+          false
+        );
+      }
+    }, [
+      setSocketConnectionState,
+    ]);
+
+  // ========================================================================
+  // User Session Hydration
+  // ========================================================================
+
+  const hydrateUser =
+    useCallback(
+      async () => {
+        const currentToken =
+          getToken();
+
+        if (
+          !currentToken ||
+          isTokenExpired(
+            currentToken
+          )
+        ) {
+          return null;
+        }
+
+        const response =
+          await apiGet(
+            AUTH_ME_ENDPOINT
+          );
+
+        const profile =
+          normalizeUser(
+            response
+          );
+
+        if (
+          profile &&
+          mountedRef.current
+        ) {
+          setUser(
+            profile
+          );
+        }
+
+        synchronizeTenant(
+          response,
+          profile
+        );
+
+        return profile;
+      },
+      [
+        synchronizeTenant,
+      ]
+    );
+
+  // ========================================================================
+  // Proactive Refresh Scheduling
   // ========================================================================
 
   const scheduleRefresh =
@@ -300,7 +601,9 @@ export function AuthProvider({
       accessToken => {
         clearRefreshTimer();
 
-        if (!accessToken) {
+        if (
+          !accessToken
+        ) {
           return;
         }
 
@@ -317,201 +620,167 @@ export function AuthProvider({
 
         refreshTimerRef.current =
           setTimeout(
-            async () => {
-              try {
-                await refreshSession();
-              } catch (
-                error
-              ) {
-                if (
-                  IS_DEV
-                ) {
-                  console.warn(
+            () => {
+              refreshSession({
+                reason:
+                  "scheduled",
+              }).catch(
+                error => {
+                  devLog(
+                    "warn",
                     "[AUTH] Scheduled refresh failed",
                     error
                   );
                 }
-
-                await performLogout(
-                  true,
-                  false
-                );
-              }
+              );
             },
             delay
           );
       },
-      [clearRefreshTimer]
-    );
-
-  // ========================================================================
-  // Socket
-  // ========================================================================
-
-  const connectUserSocket =
-    useCallback(() => {
-      if (
-        !getToken()
-      ) {
-        return false;
-      }
-
-      try {
-        connectSocket();
-
-        socketConnectedRef.current =
-          true;
-
-        if (IS_DEV) {
-          console.info(
-            "[AUTH] Socket connected"
-          );
-        }
-
-        return true;
-      } catch (
-        error
-      ) {
-        socketConnectedRef.current =
-          false;
-
-        console.error(
-          "[AUTH] Socket connection failed",
-          error
-        );
-
-        return false;
-      }
-    }, []);
-
-  const disconnectUserSocket =
-    useCallback(() => {
-      try {
-        if (
-          socket &&
-          typeof socket.disconnect ===
-            "function"
-        ) {
-          socket.disconnect();
-        }
-      } catch (
-        error
-      ) {
-        if (IS_DEV) {
-          console.warn(
-            "[AUTH] Socket disconnect failed",
-            error
-          );
-        }
-      }
-
-      socketConnectedRef.current =
-        false;
-    }, []);
-
-  // ========================================================================
-  // User Session Hydration
-  // ========================================================================
-
-  const hydrateUser =
-    useCallback(
-      async () => {
-        const currentToken =
-          getToken();
-
-        if (
-          !currentToken
-        ) {
-          return null;
-        }
-
-        const response =
-          await apiGet(
-            "/api/auth/me"
-          );
-
-        const profile =
-          normalizeUser(
-            response
-          );
-
-        if (
-          profile
-        ) {
-          setUser(
-            profile
-          );
-        }
-
-        // If backend supplies tenant information, synchronize the client
-        // context. Backend authorization remains authoritative.
-        const tenantId =
-          response.data
-            ?.tenantId ||
-          profile?.tenantId ||
-          profile?.tenant?.id;
-
-        if (
-          tenantId
-        ) {
-          setTenant(
-            tenantId
-          );
-        }
-
-        return profile;
-      },
-      []
+      [
+        clearRefreshTimer,
+      ]
     );
 
   // ========================================================================
   // Refresh Session
   // ========================================================================
   //
-  // api.js already implements single-flight refresh.
+  // Context-level single-flight protection.
   //
-  // This context intentionally does NOT implement another refresh queue.
+  // api.js may also implement single-flight refresh. This second boundary
+  // protects against concurrent callers originating specifically from the
+  // authentication context, such as:
+  //
+  //   - refresh timer
+  //   - network recovery
+  //   - bootstrap
+  //   - manual refresh
+  //
+  // The refresh token remains HttpOnly and is never accessed here.
   // ========================================================================
 
   const refreshSession =
     useCallback(
-      async () => {
-        try {
-          const response =
-            await apiRefreshToken();
-
-          const newToken =
-            response?.accessToken ||
-            response?.data?.accessToken ||
-            response?.data?.token;
-
-          if (
-            !newToken
-          ) {
-            throw new Error(
-              "Refresh succeeded but no access token was returned."
-            );
-          }
-
-          updateAccessToken(
-            newToken
-          );
-
-          scheduleRefresh(
-            newToken
-          );
-
-          return newToken;
-        } catch (
-          error
+      async ({
+        reason = "manual",
+        suppressErrorState = false,
+      } = {}) => {
+        if (
+          refreshPromiseRef.current
         ) {
-          clearRefreshTimer();
+          return refreshPromiseRef.current;
+        }
 
-          updateAccessToken(
-            null
+        const now =
+          Date.now();
+
+        if (
+          now -
+            lastRefreshFailureRef.current <
+          REFRESH_RETRY_COOLDOWN_MS
+        ) {
+          throw new Error(
+            "Authentication refresh is temporarily rate limited."
           );
+        }
 
-          throw error;
+        const refreshOperation =
+          (async () => {
+            if (
+              mountedRef.current
+            ) {
+              setRefreshing(
+                true
+              );
+            }
+
+            try {
+              const response =
+                await apiRefreshToken();
+
+              const newToken =
+                extractAccessToken(
+                  response
+                );
+
+              if (
+                !newToken
+              ) {
+                throw new Error(
+                  "Refresh succeeded but no access token was returned."
+                );
+              }
+
+              updateAccessToken(
+                newToken
+              );
+
+              scheduleRefresh(
+                newToken
+              );
+
+              if (
+                mountedRef.current
+              ) {
+                setAuthError(
+                  null
+                );
+              }
+
+              devLog(
+                "info",
+                "[AUTH] Session refreshed",
+                {
+                  reason,
+                }
+              );
+
+              return newToken;
+            } catch (error) {
+              lastRefreshFailureRef.current =
+                Date.now();
+
+              clearRefreshTimer();
+
+              updateAccessToken(
+                null
+              );
+
+              if (
+                !suppressErrorState &&
+                mountedRef.current
+              ) {
+                setAuthError(
+                  error
+                );
+              }
+
+              throw error;
+            } finally {
+              if (
+                mountedRef.current
+              ) {
+                setRefreshing(
+                  false
+                );
+              }
+            }
+          })();
+
+        refreshPromiseRef.current =
+          refreshOperation;
+
+        try {
+          return await refreshOperation;
+        } finally {
+          if (
+            refreshPromiseRef.current ===
+            refreshOperation
+          ) {
+            refreshPromiseRef.current =
+              null;
+          }
         }
       },
       [
@@ -534,27 +803,40 @@ export function AuthProvider({
         options = {}
       ) => {
         if (
-          !email ||
-          !password
+          typeof email !== "string" ||
+          !email.trim()
         ) {
           throw new Error(
-            "Email and password are required."
+            "Email is required."
           );
         }
 
+        if (
+          typeof password !== "string" ||
+          !password
+        ) {
+          throw new Error(
+            "Password is required."
+          );
+        }
+
+        setAuthError(
+          null
+        );
+
         const response =
           await apiLogin({
-            email,
+            email:
+              email.trim(),
             password,
             deviceInfo,
             ...options,
           });
 
         const accessToken =
-          response?.data
-            ?.accessToken ||
-          response?.data
-            ?.token;
+          extractAccessToken(
+            response
+          );
 
         if (
           !accessToken
@@ -574,26 +856,17 @@ export function AuthProvider({
         );
 
         if (
-          profile
+          mountedRef.current
         ) {
           setUser(
             profile
           );
         }
 
-        const tenantId =
-          response.data
-            ?.tenantId ||
-          profile?.tenantId ||
-          profile?.tenant?.id;
-
-        if (
-          tenantId
-        ) {
-          setTenant(
-            tenantId
-          );
-        }
+        synchronizeTenant(
+          response,
+          profile
+        );
 
         scheduleRefresh(
           accessToken
@@ -601,8 +874,21 @@ export function AuthProvider({
 
         connectUserSocket();
 
+        if (
+          mountedRef.current
+        ) {
+          setAuthError(
+            null
+          );
+        }
+
         toast.success(
           "Login successful"
+        );
+
+        devLog(
+          "info",
+          "[AUTH] Login successful"
         );
 
         return profile;
@@ -610,6 +896,7 @@ export function AuthProvider({
       [
         connectUserSocket,
         scheduleRefresh,
+        synchronizeTenant,
         updateAccessToken,
       ]
     );
@@ -648,10 +935,9 @@ export function AuthProvider({
           );
 
         const accessToken =
-          response?.data
-            ?.accessToken ||
-          response?.data
-            ?.token;
+          extractAccessToken(
+            response
+          );
 
         if (
           !accessToken
@@ -671,26 +957,17 @@ export function AuthProvider({
         );
 
         if (
-          profile
+          mountedRef.current
         ) {
           setUser(
             profile
           );
         }
 
-        const tenantId =
-          response.data
-            ?.tenantId ||
-          profile?.tenantId ||
-          profile?.tenant?.id;
-
-        if (
-          tenantId
-        ) {
-          setTenant(
-            tenantId
-          );
-        }
+        synchronizeTenant(
+          response,
+          profile
+        );
 
         scheduleRefresh(
           accessToken
@@ -698,8 +975,21 @@ export function AuthProvider({
 
         connectUserSocket();
 
+        if (
+          mountedRef.current
+        ) {
+          setAuthError(
+            null
+          );
+        }
+
         toast.success(
           "Registration successful"
+        );
+
+        devLog(
+          "info",
+          "[AUTH] Registration successful"
         );
 
         return profile;
@@ -707,8 +997,47 @@ export function AuthProvider({
       [
         connectUserSocket,
         scheduleRefresh,
+        synchronizeTenant,
         updateAccessToken,
       ]
+    );
+
+  // ========================================================================
+  // Cross-Tab Broadcast
+  // ========================================================================
+
+  const broadcastAuthEvent =
+    useCallback(
+      type => {
+        try {
+          if (
+            typeof BroadcastChannel ===
+            "undefined"
+          ) {
+            return;
+          }
+
+          const channel =
+            new BroadcastChannel(
+              AUTH_CHANNEL_NAME
+            );
+
+          channel.postMessage({
+            type,
+            timestamp:
+              Date.now(),
+          });
+
+          channel.close();
+        } catch (error) {
+          devLog(
+            "warn",
+            "[AUTH] BroadcastChannel event failed",
+            error
+          );
+        }
+      },
+      []
     );
 
   // ========================================================================
@@ -722,104 +1051,112 @@ export function AuthProvider({
         notifyUser = true
       ) => {
         if (
-          logoutInProgressRef.current
+          logoutPromiseRef.current
         ) {
-          return;
+          return logoutPromiseRef.current;
         }
 
-        logoutInProgressRef.current =
-          true;
+        const operation =
+          (async () => {
+            try {
+              // ------------------------------------------------------------
+              // Backend logout.
+              //
+              // Failure is intentionally non-fatal. Local authentication
+              // state must still be destroyed.
+              // ------------------------------------------------------------
 
-        try {
-          // --------------------------------------------------------------
-          // Tell backend to invalidate/rotate session.
-          //
-          // Failure is intentionally non-fatal because local security state
-          // must still be cleared.
-          // --------------------------------------------------------------
+              try {
+                await apiLogout();
+              } catch (error) {
+                devLog(
+                  "warn",
+                  "[AUTH] Logout API failed; continuing local cleanup",
+                  error
+                );
+              }
 
-          try {
-            await apiLogout();
-          } catch (
-            error
-          ) {
-            if (
-              IS_DEV
-            ) {
-              console.warn(
-                "[AUTH] Logout API failed; clearing local state",
-                error
+              // ------------------------------------------------------------
+              // Cancel scheduled refresh.
+              // ------------------------------------------------------------
+
+              clearRefreshTimer();
+
+              // ------------------------------------------------------------
+              // Cancel any pending refresh reference.
+              //
+              // The underlying HTTP request may still complete, but the
+              // resulting token cannot be accepted after local logout.
+              // ------------------------------------------------------------
+
+              refreshPromiseRef.current =
+                null;
+
+              // ------------------------------------------------------------
+              // Disconnect realtime session.
+              // ------------------------------------------------------------
+
+              disconnectUserSocket();
+
+              // ------------------------------------------------------------
+              // Clear authentication.
+              // ------------------------------------------------------------
+
+              updateAccessToken(
+                null
               );
-            }
-          }
 
-          // --------------------------------------------------------------
-          // Clear timers
-          // --------------------------------------------------------------
-
-          clearRefreshTimer();
-
-          // --------------------------------------------------------------
-          // Disconnect realtime session
-          // --------------------------------------------------------------
-
-          disconnectUserSocket();
-
-          // --------------------------------------------------------------
-          // Clear authentication
-          // --------------------------------------------------------------
-
-          updateAccessToken(
-            null
-          );
-
-          setUser(
-            null
-          );
-
-          clearTenant();
-
-          // --------------------------------------------------------------
-          // Notify other tabs/windows.
-          //
-          // This event does not contain a token.
-          // --------------------------------------------------------------
-
-          try {
-            if (
-              typeof BroadcastChannel !==
-              "undefined"
-            ) {
-              const channel =
-                new BroadcastChannel(
-                  "titech-auth"
+              if (
+                mountedRef.current
+              ) {
+                setUser(
+                  null
                 );
 
-              channel.postMessage({
-                type:
-                  "AUTH_LOGOUT",
-              });
+                setAuthError(
+                  null
+                );
+              }
 
-              channel.close();
+              clearTenant();
+
+              // ------------------------------------------------------------
+              // Notify other browser contexts.
+              //
+              // No token or sensitive session data is transmitted.
+              // ------------------------------------------------------------
+
+              broadcastAuthEvent(
+                "AUTH_LOGOUT"
+              );
+
+              if (
+                notifyUser &&
+                !silent &&
+                mountedRef.current
+              ) {
+                toast.info(
+                  "Logged out successfully"
+                );
+              }
+
+              devLog(
+                "info",
+                "[AUTH] Logout completed"
+              );
+            } finally {
+              logoutPromiseRef.current =
+                null;
             }
-          } catch {
-            // BroadcastChannel unavailable.
-          }
+          })();
 
-          if (
-            notifyUser &&
-            !silent
-          ) {
-            toast.info(
-              "Logged out successfully"
-            );
-          }
-        } finally {
-          logoutInProgressRef.current =
-            false;
-        }
+        logoutPromiseRef.current =
+          operation;
+
+        return operation;
       },
       [
+        broadcastAuthEvent,
         clearRefreshTimer,
         disconnectUserSocket,
         updateAccessToken,
@@ -838,221 +1175,57 @@ export function AuthProvider({
           true
         );
       },
-      [performLogout]
+      [
+        performLogout,
+      ]
     );
 
   // ========================================================================
-  // Initial Authentication Bootstrap
+  // Session Bootstrap
   // ========================================================================
   //
-  // This supports both:
+  // StrictMode-safe:
   //
-  // 1. Existing in-memory access token.
-  //
-  // 2. Page reload where only the HttpOnly refresh cookie remains.
-  //
-  // The backend refresh endpoint restores the access token.
+  // No permanent "initialized" flag is used. React may mount/unmount/re-run
+  // effects during development without permanently preventing authentication
+  // initialization.
   // ========================================================================
 
-  useEffect(() => {
-    if (
-      initializedRef.current
-    ) {
-      return;
-    }
-
-    initializedRef.current =
-      true;
-
-    mountedRef.current =
-      true;
-
-    let cancelled = false;
-
-    async function initializeAuth() {
-      try {
-        // ==============================================================
-        // Existing access token
-        // ==============================================================
-
-        let currentToken =
-          getToken();
-
+  const initializeAuthentication =
+    useCallback(
+      async signal => {
         if (
-          currentToken &&
-          !isTokenExpired(
-            currentToken
-          )
+          bootstrapPromiseRef.current
         ) {
-          try {
-            const profile =
-              await hydrateUser();
+          return bootstrapPromiseRef.current;
+        }
 
-            if (
-              cancelled ||
-              !mountedRef.current
-            ) {
-              return;
-            }
-
-            setUser(
-              profile
-            );
-
-            scheduleRefresh(
-              currentToken
-            );
-
-            connectUserSocket();
-
-            return;
-          } catch (
-            error
-          ) {
-            if (
-              IS_DEV
-            ) {
-              console.warn(
-                "[AUTH] Existing access token could not hydrate session",
-                error
+        const operation =
+          (async () => {
+            try {
+              setAuthError(
+                null
               );
-            }
 
-            updateAccessToken(
-              null
-            );
-          }
-        }
+              let currentToken =
+                getToken();
 
-        // ==============================================================
-        // Refresh from HttpOnly cookie
-        // ==============================================================
+              // ============================================================
+              // Existing in-memory access token.
+              // ============================================================
 
-        try {
-          currentToken =
-            await refreshSession();
-
-          if (
-            cancelled ||
-            !mountedRef.current
-          ) {
-            return;
-          }
-
-          const profile =
-            await hydrateUser();
-
-          if (
-            cancelled ||
-            !mountedRef.current
-          ) {
-            return;
-          }
-
-          setUser(
-            profile
-          );
-
-          scheduleRefresh(
-            currentToken
-          );
-
-          connectUserSocket();
-        } catch (
-          error
-        ) {
-          if (
-            IS_DEV
-          ) {
-            console.info(
-              "[AUTH] No active authenticated session",
-              error
-            );
-          }
-
-          updateAccessToken(
-            null
-          );
-
-          setUser(
-            null
-          );
-        }
-      } finally {
-        if (
-          !cancelled &&
-          mountedRef.current
-        ) {
-          setLoading(
-            false
-          );
-        }
-      }
-    }
-
-    initializeAuth();
-
-    return () => {
-      cancelled = true;
-
-      mountedRef.current =
-        false;
-
-      clearRefreshTimer();
-    };
-  }, [
-    clearRefreshTimer,
-    connectUserSocket,
-    hydrateUser,
-    refreshSession,
-    scheduleRefresh,
-    updateAccessToken,
-  ]);
-
-  // ========================================================================
-  // Network State
-  // ========================================================================
-
-  useEffect(() => {
-    const unsubscribe =
-      onNetworkStateChange(
-        ({ online: nextOnline }) => {
-          setOnline(
-            nextOnline
-          );
-
-          if (
-            IS_DEV
-          ) {
-            console.info(
-              "[AUTH] Network state changed",
-              {
-                online:
-                  nextOnline,
-              }
-            );
-          }
-
-          // When connectivity returns, try to restore the session if the
-          // application currently has no authenticated user.
-          if (
-            nextOnline &&
-            !user &&
-            !loading
-          ) {
-            refreshSession()
-              .then(
-                async newToken => {
-                  if (
-                    !mountedRef.current
-                  ) {
-                    return;
-                  }
-
+              if (
+                currentToken &&
+                !isTokenExpired(
+                  currentToken
+                )
+              ) {
+                try {
                   const profile =
                     await hydrateUser();
 
                   if (
+                    signal.cancelled ||
                     !mountedRef.current
                   ) {
                     return;
@@ -1063,22 +1236,267 @@ export function AuthProvider({
                   );
 
                   scheduleRefresh(
-                    newToken
+                    currentToken
                   );
 
                   connectUserSocket();
+
+                  return;
+                } catch (error) {
+                  devLog(
+                    "warn",
+                    "[AUTH] Existing access token could not hydrate session",
+                    error
+                  );
+
+                  updateAccessToken(
+                    null
+                  );
                 }
-              )
-              .catch(
-                () => {
-                  // No active session is acceptable.
-                }
+              }
+
+              // ============================================================
+              // Restore session from HttpOnly refresh cookie.
+              // ============================================================
+
+              currentToken =
+                await refreshSession({
+                  reason:
+                    "bootstrap",
+                  suppressErrorState:
+                    true,
+                });
+
+              if (
+                signal.cancelled ||
+                !mountedRef.current
+              ) {
+                return;
+              }
+
+              const profile =
+                await hydrateUser();
+
+              if (
+                signal.cancelled ||
+                !mountedRef.current
+              ) {
+                return;
+              }
+
+              setUser(
+                profile
               );
+
+              scheduleRefresh(
+                currentToken
+              );
+
+              connectUserSocket();
+            } catch (error) {
+              if (
+                signal.cancelled
+              ) {
+                return;
+              }
+
+              devLog(
+                "info",
+                "[AUTH] No active authenticated session"
+              );
+
+              updateAccessToken(
+                null
+              );
+
+              if (
+                mountedRef.current
+              ) {
+                setUser(
+                  null
+                );
+
+                setAuthError(
+                  null
+                );
+              }
+
+              disconnectUserSocket();
+            }
+          })();
+
+        bootstrapPromiseRef.current =
+          operation;
+
+        try {
+          await operation;
+        } finally {
+          if (
+            bootstrapPromiseRef.current ===
+            operation
+          ) {
+            bootstrapPromiseRef.current =
+              null;
           }
+        }
+      },
+      [
+        connectUserSocket,
+        disconnectUserSocket,
+        hydrateUser,
+        refreshSession,
+        scheduleRefresh,
+        updateAccessToken,
+      ]
+    );
+
+  useEffect(() => {
+    mountedRef.current =
+      true;
+
+    const controller = {
+      cancelled: false,
+    };
+
+    setLoading(
+      true
+    );
+
+    initializeAuthentication(
+      controller
+    ).finally(() => {
+      if (
+        !controller.cancelled &&
+        mountedRef.current
+      ) {
+        setLoading(
+          false
+        );
+      }
+    });
+
+    return () => {
+      controller.cancelled =
+        true;
+
+      mountedRef.current =
+        false;
+
+      clearRefreshTimer();
+
+      disconnectUserSocket();
+    };
+  }, [
+    clearRefreshTimer,
+    disconnectUserSocket,
+    initializeAuthentication,
+  ]);
+
+  // ========================================================================
+  // Network State
+  // ========================================================================
+
+  useEffect(() => {
+    const unsubscribe =
+      onNetworkStateChange(
+        ({ online: nextOnline }) => {
+          if (
+            !mountedRef.current
+          ) {
+            return;
+          }
+
+          setOnline(
+            nextOnline
+          );
+
+          devLog(
+            "info",
+            "[AUTH] Network state changed",
+            {
+              online:
+                nextOnline,
+            }
+          );
+
+          // --------------------------------------------------------------
+          // Offline.
+          //
+          // Do not destroy authentication merely because connectivity is
+          // temporarily unavailable.
+          // --------------------------------------------------------------
+
+          if (
+            !nextOnline
+          ) {
+            return;
+          }
+
+          // --------------------------------------------------------------
+          // Connectivity restored.
+          //
+          // Only attempt recovery when the application currently has no
+          // authenticated user and initialization has completed.
+          // --------------------------------------------------------------
+
+          if (
+            user ||
+            loading ||
+            refreshPromiseRef.current
+          ) {
+            return;
+          }
+
+          refreshSession({
+            reason:
+              "network-recovery",
+            suppressErrorState:
+              true,
+          })
+            .then(
+              async newToken => {
+                if (
+                  !mountedRef.current
+                ) {
+                  return;
+                }
+
+                const profile =
+                  await hydrateUser();
+
+                if (
+                  !mountedRef.current
+                ) {
+                  return;
+                }
+
+                setUser(
+                  profile
+                );
+
+                scheduleRefresh(
+                  newToken
+                );
+
+                connectUserSocket();
+              }
+            )
+            .catch(
+              () => {
+                // No active authenticated session is acceptable.
+              }
+            );
         }
       );
 
-    return unsubscribe;
+    return () => {
+      if (
+        typeof unsubscribe ===
+        "function"
+      ) {
+        unsubscribe();
+      }
+    };
   }, [
     connectUserSocket,
     hydrateUser,
@@ -1089,13 +1507,7 @@ export function AuthProvider({
   ]);
 
   // ========================================================================
-  // Cross-Tab Authentication
-  // ========================================================================
-  //
-  // Access tokens are NOT persisted, so localStorage cannot be used as the
-  // source of authentication state.
-  //
-  // BroadcastChannel is used for logout/session events instead.
+  // Cross-Tab Authentication Events
   // ========================================================================
 
   useEffect(() => {
@@ -1106,31 +1518,64 @@ export function AuthProvider({
       return undefined;
     }
 
-    const channel =
-      new BroadcastChannel(
-        "titech-auth"
+    let channel;
+
+    try {
+      channel =
+        new BroadcastChannel(
+          AUTH_CHANNEL_NAME
+        );
+
+      channelRef.current =
+        channel;
+    } catch (error) {
+      devLog(
+        "warn",
+        "[AUTH] Unable to create BroadcastChannel",
+        error
       );
+
+      return undefined;
+    }
 
     const handleMessage =
       event => {
+        const type =
+          event.data?.type;
+
         if (
-          event.data?.type ===
+          type !==
           "AUTH_LOGOUT"
         ) {
-          clearRefreshTimer();
+          return;
+        }
 
-          disconnectUserSocket();
+        devLog(
+          "info",
+          "[AUTH] Received cross-tab logout event"
+        );
 
-          updateAccessToken(
-            null
-          );
+        clearRefreshTimer();
 
+        disconnectUserSocket();
+
+        updateAccessToken(
+          null
+        );
+
+        if (
+          mountedRef.current
+        ) {
           setUser(
             null
           );
 
-          clearTenant();
+          setAuthError(
+            null
+          );
         }
+
+        clearTenant();
       };
 
     channel.addEventListener(
@@ -1144,7 +1589,19 @@ export function AuthProvider({
         handleMessage
       );
 
-      channel.close();
+      try {
+        channel.close();
+      } catch {
+        // Ignore channel cleanup failures.
+      }
+
+      if (
+        channelRef.current ===
+        channel
+      ) {
+        channelRef.current =
+          null;
+      }
     };
   }, [
     clearRefreshTimer,
@@ -1156,10 +1613,10 @@ export function AuthProvider({
   // Token Synchronization
   // ========================================================================
   //
-  // If api.js refreshes the token independently after a 401, AuthContext
-  // should notice the new in-memory token on the next render/use.
+  // api.js remains authoritative for the actual HTTP token.
   //
-  // The API client remains authoritative for HTTP authentication.
+  // This effect allows AuthContext to observe an in-memory token replacement
+  // performed by the API client.
   // ========================================================================
 
   useEffect(() => {
@@ -1177,6 +1634,8 @@ export function AuthProvider({
       scheduleRefresh(
         currentToken
       );
+
+      return;
     }
 
     if (
@@ -1187,13 +1646,23 @@ export function AuthProvider({
         null
       );
 
-      setUser(
-        null
-      );
+      clearRefreshTimer();
+
+      if (
+        mountedRef.current
+      ) {
+        setUser(
+          null
+        );
+      }
+
+      disconnectUserSocket();
     }
   }, [
-    token,
+    clearRefreshTimer,
+    disconnectUserSocket,
     scheduleRefresh,
+    token,
   ]);
 
   // ========================================================================
@@ -1202,78 +1671,99 @@ export function AuthProvider({
 
   const value =
     useMemo(
-      () => ({
-        // ------------------------------------------------------------
-        // Identity
-        // ------------------------------------------------------------
+      () => {
+        const tenantId =
+          getTenant();
 
-        user,
-
-        token,
-
-        authenticated:
+        const authenticated =
           Boolean(
             user &&
+            token &&
+            !isTokenExpired(
               token
-          ),
+            )
+          );
 
-        loading,
+        return {
+          // ------------------------------------------------------------
+          // Identity
+          // ------------------------------------------------------------
 
-        online,
+          user,
 
-        // ------------------------------------------------------------
-        // Authentication
-        // ------------------------------------------------------------
+          token,
 
-        login,
+          authenticated,
 
-        register,
+          loading,
 
-        logout,
+          online,
 
-        refreshToken:
-          refreshSession,
+          // ------------------------------------------------------------
+          // Session state
+          // ------------------------------------------------------------
 
-        // ------------------------------------------------------------
-        // Tenant
-        // ------------------------------------------------------------
+          refreshing,
 
-        tenantId:
-          getTenant(),
+          authError,
 
-        // ------------------------------------------------------------
-        // Socket
-        // ------------------------------------------------------------
+          authReady:
+            !loading,
 
-        socketConnected:
-          socketConnectedRef.current,
+          sessionActive:
+            authenticated,
 
-        // ------------------------------------------------------------
-        // Session controls
-        // ------------------------------------------------------------
+          // ------------------------------------------------------------
+          // Authentication
+          // ------------------------------------------------------------
 
-        connectSocket:
-          connectUserSocket,
+          login,
 
-        disconnectSocket:
-          disconnectUserSocket,
+          register,
 
-        // ------------------------------------------------------------
-        // Token utilities
-        // ------------------------------------------------------------
+          logout,
 
-        getAccessToken:
-          getToken,
-      }),
+          refreshToken:
+            refreshSession,
+
+          // ------------------------------------------------------------
+          // Tenant
+          // ------------------------------------------------------------
+
+          tenantId,
+
+          // ------------------------------------------------------------
+          // Socket
+          // ------------------------------------------------------------
+
+          socketConnected,
+
+          connectSocket:
+            connectUserSocket,
+
+          disconnectSocket:
+            disconnectUserSocket,
+
+          // ------------------------------------------------------------
+          // Token utilities
+          // ------------------------------------------------------------
+
+          getAccessToken:
+            getToken,
+        };
+      },
       [
         user,
         token,
         loading,
         online,
+        refreshing,
+        authError,
         login,
         register,
         logout,
         refreshSession,
+        socketConnected,
         connectUserSocket,
         disconnectUserSocket,
       ]
@@ -1314,7 +1804,8 @@ export function useAuth() {
 
   if (!context) {
     throw new Error(
-      "useAuth must be used within AuthProvider"
+      "useAuth must be used within AuthProvider. " +
+        "Ensure the component is rendered inside <AuthProvider>."
     );
   }
 

@@ -6,395 +6,1033 @@
 // ============================================================================
 
 import React, {
-  useEffect,
-  useState,
   useCallback,
+  useEffect,
   useMemo,
+  useState,
 } from 'react';
 
-import api from '../../services/api';
+import {
+  AlertTriangle,
+  Ban,
+  CheckCircle2,
+  Clock3,
+  Globe,
+  Monitor,
+  RefreshCw,
+  Search,
+  Shield,
+  Smartphone,
+  Tablet,
+  Users,
+} from 'lucide-react';
 import { toast } from 'react-toastify';
 
-import {
-  RefreshCw,
-  Shield,
-  Monitor,
-  Smartphone,
-  Globe,
-  Search,
-  Ban,
-  AlertTriangle,
-} from 'lucide-react';
+import api from '../../services/api';
+
+const SESSION_ENDPOINT = '/api/auth/admin/sessions';
+
+const EMPTY_ARRAY = Object.freeze([]);
+
+const safeArray = (value) => (Array.isArray(value) ? value : EMPTY_ARRAY);
+
+const getSessionId = (session) =>
+  session?.id ??
+  session?._id ??
+  session?.sessionId ??
+  session?.sid ??
+  '';
+
+const getUserId = (session) =>
+  session?.userId ??
+  session?.user?._id ??
+  session?.user?.id ??
+  session?.user?.email ??
+  '';
+
+const getDeviceInfo = (session) =>
+  session?.deviceInfo ??
+  session?.device ??
+  EMPTY_ARRAY;
+
+const getUserAgent = (session) => {
+  const deviceInfo = getDeviceInfo(session);
+
+  return (
+    deviceInfo?.ua ??
+    deviceInfo?.userAgent ??
+    session?.userAgent ??
+    ''
+  );
+};
+
+const getIpAddress = (session) => {
+  const deviceInfo = getDeviceInfo(session);
+
+  return (
+    deviceInfo?.ip ??
+    deviceInfo?.ipAddress ??
+    session?.ip ??
+    session?.ipAddress ??
+    ''
+  );
+};
+
+const getSessionStatus = (session) => {
+  if (session?.revokedAt) {
+    return 'revoked';
+  }
+
+  if (session?.expiresAt) {
+    const expiresAt = new Date(session.expiresAt).getTime();
+
+    if (
+      Number.isFinite(expiresAt) &&
+      expiresAt <= Date.now()
+    ) {
+      return 'expired';
+    }
+  }
+
+  return 'active';
+};
+
+const getPayloadSessions = (response) => {
+  const data = response?.data;
+
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  if (Array.isArray(data?.data)) {
+    return data.data;
+  }
+
+  if (Array.isArray(data?.sessions)) {
+    return data.sessions;
+  }
+
+  if (Array.isArray(data?.items)) {
+    return data.items;
+  }
+
+  return EMPTY_ARRAY;
+};
+
+const formatDate = (value) => {
+  if (!value) {
+    return '—';
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return '—';
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(date);
+};
+
+const getRelativeExpiry = (value) => {
+  if (!value) {
+    return '';
+  }
+
+  const timestamp = new Date(value).getTime();
+
+  if (!Number.isFinite(timestamp)) {
+    return '';
+  }
+
+  const difference = timestamp - Date.now();
+
+  if (difference <= 0) {
+    return 'Expired';
+  }
+
+  const minutes = Math.floor(difference / 60000);
+
+  if (minutes < 60) {
+    return `in ${Math.max(minutes, 1)}m`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+
+  if (hours < 24) {
+    return `in ${hours}h`;
+  }
+
+  return `in ${Math.floor(hours / 24)}d`;
+};
+
+const getDeviceType = (userAgent = '') => {
+  const agent = String(userAgent).toLowerCase();
+
+  if (
+    agent.includes('ipad') ||
+    agent.includes('tablet') ||
+    agent.includes('android') &&
+      !agent.includes('mobile')
+  ) {
+    return 'tablet';
+  }
+
+  if (
+    agent.includes('mobile') ||
+    agent.includes('android') ||
+    agent.includes('iphone') ||
+    agent.includes('ipod')
+  ) {
+    return 'mobile';
+  }
+
+  return 'desktop';
+};
+
+const DeviceIcon = ({ userAgent }) => {
+  const type = getDeviceType(userAgent);
+
+  if (type === 'mobile') {
+    return <Smartphone size={17} aria-hidden="true" />;
+  }
+
+  if (type === 'tablet') {
+    return <Tablet size={17} aria-hidden="true" />;
+  }
+
+  return <Monitor size={17} aria-hidden="true" />;
+};
+
+const truncate = (value, maxLength = 32) => {
+  const text = String(value || '');
+
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  return `${text.slice(0, maxLength)}…`;
+};
 
 const AdminSessions = () => {
   const [sessions, setSessions] = useState([]);
-  const [filteredSessions, setFilteredSessions] = useState([]);
-
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [revokingId, setRevokingId] = useState(null);
 
   const [search, setSearch] = useState('');
-  const [showRevoked, setShowRevoked] = useState(true);
+  const [statusFilter, setStatusFilter] = useState('all');
 
-  // ===========================================================================
-  // FETCH SESSIONS
-  // ===========================================================================
+  const [error, setError] = useState('');
 
-  const fetchSessions = useCallback(async () => {
-    try {
-      setLoading(true);
+  // ==========================================================================
+  // FETCH
+  // ==========================================================================
 
-      const response = await api.get('/api/auth/admin/sessions');
+  const fetchSessions = useCallback(
+    async ({ silent = false } = {}) => {
+      try {
+        if (silent) {
+          setRefreshing(true);
+        } else {
+          setLoading(true);
+        }
 
-      const payload =
-        response?.data?.data ||
-        response?.data?.sessions ||
-        response?.data ||
-        [];
+        setError('');
 
-      setSessions(Array.isArray(payload) ? payload : []);
-    } catch (error) {
-      console.error(error);
+        const response = await api.get(SESSION_ENDPOINT);
 
-      toast.error(
-        error?.response?.data?.message ||
-          'Failed to load sessions'
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+        const payload = getPayloadSessions(response);
 
-  const refreshSessions = useCallback(async () => {
-    try {
-      setRefreshing(true);
+        setSessions(payload);
+      } catch (requestError) {
+        console.error(
+          '[TITech AdminSessions] Failed to load sessions:',
+          requestError
+        );
 
-      const response = await api.get('/api/auth/admin/sessions');
+        const message =
+          requestError?.response?.data?.message ||
+          requestError?.message ||
+          'Failed to load authentication sessions.';
 
-      const payload =
-        response?.data?.data ||
-        response?.data?.sessions ||
-        response?.data ||
-        [];
+        setError(message);
 
-      setSessions(Array.isArray(payload) ? payload : []);
-
-      toast.success('Sessions refreshed');
-    } catch (error) {
-      console.error(error);
-
-      toast.error('Failed to refresh sessions');
-    } finally {
-      setRefreshing(false);
-    }
-  }, []);
+        if (!silent) {
+          toast.error(message);
+        } else {
+          toast.error('Failed to refresh sessions.');
+        }
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
-    fetchSessions();
+    let mounted = true;
+
+    const load = async () => {
+      if (mounted) {
+        await fetchSessions();
+      }
+    };
+
+    load();
+
+    return () => {
+      mounted = false;
+    };
   }, [fetchSessions]);
 
-  // ===========================================================================
-  // FILTERS
-  // ===========================================================================
+  // ==========================================================================
+  // DERIVED DATA
+  // ==========================================================================
 
-  const processedSessions = useMemo(() => {
-    return sessions.filter((session) => {
-      if (!showRevoked && session.revokedAt) {
-        return false;
+  const statistics = useMemo(() => {
+    return sessions.reduce(
+      (result, session) => {
+        const status = getSessionStatus(session);
+
+        result.total += 1;
+
+        if (status === 'active') {
+          result.active += 1;
+        }
+
+        if (status === 'revoked') {
+          result.revoked += 1;
+        }
+
+        if (status === 'expired') {
+          result.expired += 1;
+        }
+
+        return result;
+      },
+      {
+        total: 0,
+        active: 0,
+        revoked: 0,
+        expired: 0,
       }
-
-      if (!search.trim()) {
-        return true;
-      }
-
-      const query = search.toLowerCase();
-
-      return (
-        String(session.id || '')
-          .toLowerCase()
-          .includes(query) ||
-        String(session.userId || '')
-          .toLowerCase()
-          .includes(query) ||
-        String(session.deviceInfo?.ip || '')
-          .toLowerCase()
-          .includes(query) ||
-        String(session.deviceInfo?.ua || '')
-          .toLowerCase()
-          .includes(query)
-      );
-    });
-  }, [sessions, search, showRevoked]);
-
-  useEffect(() => {
-    setFilteredSessions(processedSessions);
-  }, [processedSessions]);
-
-  // ===========================================================================
-  // REVOKE SESSION
-  // ===========================================================================
-
-  const revokeSession = useCallback(async (sessionId) => {
-    const confirmed = window.confirm(
-      'Are you sure you want to revoke this session?'
     );
+  }, [sessions]);
 
-    if (!confirmed) {
-      return;
-    }
+  const filteredSessions = useMemo(() => {
+    const query = search.trim().toLowerCase();
 
-    try {
-      await api.delete(
-        `/api/auth/admin/sessions/${sessionId}`
+    return sessions
+      .filter((session) => {
+        const status = getSessionStatus(session);
+
+        if (
+          statusFilter !== 'all' &&
+          status !== statusFilter
+        ) {
+          return false;
+        }
+
+        if (!query) {
+          return true;
+        }
+
+        const searchable = [
+          getSessionId(session),
+          getUserId(session),
+          getIpAddress(session),
+          getUserAgent(session),
+          session?.user?.name,
+          session?.user?.email,
+          session?.deviceInfo?.platform,
+          session?.deviceInfo?.browser,
+          session?.deviceInfo?.os,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+
+        return searchable.includes(query);
+      })
+      .sort((a, b) => {
+        const aTime = new Date(
+          a?.createdAt || 0
+        ).getTime();
+
+        const bTime = new Date(
+          b?.createdAt || 0
+        ).getTime();
+
+        return bTime - aTime;
+      });
+  }, [sessions, search, statusFilter]);
+
+  // ==========================================================================
+  // ACTIONS
+  // ==========================================================================
+
+  const refreshSessions = useCallback(() => {
+    return fetchSessions({ silent: true });
+  }, [fetchSessions]);
+
+  const revokeSession = useCallback(
+    async (session) => {
+      const sessionId = getSessionId(session);
+
+      if (!sessionId) {
+        toast.error(
+          'Unable to revoke this session: session identifier is missing.'
+        );
+        return;
+      }
+
+      if (getSessionStatus(session) !== 'active') {
+        toast.info(
+          'This session is no longer active.'
+        );
+        return;
+      }
+
+      const confirmed = window.confirm(
+        'Revoke this authentication session?\n\nThe associated client will need to authenticate again.'
       );
 
-      setSessions((prev) =>
-        prev.map((session) =>
-          session.id === sessionId
-            ? {
-                ...session,
-                revokedAt:
-                  session.revokedAt ||
-                  new Date().toISOString(),
-              }
-            : session
-        )
-      );
+      if (!confirmed) {
+        return;
+      }
 
-      toast.success('Session revoked');
-    } catch (error) {
-      console.error(error);
+      try {
+        setRevokingId(sessionId);
 
-      toast.error(
-        error?.response?.data?.message ||
-          'Unable to revoke session'
-      );
-    }
-  }, []);
+        await api.delete(
+          `${SESSION_ENDPOINT}/${encodeURIComponent(
+            sessionId
+          )}`
+        );
 
-  // ===========================================================================
-  // HELPERS
-  // ===========================================================================
+        const revokedAt =
+          new Date().toISOString();
 
-  const formatDate = (value) => {
-    if (!value) return '-';
+        setSessions((currentSessions) =>
+          currentSessions.map((currentSession) =>
+            getSessionId(currentSession) === sessionId
+              ? {
+                  ...currentSession,
+                  revokedAt:
+                    currentSession.revokedAt ||
+                    revokedAt,
+                }
+              : currentSession
+          )
+        );
 
-    try {
-      return new Date(value).toLocaleString();
-    } catch {
-      return '-';
-    }
-  };
+        toast.success('Session revoked successfully.');
+      } catch (requestError) {
+        console.error(
+          '[TITech AdminSessions] Failed to revoke session:',
+          requestError
+        );
 
-  const getDeviceIcon = (ua = '') => {
-    const agent = ua.toLowerCase();
+        toast.error(
+          requestError?.response?.data?.message ||
+            requestError?.message ||
+            'Unable to revoke the session.'
+        );
+      } finally {
+        setRevokingId(null);
+      }
+    },
+    []
+  );
 
-    if (
-      agent.includes('mobile') ||
-      agent.includes('android') ||
-      agent.includes('iphone')
-    ) {
-      return <Smartphone size={16} />;
-    }
-
-    return <Monitor size={16} />;
-  };
-
-  const activeCount = sessions.filter(
-    (s) => !s.revokedAt
-  ).length;
-
-  const revokedCount = sessions.filter(
-    (s) => s.revokedAt
-  ).length;
-
-  // ===========================================================================
-  // LOADING
-  // ===========================================================================
+  // ==========================================================================
+  // ACCESSIBLE LOADING STATE
+  // ==========================================================================
 
   if (loading) {
     return (
-      <div className="admin-sessions-page">
-        <div className="loading-container">
+      <main
+        className="admin-sessions-page"
+        aria-busy="true"
+        aria-labelledby="admin-sessions-title"
+      >
+        <div
+          className="loading-container"
+          role="status"
+          aria-live="polite"
+        >
           <RefreshCw
             size={40}
             className="animate-spin"
+            aria-hidden="true"
           />
-          <h3>Loading Sessions...</h3>
-        </div>
-      </div>
-    );
-  }
 
-  // ===========================================================================
-  // RENDER
-  // ===========================================================================
-
-  return (
-    <div className="admin-sessions-page">
-      <div className="page-header">
-        <div>
-          <h1>
-            <Shield size={28} />
-            Session Administration
+          <h1 id="admin-sessions-title">
+            Loading Sessions…
           </h1>
 
           <p>
-            Manage active authentication sessions
-            across the platform.
+            Retrieving authentication session data.
           </p>
+        </div>
+      </main>
+    );
+  }
+
+  // ==========================================================================
+  // RENDER
+  // ==========================================================================
+
+  return (
+    <main
+      className="admin-sessions-page"
+      aria-labelledby="admin-sessions-title"
+    >
+      {/* ================================================================== */}
+      {/* HEADER */}
+      {/* ================================================================== */}
+
+      <header className="page-header">
+        <div className="page-header-content">
+          <div className="page-title-icon" aria-hidden="true">
+            <Shield size={28} />
+          </div>
+
+          <div>
+            <h1 id="admin-sessions-title">
+              Session Administration
+            </h1>
+
+            <p>
+              Monitor and manage authentication sessions
+              across TITech Community Capital.
+            </p>
+          </div>
         </div>
 
         <button
+          type="button"
           className="refresh-btn"
           onClick={refreshSessions}
           disabled={refreshing}
+          aria-label="Refresh authentication sessions"
         >
           <RefreshCw
             size={18}
             className={
               refreshing ? 'animate-spin' : ''
             }
+            aria-hidden="true"
           />
-          Refresh
+
+          {refreshing ? 'Refreshing…' : 'Refresh'}
         </button>
-      </div>
+      </header>
 
-      <div className="stats-grid">
-        <div className="stat-card">
-          <h3>Total Sessions</h3>
-          <span>{sessions.length}</span>
-        </div>
+      {/* ================================================================== */}
+      {/* ERROR BANNER */}
+      {/* ================================================================== */}
 
-        <div className="stat-card active">
-          <h3>Active</h3>
-          <span>{activeCount}</span>
-        </div>
+      {error && (
+        <section
+          className="sessions-error-banner"
+          role="alert"
+          aria-live="assertive"
+        >
+          <AlertTriangle
+            size={20}
+            aria-hidden="true"
+          />
 
-        <div className="stat-card revoked">
-          <h3>Revoked</h3>
-          <span>{revokedCount}</span>
-        </div>
-      </div>
+          <div>
+            <strong>
+              Unable to retrieve the latest session data
+            </strong>
 
-      <div className="toolbar">
+            <p>{error}</p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => fetchSessions()}
+            disabled={refreshing}
+          >
+            Retry
+          </button>
+        </section>
+      )}
+
+      {/* ================================================================== */}
+      {/* STATISTICS */}
+      {/* ================================================================== */}
+
+      <section
+        className="stats-grid"
+        aria-label="Session statistics"
+      >
+        <article className="stat-card">
+          <div className="stat-card-icon">
+            <Users size={20} aria-hidden="true" />
+          </div>
+
+          <div>
+            <span className="stat-label">
+              Total Sessions
+            </span>
+
+            <strong className="stat-value">
+              {statistics.total}
+            </strong>
+          </div>
+        </article>
+
+        <article className="stat-card active">
+          <div className="stat-card-icon">
+            <CheckCircle2
+              size={20}
+              aria-hidden="true"
+            />
+          </div>
+
+          <div>
+            <span className="stat-label">
+              Active
+            </span>
+
+            <strong className="stat-value">
+              {statistics.active}
+            </strong>
+          </div>
+        </article>
+
+        <article className="stat-card revoked">
+          <div className="stat-card-icon">
+            <Ban size={20} aria-hidden="true" />
+          </div>
+
+          <div>
+            <span className="stat-label">
+              Revoked
+            </span>
+
+            <strong className="stat-value">
+              {statistics.revoked}
+            </strong>
+          </div>
+        </article>
+
+        <article className="stat-card expired">
+          <div className="stat-card-icon">
+            <Clock3 size={20} aria-hidden="true" />
+          </div>
+
+          <div>
+            <span className="stat-label">
+              Expired
+            </span>
+
+            <strong className="stat-value">
+              {statistics.expired}
+            </strong>
+          </div>
+        </article>
+      </section>
+
+      {/* ================================================================== */}
+      {/* TOOLBAR */}
+      {/* ================================================================== */}
+
+      <section
+        className="toolbar"
+        aria-label="Session filters"
+      >
         <div className="search-box">
-          <Search size={18} />
+          <Search
+            size={18}
+            aria-hidden="true"
+          />
 
           <input
-            type="text"
-            placeholder="Search sessions..."
+            type="search"
             value={search}
-            onChange={(e) =>
-              setSearch(e.target.value)
+            onChange={(event) =>
+              setSearch(event.target.value)
             }
+            placeholder="Search by session, user, IP, device or browser…"
+            aria-label="Search authentication sessions"
+            autoComplete="off"
           />
+
+          {search && (
+            <button
+              type="button"
+              className="search-clear"
+              onClick={() => setSearch('')}
+              aria-label="Clear session search"
+            >
+              ×
+            </button>
+          )}
         </div>
 
-        <label className="filter-toggle">
-          <input
-            type="checkbox"
-            checked={showRevoked}
-            onChange={() =>
-              setShowRevoked((v) => !v)
+        <label className="filter-select">
+          <span className="sr-only">
+            Session status
+          </span>
+
+          <select
+            value={statusFilter}
+            onChange={(event) =>
+              setStatusFilter(event.target.value)
             }
-          />
-          Show Revoked Sessions
+            aria-label="Filter sessions by status"
+          >
+            <option value="all">
+              All Sessions
+            </option>
+
+            <option value="active">
+              Active
+            </option>
+
+            <option value="revoked">
+              Revoked
+            </option>
+
+            <option value="expired">
+              Expired
+            </option>
+          </select>
         </label>
+      </section>
+
+      {/* ================================================================== */}
+      {/* RESULTS SUMMARY */}
+      {/* ================================================================== */}
+
+      <div
+        className="results-summary"
+        aria-live="polite"
+      >
+        <span>
+          Showing{' '}
+          <strong>
+            {filteredSessions.length}
+          </strong>{' '}
+          of{' '}
+          <strong>
+            {sessions.length}
+          </strong>{' '}
+          sessions
+        </span>
+
+        {(search || statusFilter !== 'all') && (
+          <button
+            type="button"
+            className="clear-filters-btn"
+            onClick={() => {
+              setSearch('');
+              setStatusFilter('all');
+            }}
+          >
+            Clear filters
+          </button>
+        )}
       </div>
 
-      <div className="sessions-table-wrapper">
-        <table className="sessions-table">
-          <thead>
-            <tr>
-              <th>Session</th>
-              <th>User</th>
-              <th>Device</th>
-              <th>IP Address</th>
-              <th>Created</th>
-              <th>Expires</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
+      {/* ================================================================== */}
+      {/* TABLE */}
+      {/* ================================================================== */}
 
-          <tbody>
-            {filteredSessions.length === 0 && (
+      <section className="sessions-table-wrapper">
+        <div className="table-scroll-container">
+          <table className="sessions-table">
+            <caption className="sr-only">
+              TITech Community Capital authentication
+              sessions
+            </caption>
+
+            <thead>
               <tr>
-                <td colSpan="8">
-                  No sessions found
-                </td>
+                <th scope="col">Session</th>
+                <th scope="col">User</th>
+                <th scope="col">Device</th>
+                <th scope="col">IP Address</th>
+                <th scope="col">Created</th>
+                <th scope="col">Expires</th>
+                <th scope="col">Status</th>
+                <th scope="col">Actions</th>
               </tr>
-            )}
+            </thead>
 
-            {filteredSessions.map((session) => (
-              <tr key={session.id}>
-                <td>
-                  <code>{session.id}</code>
-                </td>
+            <tbody>
+              {filteredSessions.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={8}
+                    className="empty-sessions-state"
+                  >
+                    <div>
+                      <Shield
+                        size={32}
+                        aria-hidden="true"
+                      />
 
-                <td>{session.userId}</td>
+                      <strong>
+                        No sessions found
+                      </strong>
 
-                <td>
-                  <div className="device-cell">
-                    {getDeviceIcon(
-                      session.deviceInfo?.ua
-                    )}
+                      <span>
+                        {search ||
+                        statusFilter !== 'all'
+                          ? 'Try adjusting your search or filters.'
+                          : 'There are currently no authentication sessions to display.'}
+                      </span>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                filteredSessions.map((session) => {
+                  const sessionId =
+                    getSessionId(session);
 
-                    <span>
-                      {session.deviceInfo?.ua ||
-                        'Unknown Device'}
-                    </span>
-                  </div>
-                </td>
+                  const userId =
+                    getUserId(session);
 
-                <td>
-                  <div className="device-cell">
-                    <Globe size={16} />
-                    {session.deviceInfo?.ip || '-'}
-                  </div>
-                </td>
+                  const userAgent =
+                    getUserAgent(session);
 
-                <td>
-                  {formatDate(session.createdAt)}
-                </td>
+                  const ipAddress =
+                    getIpAddress(session);
 
-                <td>
-                  {formatDate(session.expiresAt)}
-                </td>
+                  const status =
+                    getSessionStatus(session);
 
-                <td>
-                  {session.revokedAt ? (
-                    <span className="status revoked">
-                      <AlertTriangle size={14} />
-                      Revoked
-                    </span>
-                  ) : (
-                    <span className="status active">
-                      Active
-                    </span>
-                  )}
-                </td>
+                  const isRevoking =
+                    revokingId === sessionId;
 
-                <td>
-                  {!session.revokedAt && (
-                    <button
-                      className="revoke-btn"
-                      onClick={() =>
-                        revokeSession(session.id)
+                  return (
+                    <tr
+                      key={
+                        sessionId ||
+                        `${userId}-${session?.createdAt || Math.random()}`
                       }
+                      className={`session-row session-${status}`}
                     >
-                      <Ban size={16} />
-                      Revoke
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
+                      <td>
+                        <div className="session-identity">
+                          <code
+                            title={String(sessionId)}
+                          >
+                            {truncate(
+                              sessionId || 'Unknown',
+                              28
+                            )}
+                          </code>
+
+                          {session?.tokenVersion != null && (
+                            <small>
+                              Token v
+                              {session.tokenVersion}
+                            </small>
+                          )}
+                        </div>
+                      </td>
+
+                      <td>
+                        <div className="user-cell">
+                          <strong>
+                            {session?.user?.name ||
+                              session?.user?.fullName ||
+                              'User'}
+                          </strong>
+
+                          <span>
+                            {session?.user?.email ||
+                              userId ||
+                              '—'}
+                          </span>
+                        </div>
+                      </td>
+
+                      <td>
+                        <div
+                          className="device-cell"
+                          title={userAgent}
+                        >
+                          <span className="device-icon">
+                            <DeviceIcon
+                              userAgent={userAgent}
+                            />
+                          </span>
+
+                          <div>
+                            <strong>
+                              {session?.deviceInfo
+                                ?.browser ||
+                                session?.browser ||
+                                'Unknown Browser'}
+                            </strong>
+
+                            <span>
+                              {session?.deviceInfo
+                                ?.os ||
+                                session?.os ||
+                                truncate(
+                                  userAgent,
+                                  45
+                                )}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td>
+                        <div className="ip-cell">
+                          <Globe
+                            size={16}
+                            aria-hidden="true"
+                          />
+
+                          <span>
+                            {ipAddress || '—'}
+                          </span>
+                        </div>
+                      </td>
+
+                      <td>
+                        <time
+                          dateTime={
+                            session?.createdAt || undefined
+                          }
+                          title={formatDate(
+                            session?.createdAt
+                          )}
+                        >
+                          {formatDate(
+                            session?.createdAt
+                          )}
+                        </time>
+                      </td>
+
+                      <td>
+                        <div className="expiry-cell">
+                          <time
+                            dateTime={
+                              session?.expiresAt ||
+                              undefined
+                            }
+                            title={formatDate(
+                              session?.expiresAt
+                            )}
+                          >
+                            {formatDate(
+                              session?.expiresAt
+                            )}
+                          </time>
+
+                          {session?.expiresAt && (
+                            <small>
+                              {getRelativeExpiry(
+                                session.expiresAt
+                              )}
+                            </small>
+                          )}
+                        </div>
+                      </td>
+
+                      <td>
+                        {status === 'revoked' && (
+                          <span className="status revoked">
+                            <AlertTriangle
+                              size={14}
+                              aria-hidden="true"
+                            />
+                            Revoked
+                          </span>
+                        )}
+
+                        {status === 'expired' && (
+                          <span className="status expired">
+                            <Clock3
+                              size={14}
+                              aria-hidden="true"
+                            />
+                            Expired
+                          </span>
+                        )}
+
+                        {status === 'active' && (
+                          <span className="status active">
+                            <CheckCircle2
+                              size={14}
+                              aria-hidden="true"
+                            />
+                            Active
+                          </span>
+                        )}
+                      </td>
+
+                      <td>
+                        {status === 'active' ? (
+                          <button
+                            type="button"
+                            className="revoke-btn"
+                            onClick={() =>
+                              revokeSession(
+                                session
+                              )
+                            }
+                            disabled={isRevoking}
+                            aria-label={`Revoke session ${sessionId}`}
+                          >
+                            <Ban
+                              size={16}
+                              aria-hidden="true"
+                            />
+
+                            {isRevoking
+                              ? 'Revoking…'
+                              : 'Revoke'}
+                          </button>
+                        ) : (
+                          <span className="action-placeholder">
+                            —
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* ================================================================== */}
+      {/* SECURITY FOOTER */}
+      {/* ================================================================== */}
+
+      <footer className="sessions-security-notice">
+        <Shield
+          size={17}
+          aria-hidden="true"
+        />
+
+        <p>
+          Session administration is restricted to
+          authorized TITech administrators. Revoking a
+          session immediately invalidates its server-side
+          session state where supported by the
+          authentication service.
+        </p>
+      </footer>
+    </main>
   );
 };
 

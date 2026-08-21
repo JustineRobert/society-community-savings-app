@@ -1,562 +1,2418 @@
 // ============================================================================
-// TITech Community Capital
+// TITech Community Capital LTD
 // Enterprise User Slice
 // File: frontend/src/features/user/userSlice.js
 // Production Grade
 // ============================================================================
+//
+// Purpose
+// ----------------------------------------------------------------------------
+// Centralized frontend user/profile state for the TITech Community Capital
+// platform.
+//
+// Responsibilities
+// ----------------------------------------------------------------------------
+// ✓ User profile state
+// ✓ User account lifecycle state
+// ✓ Profile loading/updating state
+// ✓ Tenant context metadata
+// ✓ Role / permission / feature metadata
+// ✓ Verification state
+// ✓ Account status state
+// ✓ Session-safe user synchronization
+// ✓ Error normalization
+// ✓ Bounded activity/error history
+// ✓ Serializable Redux state
+// ✓ Production-grade selectors
+//
+// Security boundary
+// ----------------------------------------------------------------------------
+// This slice is NOT the authoritative authorization system.
+//
+// The TITech backend remains authoritative for:
+//   - identity
+//   - roles
+//   - permissions
+//   - tenant membership
+//   - KYC / compliance state
+//   - account status
+//   - financial authorization
+//
+// NEVER store in this slice:
+//   - passwords
+//   - PINs
+//   - access tokens
+//   - refresh tokens
+//   - private keys
+//   - Mobile Money secrets
+//   - payment credentials
+//   - API secrets
+//
+// Authentication/session credentials belong to the dedicated auth boundary.
+// ============================================================================
 
 import {
-  createSlice,
-  createSelector,
+    createSelector,
+    createSlice,
 } from "@reduxjs/toolkit";
 
 // ============================================================================
-// Storage Helpers
+// Constants
 // ============================================================================
 
-const STORAGE_KEY =
-  "userProfile";
+export const USER_STATUS = Object.freeze({
+    ACTIVE:
+        "active",
 
-function loadProfile() {
-  try {
-    const profile =
-      localStorage.getItem(
-        STORAGE_KEY
-      );
+    INACTIVE:
+        "inactive",
 
-    return profile
-      ? JSON.parse(profile)
-      : null;
-  } catch {
-    return null;
-  }
+    PENDING:
+        "pending",
+
+    SUSPENDED:
+        "suspended",
+
+    LOCKED:
+        "locked",
+
+    DEACTIVATED:
+        "deactivated",
+
+    DELETED:
+        "deleted",
+});
+
+export const USER_VERIFICATION_STATUS =
+    Object.freeze({
+        UNVERIFIED:
+            "unverified",
+
+        PENDING:
+            "pending",
+
+        VERIFIED:
+            "verified",
+
+        REJECTED:
+            "rejected",
+
+        EXPIRED:
+            "expired",
+    });
+
+export const USER_OPERATION_STATUS =
+    Object.freeze({
+        IDLE:
+            "idle",
+
+        LOADING:
+            "loading",
+
+        SUCCESS:
+            "success",
+
+        FAILED:
+            "failed",
+
+        UPDATING:
+            "updating",
+
+        DELETING:
+            "deleting",
+    });
+
+export const USER_ACTIVITY_TYPES =
+    Object.freeze({
+        PROFILE_UPDATED:
+            "profile_updated",
+
+        PROFILE_LOADED:
+            "profile_loaded",
+
+        VERIFICATION_CHANGED:
+            "verification_changed",
+
+        STATUS_CHANGED:
+            "status_changed",
+
+        TENANT_CHANGED:
+            "tenant_changed",
+
+        ROLE_CHANGED:
+            "role_changed",
+
+        PERMISSION_CHANGED:
+            "permission_changed",
+    });
+
+const MAX_ROLES =
+    100;
+
+const MAX_PERMISSIONS =
+    500;
+
+const MAX_FEATURES =
+    500;
+
+const MAX_ACTIVITY_HISTORY =
+    100;
+
+const MAX_ERROR_HISTORY =
+    25;
+
+// ============================================================================
+// Defaults
+// ============================================================================
+
+const DEFAULT_PROFILE =
+    Object.freeze({
+        id:
+            null,
+
+        userId:
+            null,
+
+        _id:
+            null,
+
+        firstName:
+            null,
+
+        lastName:
+            null,
+
+        name:
+            null,
+
+        username:
+            null,
+
+        email:
+            null,
+
+        phone:
+            null,
+
+        avatar:
+            null,
+
+        profileImage:
+            null,
+
+        gender:
+            null,
+
+        dateOfBirth:
+            null,
+
+        address:
+            null,
+
+        city:
+            null,
+
+        district:
+            null,
+
+        country:
+            null,
+
+        timezone:
+            "Africa/Kampala",
+
+        bio:
+            null,
+    });
+
+const DEFAULT_METADATA =
+    Object.freeze({
+        tenantId:
+            null,
+
+        organizationId:
+            null,
+
+        memberId:
+            null,
+
+        lastLoadedAt:
+            null,
+
+        lastUpdatedAt:
+            null,
+
+        source:
+            "local",
+
+        version:
+            1,
+    });
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+function nowIso() {
+    return new Date().toISOString();
 }
 
-function saveProfile(
-  profile
+function normalizeString(
+    value,
+    fallback = null,
 ) {
-  try {
-    if (!profile) {
-      localStorage.removeItem(
-        STORAGE_KEY
-      );
-      return;
+    if (
+        value ===
+            undefined ||
+        value ===
+            null
+    ) {
+        return fallback;
     }
 
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify(profile)
-    );
-  } catch (err) {
-    console.error(
-      "Failed to save profile",
-      err
-    );
-  }
+    const normalized =
+        String(value).trim();
+
+    return normalized ||
+        fallback;
 }
 
-// ============================================================================
-// Initial State
-// ============================================================================
+function normalizeCollection(
+    value,
+    maximum,
+) {
+    if (
+        !Array.isArray(
+            value,
+        )
+    ) {
+        return [];
+    }
 
-const initialState = {
-  profile: loadProfile(),
+    return [
+        ...new Set(
+            value
+                .map(
+                    item =>
+                        normalizeString(
+                            item,
+                        ),
+                )
+                .filter(
+                    Boolean,
+                ),
+        ),
+    ].slice(
+        0,
+        maximum,
+    );
+}
 
-  loading: false,
+function normalizeStatus(
+    value,
+    fallback,
+) {
+    return Object.values(
+        USER_STATUS,
+    ).includes(
+        value,
+    )
+        ? value
+        : fallback;
+}
 
-  saving: false,
+function normalizeVerificationStatus(
+    value,
+    fallback,
+) {
+    return Object.values(
+        USER_VERIFICATION_STATUS,
+    ).includes(
+        value,
+    )
+        ? value
+        : fallback;
+}
 
-  initialized: false,
+function normalizeProfile(
+    profile = {},
+) {
+    if (
+        !profile ||
+        typeof profile !==
+            "object"
+    ) {
+        return {
+            ...DEFAULT_PROFILE,
+        };
+    }
 
-  error: null,
+    return {
+        ...DEFAULT_PROFILE,
 
-  lastUpdated: null,
+        ...profile,
 
-  preferences: {},
+        id:
+            profile.id ||
+            profile.userId ||
+            profile._id ||
+            null,
 
-  notifications: {},
+        userId:
+            profile.userId ||
+            profile.id ||
+            profile._id ||
+            null,
 
-  permissions: [],
+        _id:
+            profile._id ||
+            profile.id ||
+            profile.userId ||
+            null,
 
-  roles: [],
+        firstName:
+            normalizeString(
+                profile.firstName,
+            ),
 
-  features: [],
+        lastName:
+            normalizeString(
+                profile.lastName,
+            ),
 
-  activity: [],
+        name:
+            normalizeString(
+                profile.name ||
+                (
+                    [
+                        profile.firstName,
+                        profile.lastName,
+                    ]
+                        .filter(
+                            Boolean,
+                        )
+                        .join(
+                            " ",
+                        ) ||
+                    null
+                ),
+            ),
 
-  devices: [],
+        username:
+            normalizeString(
+                profile.username,
+            ),
 
-  sessions: [],
-};
+        email:
+            normalizeString(
+                profile.email,
+            ),
+
+        phone:
+            normalizeString(
+                profile.phone,
+            ),
+
+        avatar:
+            normalizeString(
+                profile.avatar ||
+                profile.profileImage,
+            ),
+
+        profileImage:
+            normalizeString(
+                profile.profileImage ||
+                profile.avatar,
+            ),
+
+        timezone:
+            normalizeString(
+                profile.timezone,
+                "Africa/Kampala",
+            ),
+
+        bio:
+            normalizeString(
+                profile.bio,
+            ),
+    };
+}
+
+function normalizeError(
+    error,
+) {
+    if (!error) {
+        return null;
+    }
+
+    if (
+        typeof error ===
+        "string"
+    ) {
+        return {
+            name:
+                "Error",
+
+            code:
+                "USER_ERROR",
+
+            message:
+                error,
+
+            statusCode:
+                null,
+
+            retryable:
+                false,
+
+            classification:
+                null,
+
+            requestId:
+                null,
+
+            timestamp:
+                nowIso(),
+        };
+    }
+
+    const responseData =
+        error?.response?.data;
+
+    const source =
+        responseData &&
+        typeof responseData ===
+            "object"
+            ? responseData
+            : error;
+
+    return {
+        name:
+            source?.name ||
+            error?.name ||
+            "Error",
+
+        code:
+            source?.code ||
+            error?.code ||
+            "USER_ERROR",
+
+        message:
+            source?.message ||
+            source?.error ||
+            error?.message ||
+            "User operation failed.",
+
+        statusCode:
+            error?.response?.status ??
+            source?.statusCode ??
+            null,
+
+        retryable:
+            Boolean(
+                source?.retryable ??
+                error?.retryable,
+            ),
+
+        classification:
+            source?.classification ||
+            error?.classification ||
+            null,
+
+        requestId:
+            source?.requestId ||
+            error?.requestId ||
+            null,
+
+        timestamp:
+            nowIso(),
+    };
+}
+
+function addErrorHistory(
+    state,
+    error,
+) {
+    const normalized =
+        normalizeError(
+            error,
+        );
+
+    if (
+        !normalized
+    ) {
+        return;
+    }
+
+    state.error =
+        normalized;
+
+    state.errorHistory =
+        [
+            normalized,
+            ...state.errorHistory,
+        ].slice(
+            0,
+            MAX_ERROR_HISTORY,
+        );
+}
+
+function addActivity(
+    state,
+    activity,
+) {
+    if (
+        !activity ||
+        typeof activity !==
+            "object"
+    ) {
+        return;
+    }
+
+    state.activityHistory =
+        [
+            {
+                id:
+                    activity.id ||
+                    `${Date.now()}-${Math.random()
+                        .toString(36)
+                        .slice(2, 8)}`,
+
+                type:
+                    activity.type ||
+                    "unknown",
+
+                message:
+                    activity.message ||
+                    null,
+
+                timestamp:
+                    activity.timestamp ||
+                    nowIso(),
+
+                metadata:
+                    activity.metadata ||
+                    null,
+            },
+
+            ...state.activityHistory,
+        ].slice(
+            0,
+            MAX_ACTIVITY_HISTORY,
+        );
+}
+
+function extractUserId(
+    user,
+) {
+    return (
+        user?.id ||
+        user?._id ||
+        user?.userId ||
+        null
+    );
+}
+
+function extractTenantId(
+    user,
+) {
+    return (
+        user?.tenantId ||
+        user?.tenant?.id ||
+        user?.tenant?._id ||
+        user?.organizationId ||
+        null
+    );
+}
+
+function deriveRoles(
+    user,
+) {
+    return normalizeCollection(
+        user?.roles ||
+        (
+            user?.role
+                ? [
+                    user.role,
+                ]
+                : []
+        ),
+        MAX_ROLES,
+    );
+}
+
+function derivePermissions(
+    user,
+) {
+    return normalizeCollection(
+        user?.permissions,
+        MAX_PERMISSIONS,
+    );
+}
+
+function deriveFeatures(
+    user,
+) {
+    return normalizeCollection(
+        user?.features,
+        MAX_FEATURES,
+    );
+}
+
+function createInitialState() {
+    return {
+        initialized:
+            false,
+
+        exists:
+            false,
+
+        profile:
+            {
+                ...DEFAULT_PROFILE,
+            },
+
+        status:
+            USER_STATUS.PENDING,
+
+        verificationStatus:
+            USER_VERIFICATION_STATUS
+                .UNVERIFIED,
+
+        isVerified:
+            false,
+
+        roles:
+            [],
+
+        permissions:
+            [],
+
+        features:
+            [],
+
+        metadata:
+            {
+                ...DEFAULT_METADATA,
+            },
+
+        loading:
+            false,
+
+        updating:
+            false,
+
+        deleting:
+            false,
+
+        statusUpdating:
+            false,
+
+        error:
+            null,
+
+        errorHistory:
+            [],
+
+        activityHistory:
+            [],
+
+        lastFetchedAt:
+            null,
+
+        lastUpdatedAt:
+            null,
+
+        lastSyncedAt:
+            null,
+    };
+}
+
+const initialState =
+    createInitialState();
 
 // ============================================================================
 // Slice
 // ============================================================================
 
 const userSlice =
-  createSlice({
-    name: "user",
+    createSlice({
 
-    initialState,
+        name:
+            "user",
 
-    reducers: {
-      // =====================================================================
-      // Initialization
-      // =====================================================================
+        initialState,
 
-      initializeUser(
-        state
-      ) {
-        state.initialized =
-          true;
-      },
+        reducers: {
 
-      // =====================================================================
-      // Loading
-      // =====================================================================
+            // ------------------------------------------------------------------
+            // Initialization
+            // ------------------------------------------------------------------
 
-      setLoading(
-        state,
-        action
-      ) {
-        state.loading =
-          action.payload;
-      },
+            initializeUser(
+                state,
+                action,
+            ) {
+                const payload =
+                    action.payload ||
+                    {};
 
-      setSaving(
-        state,
-        action
-      ) {
-        state.saving =
-          action.payload;
-      },
+                const user =
+                    payload.user ||
+                    payload.profile ||
+                    payload;
 
-      // =====================================================================
-      // User Profile
-      // =====================================================================
+                const normalized =
+                    normalizeProfile(
+                        user,
+                    );
 
-      setUser(
-        state,
-        action
-      ) {
-        const profile =
-          action.payload;
+                const userId =
+                    extractUserId(
+                        user,
+                    );
 
-        state.profile =
-          profile;
+                const tenantId =
+                    payload.tenantId ||
+                    extractTenantId(
+                        user,
+                    );
 
-        state.permissions =
-          profile
-            ?.permissions ||
-          [];
+                state.profile =
+                    normalized;
 
-        state.roles =
-          profile?.roles ||
-          (profile?.role
-            ? [profile.role]
-            : []);
+                state.exists =
+                    Boolean(
+                        userId,
+                    );
 
-        state.features =
-          profile?.features ||
-          [];
+                state.initialized =
+                    true;
 
-        state.preferences =
-          profile
-            ?.preferences ||
-          {};
+                state.status =
+                    normalizeStatus(
+                        user?.status,
+                        USER_STATUS.ACTIVE,
+                    );
 
-        state.notifications =
-          profile
-            ?.notifications ||
-          {};
+                state.verificationStatus =
+                    normalizeVerificationStatus(
+                        user?.verificationStatus ||
+                        user?.kycStatus,
+                        user?.isVerified
+                            ? USER_VERIFICATION_STATUS
+                                .VERIFIED
+                            : USER_VERIFICATION_STATUS
+                                .UNVERIFIED,
+                    );
 
-        state.lastUpdated =
-          new Date().toISOString();
+                state.isVerified =
+                    Boolean(
+                        user?.isVerified ||
+                        state.verificationStatus ===
+                        USER_VERIFICATION_STATUS
+                            .VERIFIED,
+                    );
 
-        state.error = null;
+                state.roles =
+                    deriveRoles(
+                        user,
+                    );
 
-        saveProfile(
-          profile
-        );
-      },
+                state.permissions =
+                    derivePermissions(
+                        user,
+                    );
 
-      updateUser(
-        state,
-        action
-      ) {
-        state.profile = {
-          ...state.profile,
-          ...action.payload,
-        };
+                state.features =
+                    deriveFeatures(
+                        user,
+                    );
 
-        state.lastUpdated =
-          new Date().toISOString();
+                state.metadata =
+                    {
+                        ...state.metadata,
 
-        saveProfile(
-          state.profile
-        );
-      },
+                        ...payload.metadata,
 
-      updatePreferences(
-        state,
-        action
-      ) {
-        state.preferences = {
-          ...state.preferences,
-          ...action.payload,
-        };
+                        tenantId,
 
-        if (
-          state.profile
-        ) {
-          state.profile.preferences =
-            state.preferences;
+                        organizationId:
+                            user?.organizationId ||
+                            payload.organizationId ||
+                            null,
 
-          saveProfile(
-            state.profile
-          );
-        }
-      },
+                        memberId:
+                            user?.memberId ||
+                            payload.memberId ||
+                            null,
 
-      updateNotifications(
-        state,
-        action
-      ) {
-        state.notifications =
-          {
-            ...state.notifications,
-            ...action.payload,
-          };
+                        lastLoadedAt:
+                            nowIso(),
 
-        if (
-          state.profile
-        ) {
-          state.profile.notifications =
-            state.notifications;
+                        source:
+                            payload.source ||
+                            "local",
+                    };
 
-          saveProfile(
-            state.profile
-          );
-        }
-      },
+                state.loading =
+                    false;
 
-      // =====================================================================
-      // Permissions / Roles / Features
-      // =====================================================================
+                state.updating =
+                    false;
 
-      setPermissions(
-        state,
-        action
-      ) {
-        state.permissions =
-          action.payload ||
-          [];
-      },
+                state.error =
+                    null;
 
-      setRoles(
-        state,
-        action
-      ) {
-        state.roles =
-          action.payload ||
-          [];
-      },
+                addActivity(
+                    state,
+                    {
+                        type:
+                            USER_ACTIVITY_TYPES
+                                .PROFILE_LOADED,
 
-      setFeatures(
-        state,
-        action
-      ) {
-        state.features =
-          action.payload ||
-          [];
-      },
+                        message:
+                            "TITech user profile initialized.",
 
-      // =====================================================================
-      // User Activity
-      // =====================================================================
+                        metadata: {
+                            userId,
+                            tenantId,
+                        },
+                    },
+                );
+            },
 
-      setActivity(
-        state,
-        action
-      ) {
-        state.activity =
-          action.payload ||
-          [];
-      },
+            hydrateUser(
+                state,
+                action,
+            ) {
+                const payload =
+                    action.payload ||
+                    {};
 
-      addActivity(
-        state,
-        action
-      ) {
-        state.activity.unshift(
-          action.payload
-        );
+                const user =
+                    payload.user ||
+                    payload.profile ||
+                    payload;
 
-        if (
-          state.activity
-            .length > 100
-        ) {
-          state.activity.pop();
-        }
-      },
+                const normalized =
+                    normalizeProfile(
+                        user,
+                    );
 
-      // =====================================================================
-      // Sessions
-      // =====================================================================
+                const userId =
+                    extractUserId(
+                        user,
+                    );
 
-      setSessions(
-        state,
-        action
-      ) {
-        state.sessions =
-          action.payload ||
-          [];
-      },
+                const tenantId =
+                    payload.tenantId ||
+                    extractTenantId(
+                        user,
+                    ) ||
+                    state.metadata
+                        .tenantId;
 
-      addSession(
-        state,
-        action
-      ) {
-        state.sessions.push(
-          action.payload
-        );
-      },
+                state.profile =
+                    normalized;
 
-      removeSession(
-        state,
-        action
-      ) {
-        state.sessions =
-          state.sessions.filter(
-            (session) =>
-              session.id !==
-              action.payload
-          );
-      },
+                state.exists =
+                    Boolean(
+                        userId,
+                    );
 
-      // =====================================================================
-      // Devices
-      // =====================================================================
+                state.initialized =
+                    true;
 
-      setDevices(
-        state,
-        action
-      ) {
-        state.devices =
-          action.payload ||
-          [];
-      },
+                state.status =
+                    normalizeStatus(
+                        user?.status,
+                        state.status ||
+                        USER_STATUS.ACTIVE,
+                    );
 
-      // =====================================================================
-      // Error Handling
-      // =====================================================================
+                state.verificationStatus =
+                    normalizeVerificationStatus(
+                        user?.verificationStatus ||
+                        user?.kycStatus,
+                        user?.isVerified
+                            ? USER_VERIFICATION_STATUS
+                                .VERIFIED
+                            : state
+                                .verificationStatus ||
+                              USER_VERIFICATION_STATUS
+                                .UNVERIFIED,
+                    );
 
-      setError(
-        state,
-        action
-      ) {
-        state.error =
-          action.payload;
-      },
+                state.isVerified =
+                    Boolean(
+                        user?.isVerified ??
+                        (
+                            state
+                                .verificationStatus ===
+                            USER_VERIFICATION_STATUS
+                                .VERIFIED
+                        ),
+                    );
 
-      clearError(
-        state
-      ) {
-        state.error =
-          null;
-      },
+                state.roles =
+                    deriveRoles(
+                        user,
+                    );
 
-      // =====================================================================
-      // Clear User
-      // =====================================================================
+                state.permissions =
+                    derivePermissions(
+                        user,
+                    );
 
-      clearUser(
-        state
-      ) {
-        state.profile =
-          null;
+                state.features =
+                    deriveFeatures(
+                        user,
+                    );
 
-        state.permissions =
-          [];
+                state.metadata =
+                    {
+                        ...state.metadata,
 
-        state.roles = [];
+                        ...(payload.metadata ||
+                            {}),
 
-        state.features =
-          [];
+                        tenantId,
 
-        state.preferences =
-          {};
+                        lastLoadedAt:
+                            payload.loadedAt ||
+                            nowIso(),
 
-        state.notifications =
-          {};
+                        source:
+                            payload.source ||
+                            "local",
+                    };
 
-        state.activity =
-          [];
+                state.loading =
+                    false;
 
-        state.sessions =
-          [];
+                state.error =
+                    null;
 
-        state.devices =
-          [];
+                state.lastFetchedAt =
+                    payload.loadedAt ||
+                    nowIso();
+            },
 
-        state.loading =
-          false;
+            // ------------------------------------------------------------------
+            // Loading
+            // ------------------------------------------------------------------
 
-        state.saving =
-          false;
+            setUserLoading(
+                state,
+                action,
+            ) {
+                state.loading =
+                    Boolean(
+                        action.payload,
+                    );
+            },
 
-        state.error =
-          null;
+            setUserUpdating(
+                state,
+                action,
+            ) {
+                state.updating =
+                    Boolean(
+                        action.payload,
+                    );
+            },
 
-        state.lastUpdated =
-          null;
+            setUserDeleting(
+                state,
+                action,
+            ) {
+                state.deleting =
+                    Boolean(
+                        action.payload,
+                    );
+            },
 
-        localStorage.removeItem(
-          STORAGE_KEY
-        );
-      },
-    },
-  });
+            setUserStatusUpdating(
+                state,
+                action,
+            ) {
+                state.statusUpdating =
+                    Boolean(
+                        action.payload,
+                    );
+            },
+
+            // ------------------------------------------------------------------
+            // Profile
+            // ------------------------------------------------------------------
+
+            setUser(
+                state,
+                action,
+            ) {
+                const user =
+                    action.payload ||
+                    {};
+
+                const normalized =
+                    normalizeProfile(
+                        user,
+                    );
+
+                state.profile =
+                    normalized;
+
+                state.exists =
+                    Boolean(
+                        extractUserId(
+                            user,
+                        ),
+                    );
+
+                state.status =
+                    normalizeStatus(
+                        user.status,
+                        state.status ||
+                        USER_STATUS.ACTIVE,
+                    );
+
+                state.verificationStatus =
+                    normalizeVerificationStatus(
+                        user.verificationStatus ||
+                        user.kycStatus,
+                        state.isVerified
+                            ? USER_VERIFICATION_STATUS
+                                .VERIFIED
+                            : USER_VERIFICATION_STATUS
+                                .UNVERIFIED,
+                    );
+
+                state.isVerified =
+                    Boolean(
+                        user.isVerified ??
+                        (
+                            state
+                                .verificationStatus ===
+                            USER_VERIFICATION_STATUS
+                                .VERIFIED
+                        ),
+                    );
+
+                state.roles =
+                    deriveRoles(
+                        user,
+                    );
+
+                state.permissions =
+                    derivePermissions(
+                        user,
+                    );
+
+                state.features =
+                    deriveFeatures(
+                        user,
+                    );
+
+                state.metadata.tenantId =
+                    extractTenantId(
+                        user,
+                    ) ||
+                    state.metadata
+                        .tenantId;
+
+                state.lastUpdatedAt =
+                    nowIso();
+
+                addActivity(
+                    state,
+                    {
+                        type:
+                            USER_ACTIVITY_TYPES
+                                .PROFILE_UPDATED,
+
+                        message:
+                            "TITech user profile replaced.",
+                    },
+                );
+            },
+
+            updateUser(
+                state,
+                action,
+            ) {
+                const updates =
+                    action.payload ||
+                    {};
+
+                state.profile =
+                    normalizeProfile(
+                        {
+                            ...state.profile,
+                            ...updates,
+                        },
+                    );
+
+                if (
+                    updates.status
+                ) {
+                    state.status =
+                        normalizeStatus(
+                            updates.status,
+                            state.status,
+                        );
+                }
+
+                if (
+                    updates.verificationStatus ||
+                    updates.kycStatus
+                ) {
+                    state.verificationStatus =
+                        normalizeVerificationStatus(
+                            updates.verificationStatus ||
+                            updates.kycStatus,
+                            state
+                                .verificationStatus,
+                        );
+                }
+
+                if (
+                    updates.isVerified !==
+                    undefined
+                ) {
+                    state.isVerified =
+                        Boolean(
+                            updates.isVerified,
+                        );
+                }
+
+                if (
+                    updates.roles ||
+                    updates.role
+                ) {
+                    state.roles =
+                        deriveRoles(
+                            {
+                                ...state.profile,
+                                ...updates,
+                            },
+                        );
+                }
+
+                if (
+                    updates.permissions
+                ) {
+                    state.permissions =
+                        derivePermissions(
+                            updates,
+                        );
+                }
+
+                if (
+                    updates.features
+                ) {
+                    state.features =
+                        deriveFeatures(
+                            updates,
+                        );
+                }
+
+                state.metadata.tenantId =
+                    updates.tenantId ||
+                    extractTenantId(
+                        updates,
+                    ) ||
+                    state.metadata
+                        .tenantId;
+
+                state.lastUpdatedAt =
+                    nowIso();
+
+                addActivity(
+                    state,
+                    {
+                        type:
+                            USER_ACTIVITY_TYPES
+                                .PROFILE_UPDATED,
+
+                        message:
+                            "TITech user profile updated.",
+
+                        metadata: {
+                            fields:
+                                Object.keys(
+                                    updates,
+                                ),
+                        },
+                    },
+                );
+            },
+
+            clearUser(
+                state,
+            ) {
+                state.exists =
+                    false;
+
+                state.profile =
+                    {
+                        ...DEFAULT_PROFILE,
+                    };
+
+                state.status =
+                    USER_STATUS
+                        .INACTIVE;
+
+                state.verificationStatus =
+                    USER_VERIFICATION_STATUS
+                        .UNVERIFIED;
+
+                state.isVerified =
+                    false;
+
+                state.roles =
+                    [];
+
+                state.permissions =
+                    [];
+
+                state.features =
+                    [];
+
+                state.metadata =
+                    {
+                        ...DEFAULT_METADATA,
+                    };
+
+                state.loading =
+                    false;
+
+                state.updating =
+                    false;
+
+                state.deleting =
+                    false;
+
+                state.statusUpdating =
+                    false;
+
+                state.error =
+                    null;
+
+                state.lastUpdatedAt =
+                    nowIso();
+
+                addActivity(
+                    state,
+                    {
+                        type:
+                            USER_ACTIVITY_TYPES
+                                .PROFILE_UPDATED,
+
+                        message:
+                            "TITech user profile cleared.",
+                    },
+                );
+            },
+
+            // ------------------------------------------------------------------
+            // Roles / permissions / features
+            // ------------------------------------------------------------------
+
+            setRoles(
+                state,
+                action,
+            ) {
+                state.roles =
+                    normalizeCollection(
+                        action.payload,
+                        MAX_ROLES,
+                    );
+
+                addActivity(
+                    state,
+                    {
+                        type:
+                            USER_ACTIVITY_TYPES
+                                .ROLE_CHANGED,
+
+                        message:
+                            "TITech user roles updated.",
+                    },
+                );
+            },
+
+            addRole(
+                state,
+                action,
+            ) {
+                const role =
+                    normalizeString(
+                        action.payload,
+                    );
+
+                if (
+                    !role
+                ) {
+                    return;
+                }
+
+                if (
+                    !state.roles.includes(
+                        role,
+                    )
+                ) {
+                    state.roles.push(
+                        role,
+                    );
+                }
+
+                state.roles =
+                    state.roles.slice(
+                        0,
+                        MAX_ROLES,
+                    );
+
+                addActivity(
+                    state,
+                    {
+                        type:
+                            USER_ACTIVITY_TYPES
+                                .ROLE_CHANGED,
+
+                        message:
+                            `TITech user role "${role}" added.`,
+                    },
+                );
+            },
+
+            removeRole(
+                state,
+                action,
+            ) {
+                const role =
+                    normalizeString(
+                        action.payload,
+                    );
+
+                if (
+                    !role
+                ) {
+                    return;
+                }
+
+                state.roles =
+                    state.roles.filter(
+                        item =>
+                            item !==
+                            role,
+                    );
+
+                addActivity(
+                    state,
+                    {
+                        type:
+                            USER_ACTIVITY_TYPES
+                                .ROLE_CHANGED,
+
+                        message:
+                            `TITech user role "${role}" removed.`,
+                    },
+                );
+            },
+
+            setPermissions(
+                state,
+                action,
+            ) {
+                state.permissions =
+                    normalizeCollection(
+                        action.payload,
+                        MAX_PERMISSIONS,
+                    );
+
+                addActivity(
+                    state,
+                    {
+                        type:
+                            USER_ACTIVITY_TYPES
+                                .PERMISSION_CHANGED,
+
+                        message:
+                            "TITech user permissions updated.",
+                    },
+                );
+            },
+
+            addPermission(
+                state,
+                action,
+            ) {
+                const permission =
+                    normalizeString(
+                        action.payload,
+                    );
+
+                if (
+                    !permission
+                ) {
+                    return;
+                }
+
+                if (
+                    !state.permissions.includes(
+                        permission,
+                    )
+                ) {
+                    state.permissions.push(
+                        permission,
+                    );
+                }
+
+                state.permissions =
+                    state.permissions.slice(
+                        0,
+                        MAX_PERMISSIONS,
+                    );
+
+                addActivity(
+                    state,
+                    {
+                        type:
+                            USER_ACTIVITY_TYPES
+                                .PERMISSION_CHANGED,
+
+                        message:
+                            `TITech user permission "${permission}" added.`,
+                    },
+                );
+            },
+
+            removePermission(
+                state,
+                action,
+            ) {
+                const permission =
+                    normalizeString(
+                        action.payload,
+                    );
+
+                if (
+                    !permission
+                ) {
+                    return;
+                }
+
+                state.permissions =
+                    state.permissions.filter(
+                        item =>
+                            item !==
+                            permission,
+                    );
+
+                addActivity(
+                    state,
+                    {
+                        type:
+                            USER_ACTIVITY_TYPES
+                                .PERMISSION_CHANGED,
+
+                        message:
+                            `TITech user permission "${permission}" removed.`,
+                    },
+                );
+            },
+
+            setFeatures(
+                state,
+                action,
+            ) {
+                state.features =
+                    normalizeCollection(
+                        action.payload,
+                        MAX_FEATURES,
+                    );
+            },
+
+            // ------------------------------------------------------------------
+            // Tenant context
+            // ------------------------------------------------------------------
+
+            setTenant(
+                state,
+                action,
+            ) {
+                const tenantId =
+                    normalizeString(
+                        action.payload,
+                    );
+
+                state.metadata.tenantId =
+                    tenantId;
+
+                addActivity(
+                    state,
+                    {
+                        type:
+                            USER_ACTIVITY_TYPES
+                                .TENANT_CHANGED,
+
+                        message:
+                            "TITech user tenant context updated.",
+
+                        metadata: {
+                            tenantId,
+                        },
+                    },
+                );
+            },
+
+            setUserMetadata(
+                state,
+                action,
+            ) {
+                state.metadata =
+                    {
+                        ...state.metadata,
+                        ...(action.payload ||
+                            {}),
+                    };
+            },
+
+            // ------------------------------------------------------------------
+            // Verification
+            // ------------------------------------------------------------------
+
+            setVerificationStatus(
+                state,
+                action,
+            ) {
+                const status =
+                    normalizeVerificationStatus(
+                        action.payload,
+                        state
+                            .verificationStatus,
+                    );
+
+                state.verificationStatus =
+                    status;
+
+                state.isVerified =
+                    status ===
+                    USER_VERIFICATION_STATUS
+                        .VERIFIED;
+
+                addActivity(
+                    state,
+                    {
+                        type:
+                            USER_ACTIVITY_TYPES
+                                .VERIFICATION_CHANGED,
+
+                        message:
+                            "TITech user verification status updated.",
+
+                        metadata: {
+                            status,
+                        },
+                    },
+                );
+            },
+
+            setVerified(
+                state,
+                action,
+            ) {
+                const verified =
+                    Boolean(
+                        action.payload,
+                    );
+
+                state.isVerified =
+                    verified;
+
+                state.verificationStatus =
+                    verified
+                        ? USER_VERIFICATION_STATUS
+                            .VERIFIED
+                        : USER_VERIFICATION_STATUS
+                            .UNVERIFIED;
+
+                addActivity(
+                    state,
+                    {
+                        type:
+                            USER_ACTIVITY_TYPES
+                                .VERIFICATION_CHANGED,
+
+                        message:
+                            verified
+                                ? "TITech user verified."
+                                : "TITech user verification cleared.",
+                    },
+                );
+            },
+
+            // ------------------------------------------------------------------
+            // Account status
+            // ------------------------------------------------------------------
+
+            setUserStatus(
+                state,
+                action,
+            ) {
+                const status =
+                    normalizeStatus(
+                        action.payload,
+                        state.status,
+                    );
+
+                state.status =
+                    status;
+
+                addActivity(
+                    state,
+                    {
+                        type:
+                            USER_ACTIVITY_TYPES
+                                .STATUS_CHANGED,
+
+                        message:
+                            `TITech user status changed to "${status}".`,
+                    },
+                );
+            },
+
+            // ------------------------------------------------------------------
+            // Errors
+            // ------------------------------------------------------------------
+
+            setUserError(
+                state,
+                action,
+            ) {
+                addErrorHistory(
+                    state,
+                    action.payload,
+                );
+
+                state.loading =
+                    false;
+
+                state.updating =
+                    false;
+
+                state.statusUpdating =
+                    false;
+            },
+
+            clearUserError(
+                state,
+            ) {
+                state.error =
+                    null;
+            },
+
+            clearUserErrors(
+                state,
+            ) {
+                state.error =
+                    null;
+
+                state.errorHistory =
+                    [];
+            },
+
+            // ------------------------------------------------------------------
+            // Synchronization
+            // ------------------------------------------------------------------
+
+            markUserSynced(
+                state,
+                action,
+            ) {
+                const payload =
+                    action.payload ||
+                    {};
+
+                state.lastSyncedAt =
+                    payload.timestamp ||
+                    nowIso();
+
+                state.metadata.source =
+                    payload.source ||
+                    "remote";
+
+                state.error =
+                    null;
+            },
+
+            // ------------------------------------------------------------------
+            // Reset
+            // ------------------------------------------------------------------
+
+            resetUserState() {
+                return createInitialState();
+            },
+        },
+    });
 
 // ============================================================================
 // Actions
 // ============================================================================
 
 export const {
-  initializeUser,
-  setLoading,
-  setSaving,
-  setUser,
-  updateUser,
-  updatePreferences,
-  updateNotifications,
-  setPermissions,
-  setRoles,
-  setFeatures,
-  setActivity,
-  addActivity,
-  setSessions,
-  addSession,
-  removeSession,
-  setDevices,
-  setError,
-  clearError,
-  clearUser,
-} = userSlice.actions;
+    initializeUser,
+    hydrateUser,
+
+    setUserLoading,
+    setUserUpdating,
+    setUserDeleting,
+    setUserStatusUpdating,
+
+    setUser,
+    updateUser,
+    clearUser,
+
+    setRoles,
+    addRole,
+    removeRole,
+
+    setPermissions,
+    addPermission,
+    removePermission,
+
+    setFeatures,
+
+    setTenant,
+    setUserMetadata,
+
+    setVerificationStatus,
+    setVerified,
+
+    setUserStatus,
+
+    setUserError,
+    clearUserError,
+    clearUserErrors,
+
+    markUserSynced,
+
+    resetUserState,
+} =
+    userSlice.actions;
 
 // ============================================================================
-// Selectors
+// Base Selectors
 // ============================================================================
+
+export const selectUserState =
+    state =>
+        state?.user ||
+        initialState;
+
+export const selectUserProfile =
+    createSelector(
+        [
+            selectUserState,
+        ],
+        user =>
+            user.profile,
+    );
 
 export const selectUser =
-  (state) =>
-    state.user.profile;
+    selectUserProfile;
 
-export const selectUserLoading =
-  (state) =>
-    state.user.loading;
+export const selectUserId =
+    createSelector(
+        [
+            selectUserProfile,
+        ],
+        profile =>
+            profile?.id ||
+            profile?.userId ||
+            profile?._id ||
+            null,
+    );
 
-export const selectUserSaving =
-  (state) =>
-    state.user.saving;
+export const selectUserName =
+    createSelector(
+        [
+            selectUserProfile,
+        ],
+        profile =>
+            profile?.name ||
+            (
+                [
+                    profile?.firstName,
+                    profile?.lastName,
+                ]
+                    .filter(
+                        Boolean,
+                    )
+                    .join(
+                        " ",
+                    )
+            ) ||
+            null,
+    );
 
-export const selectUserError =
-  (state) =>
-    state.user.error;
+export const selectUserEmail =
+    createSelector(
+        [
+            selectUserProfile,
+        ],
+        profile =>
+            profile?.email ||
+            null,
+    );
+
+export const selectUserPhone =
+    createSelector(
+        [
+            selectUserProfile,
+        ],
+        profile =>
+            profile?.phone ||
+            null,
+    );
+
+export const selectUserAvatar =
+    createSelector(
+        [
+            selectUserProfile,
+        ],
+        profile =>
+            profile?.avatar ||
+            profile?.profileImage ||
+            null,
+    );
 
 export const selectUserRoles =
-  (state) =>
-    state.user.roles;
+    createSelector(
+        [
+            selectUserState,
+        ],
+        user =>
+            user.roles,
+    );
 
 export const selectUserPermissions =
-  (state) =>
-    state.user.permissions;
+    createSelector(
+        [
+            selectUserState,
+        ],
+        user =>
+            user.permissions,
+    );
 
 export const selectUserFeatures =
-  (state) =>
-    state.user.features;
+    createSelector(
+        [
+            selectUserState,
+        ],
+        user =>
+            user.features,
+    );
 
-export const selectUserPreferences =
-  (state) =>
-    state.user.preferences;
+export const selectUserStatus =
+    createSelector(
+        [
+            selectUserState,
+        ],
+        user =>
+            user.status,
+    );
 
-export const selectUserNotifications =
-  (state) =>
-    state.user.notifications;
+export const selectUserVerificationStatus =
+    createSelector(
+        [
+            selectUserState,
+        ],
+        user =>
+            user.verificationStatus,
+    );
 
-export const selectUserActivity =
-  (state) =>
-    state.user.activity;
+export const selectUserIsVerified =
+    createSelector(
+        [
+            selectUserState,
+        ],
+        user =>
+            Boolean(
+                user.isVerified,
+            ),
+    );
 
-export const selectUserSessions =
-  (state) =>
-    state.user.sessions;
+export const selectUserTenantId =
+    createSelector(
+        [
+            selectUserState,
+        ],
+        user =>
+            user.metadata
+                .tenantId ||
+            null,
+    );
 
-export const selectUserDevices =
-  (state) =>
-    state.user.devices;
+export const selectUserMetadata =
+    createSelector(
+        [
+            selectUserState,
+        ],
+        user =>
+            user.metadata,
+    );
 
 // ============================================================================
-// Memoized Selectors
+// Lifecycle Selectors
+// ============================================================================
+
+export const selectUserInitialized =
+    createSelector(
+        [
+            selectUserState,
+        ],
+        user =>
+            user.initialized,
+    );
+
+export const selectUserExists =
+    createSelector(
+        [
+            selectUserState,
+        ],
+        user =>
+            user.exists,
+    );
+
+export const selectUserLoading =
+    createSelector(
+        [
+            selectUserState,
+        ],
+        user =>
+            user.loading,
+    );
+
+export const selectUserUpdating =
+    createSelector(
+        [
+            selectUserState,
+        ],
+        user =>
+            user.updating,
+    );
+
+export const selectUserDeleting =
+    createSelector(
+        [
+            selectUserState,
+        ],
+        user =>
+            user.deleting,
+    );
+
+export const selectUserStatusUpdating =
+    createSelector(
+        [
+            selectUserState,
+        ],
+        user =>
+            user.statusUpdating,
+    );
+
+export const selectUserError =
+    createSelector(
+        [
+            selectUserState,
+        ],
+        user =>
+            user.error,
+    );
+
+export const selectUserErrorHistory =
+    createSelector(
+        [
+            selectUserState,
+        ],
+        user =>
+            user.errorHistory,
+    );
+
+export const selectUserActivityHistory =
+    createSelector(
+        [
+            selectUserState,
+        ],
+        user =>
+            user.activityHistory,
+    );
+
+// ============================================================================
+// Authorization Convenience Selectors
+// ============================================================================
+//
+// These are frontend convenience checks only. The TITech backend MUST
+// independently enforce authorization.
 // ============================================================================
 
 export const selectHasRole =
-  createSelector(
-    [
-      selectUserRoles,
-      (_, role) => role,
-    ],
-    (roles, role) =>
-      roles.includes(role)
-  );
+    createSelector(
+        [
+            selectUserRoles,
+            (
+                _state,
+                role,
+            ) =>
+                role,
+        ],
+        (
+            roles,
+            role,
+        ) =>
+            Boolean(
+                role &&
+                roles.includes(
+                    role,
+                ),
+            ),
+    );
+
+export const selectHasAnyRole =
+    createSelector(
+        [
+            selectUserRoles,
+            (
+                _state,
+                roles,
+            ) =>
+                roles,
+        ],
+        (
+            userRoles,
+            requiredRoles,
+        ) => {
+
+            if (
+                !Array.isArray(
+                    requiredRoles,
+                )
+            ) {
+                return false;
+            }
+
+            return requiredRoles.some(
+                role =>
+                    userRoles.includes(
+                        role,
+                    ),
+            );
+        },
+    );
 
 export const selectHasPermission =
-  createSelector(
-    [
-      selectUserPermissions,
-      (_, permission) =>
-        permission,
-    ],
-    (
-      permissions,
-      permission
-    ) =>
-      permissions.includes(
-        permission
-      )
-  );
+    createSelector(
+        [
+            selectUserPermissions,
+            (
+                _state,
+                permission,
+            ) =>
+                permission,
+        ],
+        (
+            permissions,
+            permission,
+        ) =>
+            Boolean(
+                permission &&
+                permissions.includes(
+                    permission,
+                ),
+            ),
+    );
+
+export const selectHasAnyPermission =
+    createSelector(
+        [
+            selectUserPermissions,
+            (
+                _state,
+                permissions,
+            ) =>
+                permissions,
+        ],
+        (
+            userPermissions,
+            requiredPermissions,
+        ) => {
+
+            if (
+                !Array.isArray(
+                    requiredPermissions,
+                )
+            ) {
+                return false;
+            }
+
+            return requiredPermissions.some(
+                permission =>
+                    userPermissions.includes(
+                        permission,
+                    ),
+            );
+        },
+    );
+
+export const selectHasAllPermissions =
+    createSelector(
+        [
+            selectUserPermissions,
+            (
+                _state,
+                permissions,
+            ) =>
+                permissions,
+        ],
+        (
+            userPermissions,
+            requiredPermissions,
+        ) => {
+
+            if (
+                !Array.isArray(
+                    requiredPermissions,
+                )
+            ) {
+                return false;
+            }
+
+            return requiredPermissions.every(
+                permission =>
+                    userPermissions.includes(
+                        permission,
+                    ),
+            );
+        },
+    );
 
 export const selectHasFeature =
-  createSelector(
-    [
-      selectUserFeatures,
-      (_, feature) =>
-        feature,
-    ],
-    (features, feature) =>
-      features.includes(
-        feature
-      )
-  );
+    createSelector(
+        [
+            selectUserFeatures,
+            (
+                _state,
+                feature,
+            ) =>
+                feature,
+        ],
+        (
+            features,
+            feature,
+        ) =>
+            Boolean(
+                feature &&
+                features.includes(
+                    feature,
+                ),
+            ),
+    );
 
-export const selectUserFullName =
-  createSelector(
-    [selectUser],
-    (user) => {
-      if (!user)
-        return "";
+// ============================================================================
+// Account State Selectors
+// ============================================================================
 
-      return [
-        user.firstName,
-        user.lastName,
-      ]
-        .filter(Boolean)
-        .join(" ");
-    }
-  );
+export const selectUserActive =
+    createSelector(
+        [
+            selectUserStatus,
+        ],
+        status =>
+            status ===
+            USER_STATUS.ACTIVE,
+    );
+
+export const selectUserSuspended =
+    createSelector(
+        [
+            selectUserStatus,
+        ],
+        status =>
+            [
+                USER_STATUS.SUSPENDED,
+                USER_STATUS.LOCKED,
+            ].includes(
+                status,
+            ),
+    );
+
+export const selectUserCanOperate =
+    createSelector(
+        [
+            selectUserExists,
+            selectUserActive,
+            selectUserIsVerified,
+        ],
+        (
+            exists,
+            active,
+            verified,
+        ) =>
+            Boolean(
+                exists &&
+                active &&
+                verified,
+            ),
+    );
+
+export const selectUserNeedsVerification =
+    createSelector(
+        [
+            selectUserVerificationStatus,
+        ],
+        status =>
+            [
+                USER_VERIFICATION_STATUS.UNVERIFIED,
+                USER_VERIFICATION_STATUS.PENDING,
+                USER_VERIFICATION_STATUS.REJECTED,
+                USER_VERIFICATION_STATUS.EXPIRED,
+            ].includes(
+                status,
+            ),
+    );
+
+// ============================================================================
+// Combined User Context
+// ============================================================================
+
+export const selectUserContext =
+    createSelector(
+        [
+            selectUserProfile,
+            selectUserId,
+            selectUserTenantId,
+            selectUserStatus,
+            selectUserVerificationStatus,
+            selectUserIsVerified,
+            selectUserRoles,
+            selectUserPermissions,
+            selectUserFeatures,
+        ],
+        (
+            profile,
+            userId,
+            tenantId,
+            status,
+            verificationStatus,
+            isVerified,
+            roles,
+            permissions,
+            features,
+        ) => ({
+            profile,
+            userId,
+            tenantId,
+
+            status,
+
+            verificationStatus,
+
+            isVerified,
+
+            roles: [
+                ...roles,
+            ],
+
+            permissions: [
+                ...permissions,
+            ],
+
+            features: [
+                ...features,
+            ],
+        }),
+    );
+
+// ============================================================================
+// Operational Summary
+// ============================================================================
+
+export const selectUserSummary =
+    createSelector(
+        [
+            selectUserState,
+        ],
+        user => ({
+            initialized:
+                user.initialized,
+
+            exists:
+                user.exists,
+
+            status:
+                user.status,
+
+            verificationStatus:
+                user.verificationStatus,
+
+            isVerified:
+                user.isVerified,
+
+            loading:
+                user.loading,
+
+            updating:
+                user.updating,
+
+            deleting:
+                user.deleting,
+
+            statusUpdating:
+                user.statusUpdating,
+
+            tenantId:
+                user.metadata
+                    .tenantId,
+
+            userId:
+                user.profile?.id ||
+                user.profile?._id ||
+                user.profile?.userId ||
+                null,
+
+            rolesCount:
+                user.roles.length,
+
+            permissionsCount:
+                user.permissions.length,
+
+            featuresCount:
+                user.features.length,
+
+            activityCount:
+                user.activityHistory
+                    .length,
+
+            hasError:
+                Boolean(
+                    user.error,
+                ),
+
+            lastFetchedAt:
+                user.lastFetchedAt,
+
+            lastUpdatedAt:
+                user.lastUpdatedAt,
+
+            lastSyncedAt:
+                user.lastSyncedAt,
+        }),
+    );
 
 // ============================================================================
 // Reducer
 // ============================================================================
 
-export default userSlice.reducer;
+export default
+    userSlice.reducer;

@@ -1,223 +1,806 @@
-// ============================================================================
-// TITech Community Capital
-// Enterprise Card Component
-// File: src/components/ui/Card.jsx
-// Production Grade
-// ============================================================================
+'use strict';
+
+/**
+ * ============================================================================
+ * TITech Community Capital LTD
+ * Enterprise Card Component
+ * File: frontend/src/components/ui/Card.jsx
+ * Production Grade
+ * ============================================================================
+ *
+ * PURPOSE
+ * ----------------------------------------------------------------------------
+ * Provides the centralized, reusable Card primitive for the TITech frontend.
+ *
+ * FEATURES
+ * ----------------------------------------------------------------------------
+ * ✓ Card container
+ * ✓ Header / body / footer composition
+ * ✓ Title and description support
+ * ✓ Optional actions
+ * ✓ Clickable cards
+ * ✓ Hoverable cards
+ * ✓ Selected state
+ * ✓ Loading state
+ * ✓ Error state
+ * ✓ Empty state
+ * ✓ Semantic HTML support
+ * ✓ Polymorphic `as` rendering
+ * ✓ Forwarded refs
+ * ✓ React.memo optimization
+ * ✓ Accessibility support
+ * ✓ Keyboard support for interactive cards
+ * ✓ Data-state attributes
+ * ✓ Custom class composition
+ * ✓ React 18 compatible
+ * ✓ Strict Mode compatible
+ * ✓ PropTypes validation
+ *
+ * ARCHITECTURE
+ * ----------------------------------------------------------------------------
+ * Presentation/UI primitive only.
+ *
+ * Business logic belongs in:
+ *   → feature components
+ *   → hooks
+ *   → services
+ *   → domain/application layers
+ *
+ * ============================================================================
+ */
 
 import React, {
   forwardRef,
   memo,
-} from "react";
+  useCallback,
+} from 'react';
 
-import PropTypes from "prop-types";
+import PropTypes from 'prop-types';
 
-// ============================================================================
-// Variants
-// ============================================================================
+import {
+  Loader2,
+} from 'lucide-react';
 
-const VARIANTS = {
-  default: "tt-card-default",
-  outlined: "tt-card-outlined",
-  elevated: "tt-card-elevated",
-  flat: "tt-card-flat",
-  success: "tt-card-success",
-  warning: "tt-card-warning",
-  danger: "tt-card-danger",
-  info: "tt-card-info",
+/*
+|--------------------------------------------------------------------------
+| Configuration
+|--------------------------------------------------------------------------
+*/
+
+const VARIANTS = Object.freeze({
+  default: 'card-default',
+  primary: 'card-primary',
+  secondary: 'card-secondary',
+  success: 'card-success',
+  danger: 'card-danger',
+  warning: 'card-warning',
+  info: 'card-info',
+  ghost: 'card-ghost',
+  outline: 'card-outline',
+});
+
+const PADDINGS = Object.freeze({
+  none: 'card-padding-none',
+  xs: 'card-padding-xs',
+  sm: 'card-padding-sm',
+  md: 'card-padding-md',
+  lg: 'card-padding-lg',
+  xl: 'card-padding-xl',
+});
+
+const RADII = Object.freeze({
+  none: 'card-radius-none',
+  sm: 'card-radius-sm',
+  md: 'card-radius-md',
+  lg: 'card-radius-lg',
+  xl: 'card-radius-xl',
+});
+
+const DEFAULT_VARIANT =
+  'default';
+
+const DEFAULT_PADDING =
+  'md';
+
+const DEFAULT_RADIUS =
+  'lg';
+
+const DEFAULT_LOADING_TEXT =
+  'Loading…';
+
+const DEFAULT_ERROR_TEXT =
+  'Unable to load this content.';
+
+/*
+|--------------------------------------------------------------------------
+| Utility
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Safely compose CSS classes.
+ *
+ * @param {...any} values
+ * @returns {string}
+ */
+function classNames(...values) {
+  return values
+    .flat(Infinity)
+    .filter(
+      (value) =>
+        typeof value === 'string' &&
+        value.trim().length > 0
+    )
+    .join(' ');
+}
+
+/**
+ * Resolve a configured class safely.
+ *
+ * @param {Object} map
+ * @param {string} key
+ * @param {string} fallback
+ * @returns {string}
+ */
+function resolveClass(
+  map,
+  key,
+  fallback
+) {
+  return (
+    map[key] ||
+    map[fallback]
+  );
+}
+
+/*
+|--------------------------------------------------------------------------
+| Card Header
+|--------------------------------------------------------------------------
+*/
+
+const CardHeader = memo(
+  function CardHeader({
+    children,
+    title,
+    description,
+    actions,
+    className = '',
+    titleClassName = '',
+    descriptionClassName = '',
+    as: Component = 'div',
+  }) {
+    const hasHeadingContent =
+      Boolean(
+        title ||
+          description
+      );
+
+    return (
+      <Component
+        className={classNames(
+          'tt-card-header',
+          className
+        )}
+        data-component="titech-card-header"
+      >
+        {hasHeadingContent ? (
+          <div className="tt-card-heading">
+            {title ? (
+              <h3
+                className={classNames(
+                  'tt-card-title',
+                  titleClassName
+                )}
+              >
+                {title}
+              </h3>
+            ) : null}
+
+            {description ? (
+              <p
+                className={classNames(
+                  'tt-card-description',
+                  descriptionClassName
+                )}
+              >
+                {description}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {children}
+
+        {actions ? (
+          <div className="tt-card-actions">
+            {actions}
+          </div>
+        ) : null}
+      </Component>
+    );
+  }
+);
+
+CardHeader.displayName =
+  'TITechCardHeader';
+
+CardHeader.propTypes = {
+  children:
+    PropTypes.node,
+
+  title:
+    PropTypes.node,
+
+  description:
+    PropTypes.node,
+
+  actions:
+    PropTypes.node,
+
+  className:
+    PropTypes.string,
+
+  titleClassName:
+    PropTypes.string,
+
+  descriptionClassName:
+    PropTypes.string,
+
+  as:
+    PropTypes.elementType,
 };
 
-const PADDING = {
-  none: "tt-card-p-none",
-  sm: "tt-card-p-sm",
-  md: "tt-card-p-md",
-  lg: "tt-card-p-lg",
+/*
+|--------------------------------------------------------------------------
+| Card Body
+|--------------------------------------------------------------------------
+*/
+
+const CardBody = memo(
+  function CardBody({
+    children,
+    className = '',
+    padding = DEFAULT_PADDING,
+    as: Component = 'div',
+  }) {
+    const resolvedPadding =
+      resolveClass(
+        PADDINGS,
+        padding,
+        DEFAULT_PADDING
+      );
+
+    return (
+      <Component
+        className={classNames(
+          'tt-card-body',
+          resolvedPadding,
+          className
+        )}
+        data-component="titech-card-body"
+        data-padding={padding}
+      >
+        {children}
+      </Component>
+    );
+  }
+);
+
+CardBody.displayName =
+  'TITechCardBody';
+
+CardBody.propTypes = {
+  children:
+    PropTypes.node,
+
+  className:
+    PropTypes.string,
+
+  padding:
+    PropTypes.oneOf(
+      Object.keys(PADDINGS)
+    ),
+
+  as:
+    PropTypes.elementType,
 };
 
-// ============================================================================
-// Component
-// ============================================================================
+/*
+|--------------------------------------------------------------------------
+| Card Footer
+|--------------------------------------------------------------------------
+*/
+
+const CardFooter = memo(
+  function CardFooter({
+    children,
+    actions,
+    className = '',
+    as: Component = 'div',
+  }) {
+    return (
+      <Component
+        className={classNames(
+          'tt-card-footer',
+          className
+        )}
+        data-component="titech-card-footer"
+      >
+        {children}
+
+        {actions ? (
+          <div className="tt-card-actions">
+            {actions}
+          </div>
+        ) : null}
+      </Component>
+    );
+  }
+);
+
+CardFooter.displayName =
+  'TITechCardFooter';
+
+CardFooter.propTypes = {
+  children:
+    PropTypes.node,
+
+  actions:
+    PropTypes.node,
+
+  className:
+    PropTypes.string,
+
+  as:
+    PropTypes.elementType,
+};
+
+/*
+|--------------------------------------------------------------------------
+| Card
+|--------------------------------------------------------------------------
+*/
 
 const Card = forwardRef(
   (
     {
       children,
+
       title,
-      subtitle,
+
+      description,
+
       header,
+
       footer,
+
       actions,
-      variant = "default",
-      padding = "md",
-      bordered = false,
+
+      variant =
+        DEFAULT_VARIANT,
+
+      padding =
+        DEFAULT_PADDING,
+
+      radius =
+        DEFAULT_RADIUS,
+
+      className = '',
+
+      headerClassName = '',
+
+      bodyClassName = '',
+
+      footerClassName = '',
+
+      interactive = false,
+
       hoverable = false,
-      clickable = false,
+
+      selected = false,
+
+      disabled = false,
+
       loading = false,
-      fullHeight = false,
-      className = "",
-      bodyClassName = "",
+
+      error = false,
+
+      errorMessage =
+        DEFAULT_ERROR_TEXT,
+
+      loadingText =
+        DEFAULT_LOADING_TEXT,
+
       onClick,
+
+      onKeyDown,
+
+      onRetry,
+
+      ariaLabel,
+
+      ariaLabelledBy,
+
+      ariaDescribedBy,
+
+      id,
+
+      as: Component =
+        'article',
+
       ...props
     },
     ref
   ) => {
-    const classes = [
-      "tt-card",
-      VARIANTS[
-        variant
-      ] ||
-        VARIANTS.default,
-      PADDING[
-        padding
-      ] ||
-        PADDING.md,
-      bordered
-        ? "tt-card-bordered"
-        : "",
-      hoverable
-        ? "tt-card-hoverable"
-        : "",
-      clickable
-        ? "tt-card-clickable"
-        : "",
-      fullHeight
-        ? "tt-card-full-height"
-        : "",
-      loading
-        ? "tt-card-loading"
-        : "",
-      className,
-    ]
-      .filter(Boolean)
-      .join(" ");
+    /*
+    |--------------------------------------------------------------------------
+    | State
+    |--------------------------------------------------------------------------
+    */
+
+    const isInteractive =
+      Boolean(
+        interactive ||
+          hoverable ||
+          onClick
+      );
+
+    const isDisabled =
+      Boolean(
+        disabled ||
+          loading
+      );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Resolve Classes
+    |--------------------------------------------------------------------------
+    */
+
+    const resolvedVariant =
+      resolveClass(
+        VARIANTS,
+        variant,
+        DEFAULT_VARIANT
+      );
+
+    const resolvedPadding =
+      resolveClass(
+        PADDINGS,
+        padding,
+        DEFAULT_PADDING
+      );
+
+    const resolvedRadius =
+      resolveClass(
+        RADII,
+        radius,
+        DEFAULT_RADIUS
+      );
+
+    const classes =
+      classNames(
+        'tt-card',
+        resolvedVariant,
+        resolvedPadding,
+        resolvedRadius,
+
+        isInteractive
+          ? 'card-interactive'
+          : null,
+
+        hoverable
+          ? 'card-hoverable'
+          : null,
+
+        selected
+          ? 'card-selected'
+          : null,
+
+        isDisabled
+          ? 'card-disabled'
+          : null,
+
+        loading
+          ? 'card-loading'
+          : null,
+
+        error
+          ? 'card-error'
+          : null,
+
+        className
+      );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Keyboard Interaction
+    |--------------------------------------------------------------------------
+    */
+
+    const handleKeyDown =
+      useCallback(
+        (event) => {
+          if (
+            typeof onKeyDown ===
+            'function'
+          ) {
+            onKeyDown(event);
+          }
+
+          if (
+            event.defaultPrevented ||
+            !isInteractive ||
+            isDisabled ||
+            typeof onClick !==
+              'function'
+          ) {
+            return;
+          }
+
+          if (
+            event.key ===
+              'Enter' ||
+            event.key ===
+              ' '
+          ) {
+            event.preventDefault();
+
+            onClick(event);
+          }
+        },
+        [
+          isDisabled,
+          isInteractive,
+          onClick,
+          onKeyDown,
+        ]
+      );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Click Interaction
+    |--------------------------------------------------------------------------
+    */
+
+    const handleClick =
+      useCallback(
+        (event) => {
+          if (
+            isDisabled ||
+            typeof onClick !==
+              'function'
+          ) {
+            return;
+          }
+
+          onClick(event);
+        },
+        [
+          isDisabled,
+          onClick,
+        ]
+      );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Accessibility
+    |--------------------------------------------------------------------------
+    */
+
+    const accessibilityProps =
+      {
+        id,
+
+        'aria-disabled':
+          isDisabled
+            ? true
+            : undefined,
+
+        'aria-selected':
+          selected
+            ? true
+            : undefined,
+
+        'aria-busy':
+          loading
+            ? true
+            : undefined,
+
+        'aria-label':
+          ariaLabel,
+
+        'aria-labelledby':
+          ariaLabelledBy,
+
+        'aria-describedby':
+          ariaDescribedBy,
+
+        'data-component':
+          'titech-card',
+
+        'data-variant':
+          variant,
+
+        'data-padding':
+          padding,
+
+        'data-radius':
+          radius,
+
+        'data-interactive':
+          isInteractive
+            ? 'true'
+            : 'false',
+
+        'data-selected':
+          selected
+            ? 'true'
+            : 'false',
+
+        'data-loading':
+          loading
+            ? 'true'
+            : 'false',
+
+        'data-error':
+          error
+            ? 'true'
+            : 'false',
+      };
+
+    /*
+    |--------------------------------------------------------------------------
+    | Interactive Keyboard Semantics
+    |--------------------------------------------------------------------------
+    */
+
+    const interactiveProps =
+      isInteractive
+        ? {
+            role:
+              Component ===
+              'button'
+                ? undefined
+                : 'button',
+
+            tabIndex:
+              isDisabled
+                ? -1
+                : 0,
+
+            onClick:
+              handleClick,
+
+            onKeyDown:
+              handleKeyDown,
+          }
+        : {};
+
+    /*
+    |--------------------------------------------------------------------------
+    | Header
+    |--------------------------------------------------------------------------
+    */
+
+    const hasHeader =
+      Boolean(
+        header ||
+          title ||
+          description ||
+          actions
+      );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Footer
+    |--------------------------------------------------------------------------
+    */
+
+    const hasFooter =
+      Boolean(footer);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Render
+    |--------------------------------------------------------------------------
+    */
 
     return (
-      <div
+      <Component
         ref={ref}
-        className={
-          classes
-        }
-        onClick={
-          clickable
-            ? onClick
-            : undefined
-        }
-        role={
-          clickable
-            ? "button"
-            : undefined
-        }
-        tabIndex={
-          clickable
-            ? 0
-            : undefined
-        }
+        className={classes}
+        {...accessibilityProps}
+        {...interactiveProps}
         {...props}
       >
-        {(header ||
-          title ||
-          subtitle ||
-          actions) && (
-          <div className="tt-card-header">
-            <div className="tt-card-header-content">
-              {header || (
-                <>
-                  {title && (
-                    <h3 className="tt-card-title">
-                      {title}
-                    </h3>
-                  )}
+        {hasHeader ? (
+          header || (
+            <CardHeader
+              title={title}
+              description={
+                description
+              }
+              actions={
+                actions
+              }
+              className={
+                headerClassName
+              }
+            />
+          )
+        ) : null}
 
-                  {subtitle && (
-                    <p className="tt-card-subtitle">
-                      {
-                        subtitle
-                      }
-                    </p>
-                  )}
-                </>
-              )}
-            </div>
-
-            {actions && (
-              <div className="tt-card-actions">
-                {actions}
-              </div>
-            )}
-          </div>
-        )}
-
-        <div
-          className={`tt-card-body ${bodyClassName}`}
+        <CardBody
+          padding={padding}
+          className={
+            bodyClassName
+          }
         >
           {loading ? (
-            <div className="tt-card-loader">
-              <div className="tt-card-spinner" />
+            <div
+              className="tt-card-loading"
+              role="status"
+              aria-live="polite"
+            >
+              <Loader2
+                size={24}
+                aria-hidden="true"
+                focusable="false"
+                className="card-spinner"
+              />
+
+              <span>
+                {loadingText}
+              </span>
+            </div>
+          ) : error ? (
+            <div
+              className="tt-card-error"
+              role="alert"
+            >
+              <span className="tt-card-error-message">
+                {errorMessage}
+              </span>
+
+              {typeof onRetry ===
+                'function' ? (
+                <button
+                  type="button"
+                  className="tt-card-retry"
+                  onClick={
+                    onRetry
+                  }
+                  disabled={
+                    isDisabled
+                  }
+                >
+                  Retry
+                </button>
+              ) : null}
             </div>
           ) : (
             children
           )}
-        </div>
+        </CardBody>
 
-        {footer && (
-          <div className="tt-card-footer">
-            {footer}
-          </div>
-        )}
-      </div>
+        {hasFooter ? (
+          footer
+        ) : null}
+      </Component>
     );
   }
 );
 
 Card.displayName =
-  "Card";
+  'TITechCard';
 
-// ============================================================================
-// Compound Components
-// ============================================================================
-
-Card.Header = function CardHeader({
-  children,
-  className = "",
-}) {
-  return (
-    <div
-      className={`tt-card-header ${className}`}
-    >
-      {children}
-    </div>
-  );
-};
-
-Card.Body = function CardBody({
-  children,
-  className = "",
-}) {
-  return (
-    <div
-      className={`tt-card-body ${className}`}
-    >
-      {children}
-    </div>
-  );
-};
-
-Card.Footer = function CardFooter({
-  children,
-  className = "",
-}) {
-  return (
-    <div
-      className={`tt-card-footer ${className}`}
-    >
-      {children}
-    </div>
-  );
-};
-
-// ============================================================================
-// PropTypes
-// ============================================================================
+/*
+|--------------------------------------------------------------------------
+| PropTypes
+|--------------------------------------------------------------------------
+*/
 
 Card.propTypes = {
   children:
@@ -226,7 +809,7 @@ Card.propTypes = {
   title:
     PropTypes.node,
 
-  subtitle:
+  description:
     PropTypes.node,
 
   header:
@@ -240,47 +823,109 @@ Card.propTypes = {
 
   variant:
     PropTypes.oneOf(
-      Object.keys(
-        VARIANTS
-      )
+      Object.keys(VARIANTS)
     ),
 
   padding:
     PropTypes.oneOf(
-      Object.keys(
-        PADDING
-      )
+      Object.keys(PADDINGS)
     ),
 
-  bordered:
-    PropTypes.bool,
-
-  hoverable:
-    PropTypes.bool,
-
-  clickable:
-    PropTypes.bool,
-
-  loading:
-    PropTypes.bool,
-
-  fullHeight:
-    PropTypes.bool,
+  radius:
+    PropTypes.oneOf(
+      Object.keys(RADII)
+    ),
 
   className:
+    PropTypes.string,
+
+  headerClassName:
     PropTypes.string,
 
   bodyClassName:
     PropTypes.string,
 
+  footerClassName:
+    PropTypes.string,
+
+  interactive:
+    PropTypes.bool,
+
+  hoverable:
+    PropTypes.bool,
+
+  selected:
+    PropTypes.bool,
+
+  disabled:
+    PropTypes.bool,
+
+  loading:
+    PropTypes.bool,
+
+  error:
+    PropTypes.bool,
+
+  errorMessage:
+    PropTypes.node,
+
+  loadingText:
+    PropTypes.node,
+
   onClick:
     PropTypes.func,
+
+  onKeyDown:
+    PropTypes.func,
+
+  onRetry:
+    PropTypes.func,
+
+  ariaLabel:
+    PropTypes.string,
+
+  ariaLabelledBy:
+    PropTypes.string,
+
+  ariaDescribedBy:
+    PropTypes.string,
+
+  id:
+    PropTypes.string,
+
+  as:
+    PropTypes.elementType,
 };
 
-// ============================================================================
-// Export
-// ============================================================================
+/*
+|--------------------------------------------------------------------------
+| Compound Components
+|--------------------------------------------------------------------------
+|
+| Enables:
+|
+|   <Card>
+|     <Card.Header />
+|     <Card.Body />
+|     <Card.Footer />
+|   </Card>
+|
+|--------------------------------------------------------------------------
+*/
 
-export default memo(
-  Card
-);
+Card.Header =
+  CardHeader;
+
+Card.Body =
+  CardBody;
+
+Card.Footer =
+  CardFooter;
+
+/*
+|--------------------------------------------------------------------------
+| Export
+|--------------------------------------------------------------------------
+*/
+
+export default memo(Card);

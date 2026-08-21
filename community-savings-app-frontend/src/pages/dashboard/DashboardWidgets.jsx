@@ -2,12 +2,15 @@
 // TITech Community Capital
 // Enterprise Dashboard Widgets
 // File: frontend/src/pages/dashboard/DashboardWidgets.jsx
+//
 // Production Grade
-// Multi-Tenant | Realtime | Feature Flags | Executive Analytics
+// Multi-Tenant | Realtime | Feature Flags | RBAC | Executive Analytics
+// Defensive Rendering | Accessibility | Operational Resilience
 // ============================================================================
 
 import React, {
   memo,
+  useCallback,
   useMemo,
 } from "react";
 
@@ -38,8 +41,77 @@ import {
 import "./DashboardWidgets.css";
 
 // ============================================================================
+// Constants
+// ============================================================================
+
+const DEFAULT_LIMIT = 5;
+
+const DEFAULT_SYSTEM_HEALTH = {
+  api: "healthy",
+  database: "healthy",
+  queue: "healthy",
+  mobileMoney: "healthy",
+};
+
+const DEFAULT_EXECUTIVE = {
+  portfolioValue: 0,
+  revenue: 0,
+  recoveryRate: 0,
+};
+
+const DEFAULT_MOBILE_MONEY = {
+  deposits: 0,
+  withdrawals: 0,
+  transactions: 0,
+};
+
+const DEFAULT_FRAUD = {
+  flagged: 0,
+  review: 0,
+  riskScore: 0,
+};
+
+const DEFAULT_REGULATORY = {
+  pending: 0,
+  submitted: 0,
+  dueSoon: 0,
+};
+
+// ============================================================================
 // Helpers
 // ============================================================================
+
+const toSafeArray = (
+  value
+) =>
+  Array.isArray(value)
+    ? value
+    : [];
+
+const toSafeNumber = (
+  value,
+  fallback = 0
+) => {
+  const numericValue =
+    Number(value);
+
+  return Number.isFinite(
+    numericValue
+  )
+    ? numericValue
+    : fallback;
+};
+
+const clampPercentage = (
+  value
+) =>
+  Math.min(
+    100,
+    Math.max(
+      0,
+      toSafeNumber(value)
+    )
+  );
 
 const formatCurrency = (
   amount = 0
@@ -52,19 +124,71 @@ const formatCurrency = (
       maximumFractionDigits: 0,
     }
   ).format(
-    Number(amount || 0)
+    toSafeNumber(amount)
   );
 
+const formatPercentage = (
+  value = 0
+) =>
+  `${toSafeNumber(value).toFixed(
+    1
+  )}%`;
+
 const formatDate = (
-  date
+  value
 ) => {
-  if (!date) {
+  if (!value) {
     return "N/A";
   }
 
-  return new Date(
-    date
-  ).toLocaleString();
+  const date =
+    new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return "Invalid date";
+  }
+
+  return new Intl.DateTimeFormat(
+    "en-UG",
+    {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }
+  ).format(date);
+};
+
+const getItemKey = (
+  item,
+  index,
+  prefix
+) => {
+  if (
+    item &&
+    typeof item === "object"
+  ) {
+    const candidate =
+      item.id ??
+      item._id ??
+      item.uuid ??
+      item.key;
+
+    if (
+      candidate !==
+        undefined &&
+      candidate !== null &&
+      String(candidate)
+        .trim()
+        .length > 0
+    ) {
+      return `${prefix}-${candidate}`;
+    }
+  }
+
+  return `${prefix}-${index}`;
 };
 
 // ============================================================================
@@ -75,31 +199,76 @@ function WidgetCard({
   title,
   icon: Icon,
   children,
-  actions,
+  actions = null,
   className = "",
+  ariaLabel,
 }) {
   return (
     <Card
-      className={`dashboard-widget-card ${className}`}
+      className={`dashboard-widget-card ${className}`.trim()}
     >
       <div className="dashboard-widget-header">
         <div className="dashboard-widget-title">
           {Icon && (
             <Icon
               size={20}
+              aria-hidden="true"
+              focusable="false"
             />
           )}
 
           <h3>{title}</h3>
         </div>
 
-        {actions}
+        {actions && (
+          <div className="dashboard-widget-header-actions">
+            {actions}
+          </div>
+        )}
       </div>
 
-      <div className="dashboard-widget-body">
+      <div
+        className="dashboard-widget-body"
+        aria-label={
+          ariaLabel || title
+        }
+      >
         {children}
       </div>
     </Card>
+  );
+}
+
+// ============================================================================
+// Empty State
+// ============================================================================
+
+function WidgetEmptyState({
+  children,
+}) {
+  return (
+    <p className="dashboard-widget-empty">
+      {children}
+    </p>
+  );
+}
+
+// ============================================================================
+// Metric Row
+// ============================================================================
+
+function WidgetMetric({
+  label,
+  value,
+}) {
+  return (
+    <div className="dashboard-widget-metric">
+      <span>{label}</span>
+
+      <strong>
+        {value}
+      </strong>
+    </div>
   );
 }
 
@@ -108,7 +277,7 @@ function WidgetCard({
 // ============================================================================
 
 function DashboardWidgets({
-  metrics = {},
+  metrics: _metrics = {},
   notifications = [],
   activities = [],
   upcomingEvents = [],
@@ -117,83 +286,328 @@ function DashboardWidgets({
   mobileMoney = {},
   fraud = {},
   regulatory = {},
+
   onViewAllNotifications,
   onViewAllActivities,
   onExportReports,
+
+  onAddMember,
+  onOpenSavings,
+  onCreateLoan,
+  onOpenTransactions,
+  onOpenGroups,
+
+  maxItems = DEFAULT_LIMIT,
 }) {
+  // ==========================================================================
+  // Defensive Normalization
+  // ==========================================================================
+
+  const safeNotifications =
+    useMemo(
+      () =>
+        toSafeArray(
+          notifications
+        ),
+      [notifications]
+    );
+
+  const safeActivities =
+    useMemo(
+      () =>
+        toSafeArray(
+          activities
+        ),
+      [activities]
+    );
+
+  const safeUpcomingEvents =
+    useMemo(
+      () =>
+        toSafeArray(
+          upcomingEvents
+        ),
+      [upcomingEvents]
+    );
+
   const recentNotifications =
     useMemo(
       () =>
-        notifications.slice(
+        safeNotifications.slice(
           0,
-          5
+          Math.max(
+            1,
+            toSafeNumber(
+              maxItems,
+              DEFAULT_LIMIT
+            )
+          )
         ),
-      [notifications]
+      [
+        safeNotifications,
+        maxItems,
+      ]
     );
 
   const recentActivities =
     useMemo(
       () =>
-        activities.slice(
+        safeActivities.slice(
           0,
-          5
+          Math.max(
+            1,
+            toSafeNumber(
+              maxItems,
+              DEFAULT_LIMIT
+            )
+          )
         ),
-      [activities]
+      [
+        safeActivities,
+        maxItems,
+      ]
     );
 
-  // ===========================================================================
+  const recentEvents =
+    useMemo(
+      () =>
+        safeUpcomingEvents.slice(
+          0,
+          Math.max(
+            1,
+            toSafeNumber(
+              maxItems,
+              DEFAULT_LIMIT
+            )
+          )
+        ),
+      [
+        safeUpcomingEvents,
+        maxItems,
+      ]
+    );
+
+  // ==========================================================================
+  // Normalized Metrics
+  // ==========================================================================
+
+  const executiveMetrics =
+    useMemo(
+      () => ({
+        ...DEFAULT_EXECUTIVE,
+        ...(executive &&
+        typeof executive ===
+          "object"
+          ? executive
+          : {}),
+      }),
+      [executive]
+    );
+
+  const mobileMoneyMetrics =
+    useMemo(
+      () => ({
+        ...DEFAULT_MOBILE_MONEY,
+        ...(mobileMoney &&
+        typeof mobileMoney ===
+          "object"
+          ? mobileMoney
+          : {}),
+      }),
+      [mobileMoney]
+    );
+
+  const fraudMetrics =
+    useMemo(
+      () => ({
+        ...DEFAULT_FRAUD,
+        ...(fraud &&
+        typeof fraud ===
+          "object"
+          ? fraud
+          : {}),
+      }),
+      [fraud]
+    );
+
+  const regulatoryMetrics =
+    useMemo(
+      () => ({
+        ...DEFAULT_REGULATORY,
+        ...(regulatory &&
+        typeof regulatory ===
+          "object"
+          ? regulatory
+          : {}),
+      }),
+      [regulatory]
+    );
+
+  const health =
+    useMemo(
+      () => ({
+        ...DEFAULT_SYSTEM_HEALTH,
+        ...(systemHealth &&
+        typeof systemHealth ===
+          "object"
+          ? systemHealth
+          : {}),
+      }),
+      [systemHealth]
+    );
+
+  // ==========================================================================
+  // Event Handlers
+  // ==========================================================================
+
+  const handleViewAllNotifications =
+    useCallback(() => {
+      onViewAllNotifications?.();
+    }, [
+      onViewAllNotifications,
+    ]);
+
+  const handleViewAllActivities =
+    useCallback(() => {
+      onViewAllActivities?.();
+    }, [
+      onViewAllActivities,
+    ]);
+
+  const handleExportReports =
+    useCallback(() => {
+      onExportReports?.();
+    }, [
+      onExportReports,
+    ]);
+
+  const handleAddMember =
+    useCallback(() => {
+      onAddMember?.();
+    }, [onAddMember]);
+
+  const handleOpenSavings =
+    useCallback(() => {
+      onOpenSavings?.();
+    }, [onOpenSavings]);
+
+  const handleCreateLoan =
+    useCallback(() => {
+      onCreateLoan?.();
+    }, [onCreateLoan]);
+
+  const handleOpenTransactions =
+    useCallback(() => {
+      onOpenTransactions?.();
+    }, [
+      onOpenTransactions,
+    ]);
+
+  const handleOpenGroups =
+    useCallback(() => {
+      onOpenGroups?.();
+    }, [onOpenGroups]);
+
+  // ==========================================================================
+  // Action Availability
+  // ==========================================================================
+
+  const hasNotificationAction =
+    typeof onViewAllNotifications ===
+    "function";
+
+  const hasActivityAction =
+    typeof onViewAllActivities ===
+    "function";
+
+  const hasExportAction =
+    typeof onExportReports ===
+    "function";
+
+  const hasAddMemberAction =
+    typeof onAddMember ===
+    "function";
+
+  const hasSavingsAction =
+    typeof onOpenSavings ===
+    "function";
+
+  const hasLoanAction =
+    typeof onCreateLoan ===
+    "function";
+
+  const hasTransactionAction =
+    typeof onOpenTransactions ===
+    "function";
+
+  const hasGroupsAction =
+    typeof onOpenGroups ===
+    "function";
+
+  // ==========================================================================
   // Render
-  // ===========================================================================
+  // ==========================================================================
 
   return (
-    <div className="dashboard-widgets-grid">
-      {/* =============================================================== */}
+    <div
+      className="dashboard-widgets-grid"
+      aria-label="Dashboard widgets"
+    >
+      {/* ================================================================== */}
       {/* Notifications */}
-      {/* =============================================================== */}
+      {/* ================================================================== */}
 
       <WidgetCard
         title="Notifications"
         icon={Activity}
         actions={
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={
-              onViewAllNotifications
-            }
-          >
-            View All
-          </Button>
+          hasNotificationAction ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={
+                handleViewAllNotifications
+              }
+              aria-label="View all notifications"
+            >
+              View All
+            </Button>
+          ) : null
         }
       >
-        {recentNotifications
-          .length ===
+        {recentNotifications.length ===
         0 ? (
-          <p>
+          <WidgetEmptyState>
             No notifications.
-          </p>
+          </WidgetEmptyState>
         ) : (
-          <ul className="dashboard-widget-list">
+          <ul
+            className="dashboard-widget-list"
+            aria-label="Recent notifications"
+          >
             {recentNotifications.map(
               (
                 notification,
                 index
               ) => (
                 <li
-                  key={
-                    notification.id ||
-                    index
-                  }
+                  key={getItemKey(
+                    notification,
+                    index,
+                    "notification"
+                  )}
                 >
                   <p>
-                    {
-                      notification.title
-                    }
+                    {notification?.title ||
+                      notification?.message ||
+                      "Notification"}
                   </p>
 
                   <small>
                     {formatDate(
-                      notification.createdAt
+                      notification?.createdAt ??
+                        notification?.date
                     )}
                   </small>
                 </li>
@@ -203,53 +617,61 @@ function DashboardWidgets({
         )}
       </WidgetCard>
 
-      {/* =============================================================== */}
+      {/* ================================================================== */}
       {/* Activity Feed */}
-      {/* =============================================================== */}
+      {/* ================================================================== */}
 
       <WidgetCard
         title="Recent Activity"
         icon={TrendingUp}
         actions={
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={
-              onViewAllActivities
-            }
-          >
-            View All
-          </Button>
+          hasActivityAction ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={
+                handleViewAllActivities
+              }
+              aria-label="View all recent activity"
+            >
+              View All
+            </Button>
+          ) : null
         }
       >
-        {recentActivities
-          .length ===
+        {recentActivities.length ===
         0 ? (
-          <p>
+          <WidgetEmptyState>
             No recent activity.
-          </p>
+          </WidgetEmptyState>
         ) : (
-          <ul className="dashboard-widget-list">
+          <ul
+            className="dashboard-widget-list"
+            aria-label="Recent activity"
+          >
             {recentActivities.map(
               (
                 item,
                 index
               ) => (
                 <li
-                  key={
-                    item.id ||
-                    index
-                  }
+                  key={getItemKey(
+                    item,
+                    index,
+                    "activity"
+                  )}
                 >
                   <p>
-                    {
-                      item.message
-                    }
+                    {item?.message ||
+                      item?.title ||
+                      "Activity recorded"}
                   </p>
 
                   <small>
                     {formatDate(
-                      item.createdAt
+                      item?.createdAt ??
+                        item?.date
                     )}
                   </small>
                 </li>
@@ -259,42 +681,47 @@ function DashboardWidgets({
         )}
       </WidgetCard>
 
-      {/* =============================================================== */}
+      {/* ================================================================== */}
       {/* Upcoming Events */}
-      {/* =============================================================== */}
+      {/* ================================================================== */}
 
       <WidgetCard
         title="Upcoming Events"
         icon={Calendar}
       >
-        {upcomingEvents
-          .length ===
+        {recentEvents.length ===
         0 ? (
-          <p>
+          <WidgetEmptyState>
             No upcoming events.
-          </p>
+          </WidgetEmptyState>
         ) : (
-          <ul className="dashboard-widget-list">
-            {upcomingEvents.map(
+          <ul
+            className="dashboard-widget-list"
+            aria-label="Upcoming events"
+          >
+            {recentEvents.map(
               (
                 event,
                 index
               ) => (
                 <li
-                  key={
-                    event.id ||
-                    index
-                  }
+                  key={getItemKey(
+                    event,
+                    index,
+                    "event"
+                  )}
                 >
                   <strong>
-                    {
-                      event.title
-                    }
+                    {event?.title ||
+                      event?.name ||
+                      "Upcoming event"}
                   </strong>
 
                   <small>
                     {formatDate(
-                      event.date
+                      event?.date ??
+                        event?.startDate ??
+                        event?.scheduledAt
                     )}
                   </small>
                 </li>
@@ -304,229 +731,200 @@ function DashboardWidgets({
         )}
       </WidgetCard>
 
-      {/* =============================================================== */}
+      {/* ================================================================== */}
       {/* Executive Dashboard */}
-      {/* =============================================================== */}
+      {/* ================================================================== */}
 
       <FeatureGate features="executive_dashboard">
         <WidgetCard
           title="Executive Overview"
           icon={DollarSign}
         >
-          <div className="dashboard-widget-metrics">
-            <div>
-              <span>
-                Portfolio
-              </span>
+          <div
+            className="dashboard-widget-metrics"
+            aria-label="Executive financial metrics"
+          >
+            <WidgetMetric
+              label="Portfolio"
+              value={formatCurrency(
+                executiveMetrics.portfolioValue
+              )}
+            />
 
-              <strong>
-                {formatCurrency(
-                  executive.portfolioValue
-                )}
-              </strong>
-            </div>
+            <WidgetMetric
+              label="Revenue"
+              value={formatCurrency(
+                executiveMetrics.revenue
+              )}
+            />
 
-            <div>
-              <span>
-                Revenue
-              </span>
-
-              <strong>
-                {formatCurrency(
-                  executive.revenue
-                )}
-              </strong>
-            </div>
-
-            <div>
-              <span>
-                Recovery
-              </span>
-
-              <strong>
-                {executive.recoveryRate ||
-                  0}
-                %
-              </strong>
-            </div>
+            <WidgetMetric
+              label="Recovery"
+              value={`${clampPercentage(
+                executiveMetrics.recoveryRate
+              )}%`}
+            />
           </div>
         </WidgetCard>
       </FeatureGate>
 
-      {/* =============================================================== */}
+      {/* ================================================================== */}
       {/* Mobile Money */}
-      {/* =============================================================== */}
+      {/* ================================================================== */}
 
       <FeatureGate features="mobile_money">
         <WidgetCard
           title="Mobile Money"
           icon={Smartphone}
         >
-          <div className="dashboard-widget-metrics">
-            <div>
-              <span>
-                Deposits
-              </span>
+          <div
+            className="dashboard-widget-metrics"
+            aria-label="Mobile money metrics"
+          >
+            <WidgetMetric
+              label="Deposits"
+              value={formatCurrency(
+                mobileMoneyMetrics.deposits
+              )}
+            />
 
-              <strong>
-                {formatCurrency(
-                  mobileMoney.deposits
-                )}
-              </strong>
-            </div>
+            <WidgetMetric
+              label="Withdrawals"
+              value={formatCurrency(
+                mobileMoneyMetrics.withdrawals
+              )}
+            />
 
-            <div>
-              <span>
-                Withdrawals
-              </span>
-
-              <strong>
-                {formatCurrency(
-                  mobileMoney.withdrawals
-                )}
-              </strong>
-            </div>
-
-            <div>
-              <span>
-                Transactions
-              </span>
-
-              <strong>
-                {mobileMoney.transactions ||
-                  0}
-              </strong>
-            </div>
+            <WidgetMetric
+              label="Transactions"
+              value={toSafeNumber(
+                mobileMoneyMetrics.transactions
+              ).toLocaleString(
+                "en-UG"
+              )}
+            />
           </div>
         </WidgetCard>
       </FeatureGate>
 
-      {/* =============================================================== */}
-      {/* Fraud */}
-      {/* =============================================================== */}
+      {/* ================================================================== */}
+      {/* Fraud Monitoring */}
+      {/* ================================================================== */}
 
       <FeatureGate features="fraud_detection">
         <WidgetCard
           title="Fraud Monitoring"
-          icon={
-            AlertTriangle
-          }
+          icon={AlertTriangle}
           className="warning"
         >
-          <div className="dashboard-widget-metrics">
-            <div>
-              <span>
-                Flagged
-              </span>
+          <div
+            className="dashboard-widget-metrics"
+            aria-label="Fraud monitoring metrics"
+          >
+            <WidgetMetric
+              label="Flagged"
+              value={toSafeNumber(
+                fraudMetrics.flagged
+              ).toLocaleString(
+                "en-UG"
+              )}
+            />
 
-              <strong>
-                {fraud.flagged ||
-                  0}
-              </strong>
-            </div>
+            <WidgetMetric
+              label="Under Review"
+              value={toSafeNumber(
+                fraudMetrics.review
+              ).toLocaleString(
+                "en-UG"
+              )}
+            />
 
-            <div>
-              <span>
-                Under Review
-              </span>
-
-              <strong>
-                {fraud.review ||
-                  0}
-              </strong>
-            </div>
-
-            <div>
-              <span>
-                Risk Score
-              </span>
-
-              <strong>
-                {fraud.riskScore ||
-                  0}
-                %
-              </strong>
-            </div>
+            <WidgetMetric
+              label="Risk Score"
+              value={`${clampPercentage(
+                fraudMetrics.riskScore
+              )}%`}
+            />
           </div>
         </WidgetCard>
       </FeatureGate>
 
-      {/* =============================================================== */}
-      {/* Regulatory */}
-      {/* =============================================================== */}
+      {/* ================================================================== */}
+      {/* Regulatory Reporting */}
+      {/* ================================================================== */}
 
       <FeatureGate features="regulatory_reporting">
         <WidgetCard
           title="Regulatory Reports"
           icon={FileText}
           actions={
-            <Button
-              size="sm"
-              onClick={
-                onExportReports
-              }
-            >
-              Export
-            </Button>
+            hasExportAction ? (
+              <Button
+                type="button"
+                size="sm"
+                onClick={
+                  handleExportReports
+                }
+                aria-label="Export regulatory reports"
+              >
+                Export
+              </Button>
+            ) : null
           }
         >
-          <div className="dashboard-widget-metrics">
-            <div>
-              <span>
-                Pending
-              </span>
+          <div
+            className="dashboard-widget-metrics"
+            aria-label="Regulatory reporting metrics"
+          >
+            <WidgetMetric
+              label="Pending"
+              value={toSafeNumber(
+                regulatoryMetrics.pending
+              ).toLocaleString(
+                "en-UG"
+              )}
+            />
 
-              <strong>
-                {regulatory.pending ||
-                  0}
-              </strong>
-            </div>
+            <WidgetMetric
+              label="Submitted"
+              value={toSafeNumber(
+                regulatoryMetrics.submitted
+              ).toLocaleString(
+                "en-UG"
+              )}
+            />
 
-            <div>
-              <span>
-                Submitted
-              </span>
-
-              <strong>
-                {regulatory.submitted ||
-                  0}
-              </strong>
-            </div>
-
-            <div>
-              <span>
-                Due Soon
-              </span>
-
-              <strong>
-                {regulatory.dueSoon ||
-                  0}
-              </strong>
-            </div>
+            <WidgetMetric
+              label="Due Soon"
+              value={toSafeNumber(
+                regulatoryMetrics.dueSoon
+              ).toLocaleString(
+                "en-UG"
+              )}
+            />
           </div>
         </WidgetCard>
       </FeatureGate>
 
-      {/* =============================================================== */}
+      {/* ================================================================== */}
       {/* System Health */}
-      {/* =============================================================== */}
+      {/* ================================================================== */}
 
       <PermissionGate permissions="view_system_health">
         <WidgetCard
           title="System Health"
           icon={Activity}
         >
-          <div className="dashboard-widget-health">
+          <div
+            className="dashboard-widget-health"
+            aria-label="System health status"
+            aria-live="polite"
+          >
             <div>
-              <span>
-                API
-              </span>
+              <span>API</span>
 
               <StatusBadge
-                status={
-                  systemHealth.api ||
-                  "healthy"
-                }
+                status={health.api}
               />
             </div>
 
@@ -537,8 +935,7 @@ function DashboardWidgets({
 
               <StatusBadge
                 status={
-                  systemHealth.database ||
-                  "healthy"
+                  health.database
                 }
               />
             </div>
@@ -550,8 +947,7 @@ function DashboardWidgets({
 
               <StatusBadge
                 status={
-                  systemHealth.queue ||
-                  "healthy"
+                  health.queue
                 }
               />
             </div>
@@ -563,8 +959,7 @@ function DashboardWidgets({
 
               <StatusBadge
                 status={
-                  systemHealth.mobileMoney ||
-                  "healthy"
+                  health.mobileMoney
                 }
               />
             </div>
@@ -572,48 +967,119 @@ function DashboardWidgets({
         </WidgetCard>
       </PermissionGate>
 
-      {/* =============================================================== */}
+      {/* ================================================================== */}
       {/* Quick Actions */}
-      {/* =============================================================== */}
+      {/* ================================================================== */}
 
       <WidgetCard
         title="Quick Actions"
-        icon={
-          ArrowUpRight
-        }
+        icon={ArrowUpRight}
       >
-        <div className="dashboard-widget-actions">
-          <Button>
+        <div
+          className="dashboard-widget-actions"
+          aria-label="Dashboard quick actions"
+        >
+          <Button
+            type="button"
+            onClick={
+              handleAddMember
+            }
+            disabled={
+              !hasAddMemberAction
+            }
+            title={
+              hasAddMemberAction
+                ? "Add a new member"
+                : "Action unavailable"
+            }
+          >
             <Users
               size={16}
+              aria-hidden="true"
             />
             Add Member
           </Button>
 
-          <Button>
+          <Button
+            type="button"
+            onClick={
+              handleOpenSavings
+            }
+            disabled={
+              !hasSavingsAction
+            }
+            title={
+              hasSavingsAction
+                ? "Open savings"
+                : "Action unavailable"
+            }
+          >
             <PiggyBank
               size={16}
+              aria-hidden="true"
             />
             Savings
           </Button>
 
-          <Button>
+          <Button
+            type="button"
+            onClick={
+              handleCreateLoan
+            }
+            disabled={
+              !hasLoanAction
+            }
+            title={
+              hasLoanAction
+                ? "Create a new loan"
+                : "Action unavailable"
+            }
+          >
             <CreditCard
               size={16}
+              aria-hidden="true"
             />
             New Loan
           </Button>
 
-          <Button>
+          <Button
+            type="button"
+            onClick={
+              handleOpenTransactions
+            }
+            disabled={
+              !hasTransactionAction
+            }
+            title={
+              hasTransactionAction
+                ? "Open transactions"
+                : "Action unavailable"
+            }
+          >
             <Wallet
               size={16}
+              aria-hidden="true"
             />
             Transactions
           </Button>
 
-          <Button>
+          <Button
+            type="button"
+            onClick={
+              handleOpenGroups
+            }
+            disabled={
+              !hasGroupsAction
+            }
+            title={
+              hasGroupsAction
+                ? "Open groups"
+                : "Action unavailable"
+            }
+          >
             <Building2
               size={16}
+              aria-hidden="true"
             />
             Groups
           </Button>
@@ -622,6 +1088,10 @@ function DashboardWidgets({
     </div>
   );
 }
+
+// ============================================================================
+// Export
+// ============================================================================
 
 export default memo(
   DashboardWidgets

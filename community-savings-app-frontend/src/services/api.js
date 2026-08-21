@@ -1,11 +1,12 @@
 // ============================================================================
 // TITech Community Capital LTD
 // Enterprise API Client
+//
 // File: frontend/src/services/api.js
 //
 // Production Grade
 // Multi-Tenant | JWT | Refresh | Retry | Observability
-// Idempotency | Offline Awareness | Financial Safety
+// Idempotency | Offline Awareness | Financial Safety | Request Correlation
 //
 // Security model:
 // - Access token is held in memory only.
@@ -16,10 +17,17 @@
 // - Financial mutations preserve idempotency across retries.
 // - Authentication refresh is single-flight.
 // - Offline state is explicitly classified.
+// - Request diagnostics never expose credentials or financial payloads.
+//
+// IMPORTANT:
+// This client is an orchestration/transport layer.
+// Financial authorization, ledger integrity, transaction validation,
+// duplicate detection, limits, and final consistency MUST remain
+// authoritative on the backend.
 // ============================================================================
 
-import axios from "axios";
-import { v4 as uuidv4 } from "uuid";
+import axios from 'axios';
+import { v4 as uuidv4 } from 'uuid';
 
 // ============================================================================
 // Configuration
@@ -27,7 +35,7 @@ import { v4 as uuidv4 } from "uuid";
 
 const API_BASE =
   import.meta.env.VITE_API_URL ||
-  "http://localhost:5000";
+  'http://localhost:5000';
 
 const REQUEST_TIMEOUT =
   Number(import.meta.env.VITE_REQUEST_TIMEOUT) || 30000;
@@ -46,56 +54,56 @@ const RETRY_DELAY = Math.max(
 );
 
 const TENANT_KEY =
-  import.meta.env.VITE_TENANT_KEY || "tenantId";
+  import.meta.env.VITE_TENANT_KEY || 'tenantId';
 
 const DEVICE_KEY =
-  import.meta.env.VITE_DEVICE_KEY || "deviceId";
+  import.meta.env.VITE_DEVICE_KEY || 'deviceId';
 
 const APP_VERSION =
-  import.meta.env.VITE_APP_VERSION || "1.0.0";
+  import.meta.env.VITE_APP_VERSION || '1.0.0';
 
 const IS_DEV =
   Boolean(import.meta.env.DEV);
 
 const REFRESH_ENDPOINT =
-  "/api/auth/refresh";
+  '/api/auth/refresh';
 
 const LOGIN_ENDPOINT =
-  "/api/auth/login";
+  '/api/auth/login';
 
 const REGISTER_ENDPOINT =
-  "/api/auth/register";
+  '/api/auth/register';
 
 const LOGOUT_ENDPOINT =
-  "/api/auth/logout";
+  '/api/auth/logout';
 
 // ============================================================================
-// Security Constants
+// Security / HTTP Constants
 // ============================================================================
 
 const SAFE_METHODS = new Set([
-  "get",
-  "head",
-  "options",
+  'get',
+  'head',
+  'options',
 ]);
 
 const MUTATION_METHODS = new Set([
-  "post",
-  "put",
-  "patch",
-  "delete",
+  'post',
+  'put',
+  'patch',
+  'delete',
 ]);
 
 const FINANCIAL_PATHS = Object.freeze([
-  "/transactions",
-  "/payments",
-  "/wallet",
-  "/ledger",
-  "/loans",
-  "/savings",
-  "/momo",
-  "/contributions",
-  "/withdrawals",
+  '/transactions',
+  '/payments',
+  '/wallet',
+  '/ledger',
+  '/loans',
+  '/savings',
+  '/momo',
+  '/contributions',
+  '/withdrawals',
 ]);
 
 const RETRYABLE_STATUS_CODES = new Set([
@@ -119,43 +127,41 @@ const AUTH_EXCLUDED_ENDPOINTS = new Set([
 // Access Token State
 // ============================================================================
 //
-// IMPORTANT:
+// SECURITY REQUIREMENT:
 //
 // The access token intentionally exists only in memory.
 //
-// It is NOT stored in:
+// NEVER persist it in:
 // - localStorage
 // - sessionStorage
 // - IndexedDB
-// - cookies
+// - browser-readable cookies
 //
-// After a browser reload, bootstrapAuthentication() can obtain a fresh access
-// token through the backend's HttpOnly refresh cookie.
+// After a reload, bootstrapAuthentication() attempts to obtain a fresh
+// access token through the backend's HttpOnly refresh cookie.
 // ============================================================================
 
 let accessToken = null;
 
 // ============================================================================
-// Tenant / Device Storage
+// Safe Storage
 // ============================================================================
 //
 // Tenant and device identifiers are contextual values.
+// They are NOT authentication credentials.
 //
-// They MUST NOT be treated as authentication credentials.
-//
-// The backend must independently validate:
+// The backend MUST independently validate:
 // - authenticated user
 // - tenant membership
 // - tenant permissions
 // - role
 // - resource ownership
+// - device trust where applicable
 // ============================================================================
 
 const storage = {
   get(key) {
-    if (
-      typeof window === "undefined"
-    ) {
+    if (typeof window === 'undefined') {
       return null;
     }
 
@@ -170,9 +176,7 @@ const storage = {
   },
 
   set(key, value) {
-    if (
-      typeof window === "undefined"
-    ) {
+    if (typeof window === 'undefined') {
       return;
     }
 
@@ -190,14 +194,12 @@ const storage = {
         String(value)
       );
     } catch {
-      // Storage may be unavailable because of browser privacy settings.
+      // Browser storage may be unavailable because of privacy settings.
     }
   },
 
   remove(key) {
-    if (
-      typeof window === "undefined"
-    ) {
+    if (typeof window === 'undefined') {
       return;
     }
 
@@ -220,14 +222,14 @@ export function getToken() {
 
 export function setToken(token) {
   if (
-    typeof token !== "string" ||
+    typeof token !== 'string' ||
     !token.trim()
   ) {
     accessToken = null;
     return;
   }
 
-  accessToken = token;
+  accessToken = token.trim();
 }
 
 export function clearToken() {
@@ -238,11 +240,11 @@ export function clearToken() {
 // Refresh Token Helpers
 // ============================================================================
 //
-// These intentionally do NOTHING.
+// These functions intentionally do nothing.
 //
 // The refresh token belongs to the backend/browser cookie security boundary.
 //
-// Recommended cookie:
+// Recommended backend cookie:
 //
 // Set-Cookie:
 // refreshToken=<opaque-token>;
@@ -251,7 +253,7 @@ export function clearToken() {
 // SameSite=Lax;
 // Path=/api/auth;
 //
-// JavaScript must never read this token.
+// JavaScript must never read the refresh token.
 // ============================================================================
 
 export function getRefreshToken() {
@@ -278,27 +280,36 @@ export function setTenant(tenantId) {
   if (
     tenantId === undefined ||
     tenantId === null ||
-    tenantId === ""
+    tenantId === ''
   ) {
+    clearTenant();
+    return;
+  }
+
+  const normalizedTenantId = String(
+    tenantId
+  ).trim();
+
+  if (!normalizedTenantId) {
     clearTenant();
     return;
   }
 
   storage.set(
     TENANT_KEY,
-    tenantId
+    normalizedTenantId
   );
 
   api.defaults.headers.common[
-    "x-tenant-id"
-  ] = String(tenantId);
+    'x-tenant-id'
+  ] = normalizedTenantId;
 }
 
 export function clearTenant() {
   storage.remove(TENANT_KEY);
 
   delete api.defaults.headers.common[
-    "x-tenant-id"
+    'x-tenant-id'
   ];
 }
 
@@ -309,25 +320,25 @@ export function clearTenant() {
 function generateDeviceId() {
   try {
     if (
-      typeof crypto !== "undefined" &&
-      typeof crypto.randomUUID === "function"
+      typeof crypto !== 'undefined' &&
+      typeof crypto.randomUUID === 'function'
     ) {
       return crypto.randomUUID();
     }
   } catch {
-    // Fall through.
+    // Fall through to uuidv4().
   }
 
   return uuidv4();
 }
 
 export function getDeviceId() {
-  let deviceId =
-    storage.get(DEVICE_KEY);
+  let deviceId = storage.get(
+    DEVICE_KEY
+  );
 
   if (!deviceId) {
-    deviceId =
-      generateDeviceId();
+    deviceId = generateDeviceId();
 
     storage.set(
       DEVICE_KEY,
@@ -348,17 +359,21 @@ export function getDeviceId() {
 // authApi:
 //   Authentication API.
 //
-// authApi deliberately does NOT receive the authenticated API interceptor.
-// This prevents refresh loops.
+// authApi deliberately does NOT receive the authenticated API response
+// interceptor. This prevents refresh loops.
 // ============================================================================
+
+const defaultHeaders = {
+  Accept: 'application/json',
+  'Content-Type': 'application/json',
+};
 
 const api = axios.create({
   baseURL: API_BASE,
   timeout: REQUEST_TIMEOUT,
   withCredentials: true,
   headers: {
-    Accept: "application/json",
-    "Content-Type": "application/json",
+    ...defaultHeaders,
   },
 });
 
@@ -367,8 +382,7 @@ const authApi = axios.create({
   timeout: REQUEST_TIMEOUT,
   withCredentials: true,
   headers: {
-    Accept: "application/json",
-    "Content-Type": "application/json",
+    ...defaultHeaders,
   },
 });
 
@@ -376,11 +390,8 @@ const authApi = axios.create({
 // Request Tracking
 // ============================================================================
 
-const pendingRequests =
-  new Map();
-
-const requestControllers =
-  new Map();
+const pendingRequests = new Map();
+const requestControllers = new Map();
 
 // ============================================================================
 // Refresh State
@@ -404,7 +415,7 @@ let refreshPromise = null;
 function normalizeMethod(method) {
   return (
     method ||
-    "get"
+    'get'
   ).toLowerCase();
 }
 
@@ -424,49 +435,124 @@ function isMutationMethod(method) {
 // URL Normalization
 // ============================================================================
 
-function normalizeUrl(url = "") {
+function normalizeUrl(url = '') {
   return String(url)
-    .split("?")[0]
-    .replace(/\/+$/, "")
+    .split('?')[0]
+    .split('#')[0]
+    .replace(/\/+$/, '')
     .toLowerCase();
+}
+
+function normalizePath(url = '') {
+  const normalized = normalizeUrl(url);
+
+  if (!normalized) {
+    return '';
+  }
+
+  try {
+    const parsed = new URL(
+      normalized,
+      API_BASE
+    );
+
+    return (
+      parsed.pathname
+        .replace(/\/+/g, '/')
+        .replace(/\/+$/, '')
+        .toLowerCase() || '/'
+    );
+  } catch {
+    return normalized;
+  }
 }
 
 // ============================================================================
 // Financial Request Detection
 // ============================================================================
 //
-// Only path segments are considered.
+// Supports both:
 //
-// This reduces accidental matches such as:
-// /reports?source=/payments
+// /payments
+// /payments/123
+// /api/payments
+// /api/payments/123
+//
+// Query strings are intentionally excluded.
 // ============================================================================
 
 function isFinancialRequest(config) {
-  const url =
-    normalizeUrl(config?.url);
+  const path = normalizePath(
+    config?.url
+  );
+
+  if (!path) {
+    return false;
+  }
+
+  const candidates = [
+    path,
+    path.replace(/^\/api(?=\/|$)/, ''),
+  ];
 
   return FINANCIAL_PATHS.some(
-    path => {
-      const normalizedPath =
-        path.toLowerCase();
+    financialPath => {
+      const normalizedFinancialPath =
+        financialPath.toLowerCase();
 
-      return (
-        url === normalizedPath ||
-        url.startsWith(
-          `${normalizedPath}/`
-        )
+      return candidates.some(
+        candidate =>
+          candidate ===
+            normalizedFinancialPath ||
+          candidate.startsWith(
+            `${normalizedFinancialPath}/`
+          )
       );
     }
   );
 }
 
-function hasIdempotencyKey(config) {
-  const headers =
-    config?.headers || {};
+function getHeaderValue(
+  headers,
+  name
+) {
+  if (!headers) {
+    return undefined;
+  }
 
+  const lowerName =
+    name.toLowerCase();
+
+  if (
+    headers[name] !== undefined
+  ) {
+    return headers[name];
+  }
+
+  if (
+    headers[lowerName] !== undefined
+  ) {
+    return headers[lowerName];
+  }
+
+  const matchingKey =
+    Object.keys(headers).find(
+      key =>
+        key.toLowerCase() ===
+        lowerName
+    );
+
+  return matchingKey
+    ? headers[matchingKey]
+    : undefined;
+}
+
+function hasIdempotencyKey(config) {
   return Boolean(
-    headers["Idempotency-Key"] ||
-    headers["idempotency-key"]
+    getHeaderValue(
+      config?.headers,
+      'Idempotency-Key'
+    )
   );
 }
 
@@ -475,44 +561,52 @@ function hasIdempotencyKey(config) {
 // ============================================================================
 
 function stableSerialize(value) {
-  if (
-    value === undefined
-  ) {
-    return "";
+  if (value === undefined) {
+    return '';
   }
 
   if (
     value === null ||
-    typeof value !== "object"
+    typeof value !== 'object'
   ) {
-    return JSON.stringify(
-      value
-    );
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
   }
 
   if (
+    typeof FormData !== 'undefined' &&
     value instanceof FormData
   ) {
-    return "[FormData]";
+    return '[FormData]';
   }
 
   if (
+    typeof Blob !== 'undefined' &&
     value instanceof Blob
   ) {
-    return `[Blob:${value.type || "unknown"}]`;
+    return `[Blob:${value.type || 'unknown'}]`;
+  }
+
+  if (
+    typeof ArrayBuffer !== 'undefined' &&
+    value instanceof ArrayBuffer
+  ) {
+    return '[ArrayBuffer]';
   }
 
   if (Array.isArray(value)) {
     return JSON.stringify(
-      value.map(
-        stableSerialize
+      value.map(item =>
+        stableSerialize(item)
       )
     );
   }
 
   const sortedKeys =
-    Object.keys(value)
-      .sort();
+    Object.keys(value).sort();
 
   return JSON.stringify(
     sortedKeys.reduce(
@@ -538,16 +632,16 @@ function requestKey(config) {
     normalizeMethod(
       config?.method
     ),
-    config?.baseURL || "",
-    config?.url || "",
+    config?.baseURL || '',
+    config?.url || '',
     stableSerialize(
       config?.params
     ),
     stableSerialize(
       config?.data
     ),
-    getTenant() || "",
-  ].join("|");
+    getTenant() || '',
+  ].join('|');
 }
 
 // ============================================================================
@@ -563,13 +657,18 @@ function ensureHeader(
     config.headers = {};
   }
 
+  const existing =
+    getHeaderValue(
+      config.headers,
+      name
+    );
+
   if (
-    config.headers[name] === undefined ||
-    config.headers[name] === null ||
-    config.headers[name] === ""
+    existing === undefined ||
+    existing === null ||
+    existing === ''
   ) {
-    config.headers[name] =
-      value;
+    config.headers[name] = value;
   }
 }
 
@@ -577,18 +676,15 @@ function ensureHeader(
 // Financial Idempotency
 // ============================================================================
 //
-// IMPORTANT:
-//
 // Financial mutation identifiers MUST survive retries.
 //
 // Initial request:
-//   Idempotency-Key = ABC
+//
+// Idempotency-Key = ABC
 //
 // Retry:
-//   Idempotency-Key = ABC
 //
-// Retry after timeout:
-//   Idempotency-Key = ABC
+// Idempotency-Key = ABC
 //
 // This allows the backend to recognize duplicate delivery attempts.
 // ============================================================================
@@ -610,13 +706,13 @@ function ensureFinancialHeaders(
 
   ensureHeader(
     config,
-    "Idempotency-Key",
+    'Idempotency-Key',
     uuidv4()
   );
 
   ensureHeader(
     config,
-    "x-transaction-id",
+    'x-transaction-id',
     uuidv4()
   );
 }
@@ -626,12 +722,8 @@ function ensureFinancialHeaders(
 // ============================================================================
 
 function sleep(ms) {
-  return new Promise(
-    resolve =>
-      setTimeout(
-        resolve,
-        ms
-      )
+  return new Promise(resolve =>
+    setTimeout(resolve, ms)
   );
 }
 
@@ -639,16 +731,18 @@ function getRetryAfterDelay(
   error
 ) {
   const retryAfter =
-    error?.response?.headers?.[
-      "retry-after"
-    ];
+    getHeaderValue(
+      error?.response?.headers,
+      'retry-after'
+    );
 
   if (!retryAfter) {
     return null;
   }
 
-  const seconds =
-    Number(retryAfter);
+  const seconds = Number(
+    retryAfter
+  );
 
   if (
     Number.isFinite(seconds) &&
@@ -660,21 +754,15 @@ function getRetryAfterDelay(
     );
   }
 
-  const retryDate =
-    Date.parse(
-      retryAfter
-    );
+  const retryDate = Date.parse(
+    retryAfter
+  );
 
-  if (
-    !Number.isNaN(
-      retryDate
-    )
-  ) {
+  if (!Number.isNaN(retryDate)) {
     return Math.max(
       0,
       Math.min(
-        retryDate -
-          Date.now(),
+        retryDate - Date.now(),
         30000
       )
     );
@@ -688,13 +776,9 @@ function calculateRetryDelay(
   error
 ) {
   const serverDelay =
-    getRetryAfterDelay(
-      error
-    );
+    getRetryAfterDelay(error);
 
-  if (
-    serverDelay !== null
-  ) {
+  if (serverDelay !== null) {
     return serverDelay;
   }
 
@@ -721,12 +805,10 @@ function calculateRetryDelay(
 // Retry Classification
 // ============================================================================
 
-function isNetworkError(
-  error
-) {
+function isNetworkError(error) {
   return (
-    !error?.response &&
-    Boolean(error)
+    Boolean(error) &&
+    !error?.response
   );
 }
 
@@ -745,14 +827,16 @@ function isRetryableStatus(
 // SAFE:
 //
 // GET / HEAD / OPTIONS
+//
 // may retry automatically.
 //
 // MUTATIONS:
 //
 // POST / PUT / PATCH / DELETE
-// only retry when an idempotency key exists.
 //
-// This is critical for:
+// may only retry automatically when an idempotency key exists.
+//
+// This protects:
 //
 // - savings
 // - contributions
@@ -784,9 +868,7 @@ function shouldRetryRequest(
     isNetworkError(error);
 
   const retryableStatus =
-    isRetryableStatus(
-      status
-    );
+    isRetryableStatus(status);
 
   if (
     !retryableNetwork &&
@@ -795,9 +877,7 @@ function shouldRetryRequest(
     return false;
   }
 
-  if (
-    isSafeMethod(method)
-  ) {
+  if (isSafeMethod(method)) {
     return true;
   }
 
@@ -816,9 +896,7 @@ function shouldRetryRequest(
 // Retry Counter
 // ============================================================================
 
-function getRetryCount(
-  config
-) {
+function getRetryCount(config) {
   return Number(
     config?._retryCount || 0
   );
@@ -838,6 +916,10 @@ function incrementRetryCount(
 // Financial mutations are NEVER automatically cancelled.
 //
 // Safe duplicate GET requests may supersede older identical requests.
+//
+// IMPORTANT:
+// A request may provide its own AbortSignal. In that case we do not replace
+// it with an internal signal because doing so would break caller cancellation.
 // ============================================================================
 
 function registerPendingRequest(
@@ -856,29 +938,29 @@ function registerPendingRequest(
     requestControllers.has(key)
   ) {
     const previousController =
-      requestControllers.get(
-        key
-      );
+      requestControllers.get(key);
 
     try {
       previousController.abort();
     } catch {
-      // Ignore abort errors.
+      // Ignore abort failures.
     }
   }
 
-  const controller =
-    new AbortController();
+  let controller = null;
 
   if (!config.signal) {
+    controller =
+      new AbortController();
+
     config.signal =
       controller.signal;
-  }
 
-  requestControllers.set(
-    key,
-    controller
-  );
+    requestControllers.set(
+      key,
+      controller
+    );
+  }
 
   pendingRequests.set(
     key,
@@ -891,9 +973,12 @@ function registerPendingRequest(
           config
         ),
       idempotencyKey:
-        config.headers?.[
-          "Idempotency-Key"
-        ] || null,
+        getHeaderValue(
+          config.headers,
+          'Idempotency-Key'
+        ) || null,
+      externallyControlled:
+        !controller,
     }
   );
 
@@ -926,7 +1011,7 @@ function cleanupPendingRequest(
 function isBrowserOffline() {
   return (
     typeof navigator !==
-      "undefined" &&
+      'undefined' &&
     navigator.onLine === false
   );
 }
@@ -936,11 +1021,11 @@ function createOfflineError(
 ) {
   const error =
     new Error(
-      "The device is offline. The request could not be completed."
+      'The device is offline. The request could not be completed.'
     );
 
   error.code =
-    "CLIENT_OFFLINE";
+    'CLIENT_OFFLINE';
 
   error.isOffline = true;
 
@@ -954,16 +1039,16 @@ function createOfflineError(
 // Cancellation
 // ============================================================================
 
-function isAbortError(
-  error
-) {
+function isAbortError(error) {
   return (
     error?.code ===
-      "ERR_CANCELED" ||
+      'ERR_CANCELED' ||
     error?.name ===
-      "CanceledError" ||
+      'CanceledError' ||
+    error?.name ===
+      'AbortError' ||
     error?.message ===
-      "canceled"
+      'canceled'
   );
 }
 
@@ -978,12 +1063,23 @@ function isAuthenticationEndpoint(
     return false;
   }
 
+  const normalized =
+    normalizePath(url);
+
   return Array.from(
     AUTH_EXCLUDED_ENDPOINTS
-  ).some(
-    endpoint =>
-      url.includes(endpoint)
-  );
+  ).some(endpoint => {
+    const normalizedEndpoint =
+      normalizePath(endpoint);
+
+    return (
+      normalized ===
+        normalizedEndpoint ||
+      normalized.startsWith(
+        `${normalizedEndpoint}/`
+      )
+    );
+  });
 }
 
 // ============================================================================
@@ -1007,11 +1103,9 @@ async function refreshAccessToken() {
           response.data
             ?.token;
 
-        if (
-          !token
-        ) {
+        if (!token) {
           throw new Error(
-            "Invalid TITech refresh response: access token missing."
+            'Invalid TITech refresh response: access token missing.'
           );
         }
 
@@ -1019,10 +1113,13 @@ async function refreshAccessToken() {
 
         const tenantId =
           response.data
-            ?.tenantId;
+            ?.tenantId ||
+          response.data
+            ?.user?.tenantId;
 
         if (
-          tenantId
+          tenantId !== undefined &&
+          tenantId !== null
         ) {
           setTenant(
             tenantId
@@ -1035,8 +1132,7 @@ async function refreshAccessToken() {
         return token;
       })
       .finally(() => {
-        refreshPromise =
-          null;
+        refreshPromise = null;
       });
 
   return refreshPromise;
@@ -1065,20 +1161,28 @@ function clearAuthenticationState() {
 function redirectToLogin() {
   if (
     typeof window ===
-    "undefined"
+    'undefined'
   ) {
     return;
   }
 
   if (
     window.location.pathname ===
-    "/login"
+    '/login'
   ) {
     return;
   }
 
+  const currentPath =
+    `${window.location.pathname}${window.location.search}`;
+
+  const loginUrl =
+    `/login?redirect=${encodeURIComponent(
+      currentPath
+    )}`;
+
   window.location.assign(
-    "/login"
+    loginUrl
   );
 }
 
@@ -1089,6 +1193,7 @@ function redirectToLogin() {
 api.interceptors.request.use(
   config => {
     config.metadata = {
+      ...(config.metadata || {}),
       startedAt: Date.now(),
     };
 
@@ -1096,9 +1201,9 @@ api.interceptors.request.use(
       config.headers = {};
     }
 
-    // ------------------------------------------------------------
+    // ------------------------------------------------------------------------
     // Access Token
-    // ------------------------------------------------------------
+    // ------------------------------------------------------------------------
 
     const token =
       getToken();
@@ -1108,76 +1213,76 @@ api.interceptors.request.use(
         `Bearer ${token}`;
     }
 
-    // ------------------------------------------------------------
+    // ------------------------------------------------------------------------
     // Tenant Context
-    // ------------------------------------------------------------
+    // ------------------------------------------------------------------------
 
     const tenantId =
       getTenant();
 
     if (tenantId) {
       config.headers[
-        "x-tenant-id"
+        'x-tenant-id'
       ] = tenantId;
     }
 
-    // ------------------------------------------------------------
+    // ------------------------------------------------------------------------
     // Request Identity
-    // ------------------------------------------------------------
+    // ------------------------------------------------------------------------
 
     ensureHeader(
       config,
-      "x-request-id",
+      'x-request-id',
       uuidv4()
     );
 
     ensureHeader(
       config,
-      "x-correlation-id",
+      'x-correlation-id',
       uuidv4()
     );
 
     ensureHeader(
       config,
-      "x-device-id",
+      'x-device-id',
       getDeviceId()
     );
 
     ensureHeader(
       config,
-      "x-client-version",
+      'x-client-version',
       APP_VERSION
     );
 
     ensureHeader(
       config,
-      "x-client-platform",
-      "web"
+      'x-client-platform',
+      'web'
     );
 
-    // ------------------------------------------------------------
+    // ------------------------------------------------------------------------
     // Financial Safety
-    // ------------------------------------------------------------
+    // ------------------------------------------------------------------------
 
     ensureFinancialHeaders(
       config
     );
 
-    // ------------------------------------------------------------
+    // ------------------------------------------------------------------------
     // Pending Request Tracking
-    // ------------------------------------------------------------
+    // ------------------------------------------------------------------------
 
     registerPendingRequest(
       config
     );
 
-    // ------------------------------------------------------------
+    // ------------------------------------------------------------------------
     // Development Logging
-    // ------------------------------------------------------------
+    // ------------------------------------------------------------------------
 
     if (IS_DEV) {
       console.info(
-        "[TITech API REQUEST]",
+        '[TITech API REQUEST]',
         {
           method:
             normalizeMethod(
@@ -1188,19 +1293,22 @@ api.interceptors.request.use(
             config.url,
 
           correlationId:
-            config.headers[
-              "x-correlation-id"
-            ],
+            getHeaderValue(
+              config.headers,
+              'x-correlation-id'
+            ),
 
           requestId:
-            config.headers[
-              "x-request-id"
-            ],
+            getHeaderValue(
+              config.headers,
+              'x-request-id'
+            ),
 
           tenantId:
-            config.headers[
-              "x-tenant-id"
-            ] || null,
+            getHeaderValue(
+              config.headers,
+              'x-tenant-id'
+            ) || null,
 
           financial:
             isFinancialRequest(
@@ -1208,19 +1316,19 @@ api.interceptors.request.use(
             ),
 
           idempotencyKey:
-            config.headers[
-              "Idempotency-Key"
-            ] || null,
+            getHeaderValue(
+              config.headers,
+              'Idempotency-Key'
+            ) || null,
         }
       );
     }
 
     return config;
   },
+
   error =>
-    Promise.reject(
-      error
-    )
+    Promise.reject(error)
 );
 
 // ============================================================================
@@ -1243,7 +1351,7 @@ api.interceptors.response.use(
 
       if (IS_DEV) {
         console.info(
-          "[TITech API RESPONSE]",
+          '[TITech API RESPONSE]',
           {
             method:
               normalizeMethod(
@@ -1262,10 +1370,11 @@ api.interceptors.response.use(
               response.status,
 
             correlationId:
-              response.config
-                .headers?.[
-                "x-correlation-id"
-              ],
+              getHeaderValue(
+                response.config
+                  .headers,
+                'x-correlation-id'
+              ),
           }
         );
       }
@@ -1285,9 +1394,9 @@ api.interceptors.response.use(
     const status =
       error?.response?.status;
 
-    // ==========================================================
+    // ========================================================================
     // Cancellation
-    // ==========================================================
+    // ========================================================================
 
     if (
       isAbortError(error)
@@ -1297,9 +1406,9 @@ api.interceptors.response.use(
       );
     }
 
-    // ==========================================================
+    // ========================================================================
     // Offline
-    // ==========================================================
+    // ========================================================================
 
     if (
       isBrowserOffline()
@@ -1311,9 +1420,9 @@ api.interceptors.response.use(
       );
     }
 
-    // ==========================================================
+    // ========================================================================
     // Authentication Refresh
-    // ==========================================================
+    // ========================================================================
 
     if (
       status === 401 &&
@@ -1322,8 +1431,7 @@ api.interceptors.response.use(
         request.url
       )
     ) {
-      request._authRetry =
-        true;
+      request._authRetry = true;
 
       try {
         const token =
@@ -1351,9 +1459,9 @@ api.interceptors.response.use(
       }
     }
 
-    // ==========================================================
+    // ========================================================================
     // Generic Retry
-    // ==========================================================
+    // ========================================================================
 
     if (
       shouldRetryRequest(
@@ -1380,7 +1488,7 @@ api.interceptors.response.use(
 
       if (IS_DEV) {
         console.warn(
-          "[TITech API RETRY]",
+          '[TITech API RETRY]',
           {
             attempt,
             maxRetries:
@@ -1404,16 +1512,15 @@ api.interceptors.response.use(
               ),
 
             idempotencyKey:
-              request.headers?.[
-                "Idempotency-Key"
-              ] || null,
+              getHeaderValue(
+                request.headers,
+                'Idempotency-Key'
+              ) || null,
           }
         );
       }
 
-      await sleep(
-        delay
-      );
+      await sleep(delay);
 
       if (
         isBrowserOffline()
@@ -1430,13 +1537,13 @@ api.interceptors.response.use(
       );
     }
 
-    // ==========================================================
+    // ========================================================================
     // Development Error Logging
-    // ==========================================================
+    // ========================================================================
 
     if (IS_DEV) {
       console.error(
-        "[TITech API ERROR]",
+        '[TITech API ERROR]',
         {
           url:
             request.url,
@@ -1449,20 +1556,22 @@ api.interceptors.response.use(
           status,
 
           code:
-            error.code,
+            error?.code,
 
           message:
-            error.message,
+            error?.message,
 
           correlationId:
-            request.headers?.[
-              "x-correlation-id"
-            ],
+            getHeaderValue(
+              request.headers,
+              'x-correlation-id'
+            ),
 
           requestId:
-            request.headers?.[
-              "x-request-id"
-            ],
+            getHeaderValue(
+              request.headers,
+              'x-request-id'
+            ),
 
           financial:
             isFinancialRequest(
@@ -1510,13 +1619,16 @@ export async function login(
     response.data
       ?.user?.tenantId;
 
-  if (tenantId) {
+  if (
+    tenantId !== undefined &&
+    tenantId !== null
+  ) {
     setTenant(
       tenantId
     );
   }
 
-  // Refresh token must be delivered by backend
+  // Refresh token is expected to be delivered by the backend
   // through an HttpOnly Secure cookie.
 
   return response;
@@ -1550,7 +1662,10 @@ export async function register(
     response.data
       ?.user?.tenantId;
 
-  if (tenantId) {
+  if (
+    tenantId !== undefined &&
+    tenantId !== null
+  ) {
     setTenant(
       tenantId
     );
@@ -1623,7 +1738,7 @@ export function uploadFile(
     new FormData();
 
   form.append(
-    "file",
+    'file',
     file
   );
 
@@ -1638,6 +1753,8 @@ export function uploadFile(
         }
 
         if (
+          typeof Blob !==
+            'undefined' &&
           value instanceof Blob
         ) {
           form.append(
@@ -1665,6 +1782,7 @@ export function uploadFile(
         // DO NOT manually set Content-Type.
         //
         // The browser must generate:
+        //
         // multipart/form-data; boundary=...
       },
     }
@@ -1683,7 +1801,7 @@ export function downloadFile(
     url,
     {
       ...config,
-      responseType: "blob",
+      responseType: 'blob',
     }
   );
 }
@@ -1748,29 +1866,40 @@ export function del(
   );
 }
 
+export function request(
+  config
+) {
+  return api.request(
+    config
+  );
+}
+
 // ============================================================================
 // Financial Request Helper
 // ============================================================================
 //
-// Use this for financial mutations where the application needs to create
-// the idempotency key BEFORE the request.
+// Use this helper when the application needs to create the idempotency key
+// BEFORE the request.
 //
 // Example:
 //
 // const idempotencyKey = generateIdempotencyKey();
 //
 // createFinancialRequest(
-//   "POST",
-//   "/api/savings/deposit",
+//   'POST',
+//   '/api/savings/deposit',
 //   payload,
 //   {
 //     headers: {
-//       "Idempotency-Key": idempotencyKey,
+//       'Idempotency-Key': idempotencyKey,
 //     },
 //   }
 // );
 //
 // The same key can be persisted alongside an offline event.
+//
+// IMPORTANT:
+// The backend remains authoritative for duplicate detection.
 // ============================================================================
 
 export function createFinancialRequest(
@@ -1782,32 +1911,35 @@ export function createFinancialRequest(
   const existingHeaders =
     config.headers || {};
 
+  const existingIdempotencyKey =
+    getHeaderValue(
+      existingHeaders,
+      'Idempotency-Key'
+    );
+
+  const existingTransactionId =
+    getHeaderValue(
+      existingHeaders,
+      'x-transaction-id'
+    );
+
   const headers = {
     ...existingHeaders,
 
-    "Idempotency-Key":
-      existingHeaders[
-        "Idempotency-Key"
-      ] ||
-      existingHeaders[
-        "idempotency-key"
-      ] ||
+    'Idempotency-Key':
+      existingIdempotencyKey ||
       uuidv4(),
 
-    "x-transaction-id":
-      existingHeaders[
-        "x-transaction-id"
-      ] ||
+    'x-transaction-id':
+      existingTransactionId ||
       uuidv4(),
   };
 
   return api.request({
     ...config,
-
     method,
     url,
     data,
-
     headers,
   });
 }
@@ -1819,6 +1951,10 @@ export function createFinancialRequest(
 export function cancelRequest(
   config
 ) {
+  if (!config) {
+    return false;
+  }
+
   const key =
     requestKey(config);
 
@@ -1847,16 +1983,70 @@ export function cancelRequest(
 }
 
 // ============================================================================
+// Cancel All Safe Requests
+// ============================================================================
+//
+// Financial mutations are deliberately NOT cancelled by this helper.
+// ============================================================================
+
+export function cancelSafeRequests() {
+  let cancelled = 0;
+
+  for (
+    const [
+      key,
+      controller,
+    ] of requestControllers.entries()
+  ) {
+    const pending =
+      pendingRequests.get(
+        key
+      );
+
+    if (
+      pending &&
+      isSafeMethod(
+        pending.method
+      )
+    ) {
+      try {
+        controller.abort();
+        cancelled += 1;
+      } catch {
+        // Ignore cancellation failures.
+      }
+
+      requestControllers.delete(
+        key
+      );
+
+      pendingRequests.delete(
+        key
+      );
+    }
+  }
+
+  return cancelled;
+}
+
+// ============================================================================
 // Diagnostics
 // ============================================================================
 //
 // Diagnostics deliberately expose only operational metadata.
-// Never expose access tokens, refresh tokens, passwords, secrets, or financial
-// payloads here.
+//
+// NEVER expose:
+// - access tokens
+// - refresh tokens
+// - passwords
+// - secrets
+// - authorization headers
+// - financial payloads
+// - payment credentials
 // ============================================================================
 
 export function getApiDiagnostics() {
-  return {
+  const diagnostics = {
     apiBase:
       API_BASE,
 
@@ -1873,7 +2063,7 @@ export function getApiDiagnostics() {
 
     online:
       typeof navigator !==
-        "undefined"
+      'undefined'
         ? navigator.onLine
         : true,
 
@@ -1885,26 +2075,28 @@ export function getApiDiagnostics() {
     pendingRequests:
       pendingRequests.size,
 
-    pendingRequestDetails:
-      IS_DEV
-        ? Array.from(
-            pendingRequests.entries()
-          ).map(
-            ([key, value]) => ({
-              key,
-              ...value,
-            })
-          )
-        : undefined,
-
     environment:
       IS_DEV
-        ? "development"
-        : "production",
+        ? 'development'
+        : 'production',
 
     appVersion:
       APP_VERSION,
   };
+
+  if (IS_DEV) {
+    diagnostics.pendingRequestDetails =
+      Array.from(
+        pendingRequests.entries()
+      ).map(
+        ([key, value]) => ({
+          key,
+          ...value,
+        })
+      );
+  }
+
+  return diagnostics;
 }
 
 // ============================================================================
@@ -1924,7 +2116,7 @@ export async function checkApiHealth() {
   try {
     const response =
       await authApi.get(
-        "/health",
+        '/health',
         {
           timeout:
             HEALTH_TIMEOUT,
@@ -1956,7 +2148,7 @@ export async function checkApiHealth() {
 
       message:
         error?.message ||
-        "TITech API unavailable",
+        'TITech API unavailable',
     };
   }
 }
@@ -1988,14 +2180,9 @@ export function onNetworkStateChange(
 ) {
   if (
     typeof window ===
-    "undefined"
-  ) {
-    return () => {};
-  }
-
-  if (
+      'undefined' ||
     typeof callback !==
-    "function"
+      'function'
   ) {
     return () => {};
   }
@@ -2015,23 +2202,23 @@ export function onNetworkStateChange(
     };
 
   window.addEventListener(
-    "online",
+    'online',
     handleOnline
   );
 
   window.addEventListener(
-    "offline",
+    'offline',
     handleOffline
   );
 
   return () => {
     window.removeEventListener(
-      "online",
+      'online',
       handleOnline
     );
 
     window.removeEventListener(
-      "offline",
+      'offline',
       handleOffline
     );
   };
@@ -2047,6 +2234,20 @@ export function generateIdempotencyKey() {
 
 export function generateTransactionId() {
   return uuidv4();
+}
+
+// ============================================================================
+// Authentication State Utilities
+// ============================================================================
+
+export function isAuthenticated() {
+  return Boolean(
+    getToken()
+  );
+}
+
+export function clearAuth() {
+  clearAuthenticationState();
 }
 
 // ============================================================================

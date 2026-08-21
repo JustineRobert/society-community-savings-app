@@ -1,10 +1,17 @@
 // ============================================================================
 // TITech Community Capital
 // Enterprise Dashboard Statistics
-// File: frontend/src/pages/dashboard/DashboardStats.jsx
+//
+// File:
+// frontend/src/pages/dashboard/DashboardStats.jsx
+//
 // Production Grade
 // Multi-Tenant | Realtime | Analytics Ready
+// Financial Safety | Feature Flags | Resilient Rendering
+// Accessibility | Defensive Data Handling
 // ============================================================================
+
+"use strict";
 
 import React, {
   memo,
@@ -12,20 +19,19 @@ import React, {
 } from "react";
 
 import {
-  Users,
-  Wallet,
-  PiggyBank,
-  CreditCard,
-  TrendingUp,
-  TrendingDown,
   AlertTriangle,
   Building2,
-  Smartphone,
+  CreditCard,
   DollarSign,
+  PiggyBank,
+  Smartphone,
+  TrendingDown,
+  TrendingUp,
+  Users,
+  Wallet,
 } from "lucide-react";
 
 import {
-  StatCard,
   Card,
   FeatureGate,
 } from "../../ui";
@@ -33,12 +39,24 @@ import {
 import "./DashboardStats.css";
 
 // ============================================================================
-// Helpers
+// Constants
 // ============================================================================
 
-const formatCurrency = (
-  amount = 0
-) =>
+const DEFAULT_PLAN =
+  "Standard";
+
+const DEFAULT_TENANT_STATUS =
+  "Active";
+
+const CORE_STAT_COUNT =
+  4;
+
+const SAFE_NUMBER_FORMATTER =
+  new Intl.NumberFormat(
+    "en-UG"
+  );
+
+const UGX_FORMATTER =
   new Intl.NumberFormat(
     "en-UG",
     {
@@ -46,26 +64,101 @@ const formatCurrency = (
       currency: "UGX",
       maximumFractionDigits: 0,
     }
-  ).format(amount);
+  );
 
-const formatPercentage = (
-  value = 0
-) =>
-  `${Number(value).toFixed(
-    1
+// ============================================================================
+// Data Normalization
+// ============================================================================
+
+function toFiniteNumber(
+  value,
+  fallback = 0
+) {
+  const numericValue =
+    Number(value);
+
+  return Number.isFinite(
+    numericValue
+  )
+    ? numericValue
+    : fallback;
+}
+
+function toNonNegativeNumber(
+  value
+) {
+  const numericValue =
+    toFiniteNumber(value);
+
+  return numericValue >= 0
+    ? numericValue
+    : 0;
+}
+
+function formatNumber(
+  value
+) {
+  return SAFE_NUMBER_FORMATTER.format(
+    toFiniteNumber(value)
+  );
+}
+
+function formatCurrency(
+  amount
+) {
+  return UGX_FORMATTER.format(
+    toFiniteNumber(amount)
+  );
+}
+
+function formatPercentage(
+  value,
+  fractionDigits = 1
+) {
+  const numericValue =
+    toFiniteNumber(value);
+
+  return `${numericValue.toFixed(
+    fractionDigits
   )}%`;
+}
 
+// ============================================================================
+// Trend Calculation
+// ============================================================================
+
+/**
+ * Calculates percentage change between two periods.
+ *
+ * Returns null when there is no meaningful comparison baseline.
+ *
+ * Examples:
+ * current=120, previous=100 => +20%
+ * current=80, previous=100  => -20%
+ * current=100, previous=0   => null
+ */
 function calculateTrend(
   current = 0,
   previous = 0
 ) {
-  if (!previous) {
-    return 0;
+  const currentValue =
+    toFiniteNumber(current);
+
+  const previousValue =
+    toFiniteNumber(previous);
+
+  if (
+    previousValue === 0
+  ) {
+    return null;
   }
 
   return (
-    ((current - previous) /
-      previous) *
+    ((currentValue -
+      previousValue) /
+      Math.abs(
+        previousValue
+      )) *
     100
   );
 }
@@ -74,41 +167,669 @@ function calculateTrend(
 // Trend Badge
 // ============================================================================
 
-function TrendBadge({
-  value = 0,
-}) {
-  const positive =
-    value >= 0;
+const TrendBadge = memo(
+  function TrendBadge({
+    value,
+  }) {
+    if (
+      value === null ||
+      value === undefined ||
+      !Number.isFinite(
+        Number(value)
+      )
+    ) {
+      return (
+        <span
+          className="dashboard-trend neutral"
+          role="status"
+          aria-label="No comparison data available"
+          title="No comparison data available"
+        >
+          —
+        </span>
+      );
+    }
 
-  return (
-    <div
-      className={`dashboard-trend ${
-        positive
-          ? "positive"
-          : "negative"
-      }`}
-    >
-      {positive ? (
-        <TrendingUp
-          size={14}
-        />
-      ) : (
-        <TrendingDown
-          size={14}
-        />
-      )}
+    const numericValue =
+      Number(value);
 
-      <span>
-        {formatPercentage(
-          Math.abs(value)
-        )}
+    const positive =
+      numericValue > 0;
+
+    const negative =
+      numericValue < 0;
+
+    const trendLabel =
+      positive
+        ? "increased"
+        : negative
+          ? "decreased"
+          : "unchanged";
+
+    const Icon =
+      positive
+        ? TrendingUp
+        : negative
+          ? TrendingDown
+          : TrendingUp;
+
+    return (
+      <span
+        className={`dashboard-trend ${
+          positive
+            ? "positive"
+            : negative
+              ? "negative"
+              : "neutral"
+        }`}
+        role="status"
+        aria-label={`${trendLabel} ${formatPercentage(
+          Math.abs(
+            numericValue
+          )
+        )}`}
+        title={`${trendLabel} ${formatPercentage(
+          Math.abs(
+            numericValue
+          )
+        )}`}
+      >
+        <Icon
+          size={14}
+          aria-hidden="true"
+        />
+
+        <span>
+          {formatPercentage(
+            Math.abs(
+              numericValue
+            )
+          )}
+        </span>
       </span>
-    </div>
+    );
+  }
+);
+
+// ============================================================================
+// KPI Configuration
+// ============================================================================
+
+function buildCoreStats(
+  metrics,
+  previousMetrics
+) {
+  const current =
+    metrics || {};
+
+  const previous =
+    previousMetrics || {};
+
+  return [
+    {
+      key:
+        "totalSavings",
+
+      title:
+        "Total Savings",
+
+      value:
+        formatCurrency(
+          current.totalSavings
+        ),
+
+      trend:
+        calculateTrend(
+          current.totalSavings,
+          previous.totalSavings
+        ),
+
+      icon:
+        PiggyBank,
+
+      tone:
+        "primary",
+
+      description:
+        "Total savings recorded within your authorized scope.",
+    },
+
+    {
+      key:
+        "groups",
+
+      title:
+        "Groups",
+
+      value:
+        formatNumber(
+          current.totalGroups
+        ),
+
+      trend:
+        calculateTrend(
+          current.totalGroups,
+          previous.totalGroups
+        ),
+
+      icon:
+        Building2,
+
+      tone:
+        "primary",
+
+      description:
+        "Community groups within your authorized tenant scope.",
+    },
+
+    {
+      key:
+        "members",
+
+      title:
+        "Members",
+
+      value:
+        formatNumber(
+          current.totalMembers
+        ),
+
+      trend:
+        calculateTrend(
+          current.totalMembers,
+          previous.totalMembers
+        ),
+
+      icon:
+        Users,
+
+      tone:
+        "primary",
+
+      description:
+        "Members associated with your authorized tenant scope.",
+    },
+
+    {
+      key:
+        "activeLoans",
+
+      title:
+        "Active Loans",
+
+      value:
+        formatNumber(
+          current.activeLoans
+        ),
+
+      trend:
+        calculateTrend(
+          current.activeLoans,
+          previous.activeLoans
+        ),
+
+      icon:
+        CreditCard,
+
+      tone:
+        "primary",
+
+      description:
+        "Loans currently considered active by the dashboard data source.",
+    },
+  ];
+}
+
+// ============================================================================
+// KPI Card
+// ============================================================================
+
+const DashboardStatCard =
+  memo(
+    function DashboardStatCard({
+      stat,
+    }) {
+      const Icon =
+        stat.icon;
+
+      return (
+        <Card
+          className={`dashboard-stat-card dashboard-stat-card-${stat.tone}`}
+          aria-label={`${stat.title}: ${stat.value}`}
+        >
+          <div className="dashboard-stat-header">
+            <div
+              className="dashboard-stat-icon"
+              aria-hidden="true"
+            >
+              <Icon
+                size={22}
+              />
+            </div>
+
+            <TrendBadge
+              value={
+                stat.trend
+              }
+            />
+          </div>
+
+          <div className="dashboard-stat-body">
+            <h3>
+              {stat.title}
+            </h3>
+
+            <p
+              className="dashboard-stat-value"
+              aria-label={`${stat.title} value`}
+            >
+              {stat.value}
+            </p>
+
+            <span className="dashboard-stat-description">
+              {stat.description}
+            </span>
+          </div>
+        </Card>
+      );
+    }
+  );
+
+// ============================================================================
+// Loading Skeleton
+// ============================================================================
+
+function DashboardStatsSkeleton() {
+  return (
+    <section
+      className="dashboard-stats-section"
+      aria-label="Loading dashboard statistics"
+      aria-busy="true"
+    >
+      <div className="dashboard-stats-grid">
+        {Array.from({
+          length:
+            CORE_STAT_COUNT,
+        }).map(
+          (_, index) => (
+            <Card
+              key={
+                `dashboard-stat-skeleton-${index}`
+              }
+              className="dashboard-stat-skeleton"
+            >
+              <div
+                className="skeleton-icon"
+                aria-hidden="true"
+              />
+
+              <div className="skeleton-content">
+                <div
+                  className="skeleton-line"
+                  aria-hidden="true"
+                />
+
+                <div
+                  className="skeleton-line short"
+                  aria-hidden="true"
+                />
+
+                <div
+                  className="skeleton-line tiny"
+                  aria-hidden="true"
+                />
+              </div>
+            </Card>
+          )
+        )}
+      </div>
+
+      <span className="sr-only">
+        Loading dashboard
+        statistics...
+      </span>
+    </section>
   );
 }
 
 // ============================================================================
-// Dashboard Stats
+// Executive Statistics
+// ============================================================================
+
+function ExecutiveStatistics({
+  metrics,
+}) {
+  return (
+    <FeatureGate features="executive_dashboard">
+      <section
+        className="dashboard-stat-section dashboard-stat-section-executive"
+        aria-labelledby="dashboard-executive-statistics"
+      >
+        <div className="dashboard-section-heading">
+          <div>
+            <h3
+              id="dashboard-executive-statistics"
+            >
+              Executive Statistics
+            </h3>
+
+            <p>
+              High-level financial
+              performance indicators.
+            </p>
+          </div>
+        </div>
+
+        <div className="dashboard-stats-grid executive">
+          <Card className="dashboard-stat-card">
+            <div className="dashboard-stat-header">
+              <div
+                className="dashboard-stat-icon"
+                aria-hidden="true"
+              >
+                <DollarSign
+                  size={22}
+                />
+              </div>
+            </div>
+
+            <div className="dashboard-stat-body">
+              <h4>
+                Portfolio Value
+              </h4>
+
+              <p className="dashboard-stat-value">
+                {formatCurrency(
+                  metrics.portfolioValue
+                )}
+              </p>
+
+              <span className="dashboard-stat-description">
+                Current portfolio
+                value reported by
+                the authorized
+                dashboard data source.
+              </span>
+            </div>
+          </Card>
+
+          <Card className="dashboard-stat-card">
+            <div className="dashboard-stat-header">
+              <div
+                className="dashboard-stat-icon"
+                aria-hidden="true"
+              >
+                <Wallet
+                  size={22}
+                />
+              </div>
+            </div>
+
+            <div className="dashboard-stat-body">
+              <h4>
+                Revenue
+              </h4>
+
+              <p className="dashboard-stat-value">
+                {formatCurrency(
+                  metrics.revenue
+                )}
+              </p>
+
+              <span className="dashboard-stat-description">
+                Revenue reported for
+                the current dashboard
+                reporting period.
+              </span>
+            </div>
+          </Card>
+        </div>
+      </section>
+    </FeatureGate>
+  );
+}
+
+// ============================================================================
+// Mobile Money Statistics
+// ============================================================================
+
+function MobileMoneyStatistics({
+  metrics,
+}) {
+  return (
+    <FeatureGate features="mobile_money">
+      <section
+        className="dashboard-stat-section"
+        aria-labelledby="dashboard-mobile-money-statistics"
+      >
+        <div className="dashboard-section-heading">
+          <div>
+            <h3
+              id="dashboard-mobile-money-statistics"
+            >
+              Mobile Money
+            </h3>
+
+            <p>
+              Mobile-money transaction
+              volume within the
+              authorized scope.
+            </p>
+          </div>
+        </div>
+
+        <div className="dashboard-stats-grid">
+          <Card className="dashboard-stat-card">
+            <div className="dashboard-stat-header">
+              <div
+                className="dashboard-stat-icon"
+                aria-hidden="true"
+              >
+                <Smartphone
+                  size={22}
+                />
+              </div>
+            </div>
+
+            <div className="dashboard-stat-body">
+              <h4>
+                MoMo Volume
+              </h4>
+
+              <p className="dashboard-stat-value">
+                {formatCurrency(
+                  metrics.mobileMoneyVolume
+                )}
+              </p>
+
+              <span className="dashboard-stat-description">
+                Aggregate mobile-money
+                transaction volume.
+              </span>
+            </div>
+          </Card>
+        </div>
+      </section>
+    </FeatureGate>
+  );
+}
+
+// ============================================================================
+// Fraud Statistics
+// ============================================================================
+
+function FraudStatistics({
+  metrics,
+}) {
+  const flagged =
+    toNonNegativeNumber(
+      metrics.flaggedTransactions
+    );
+
+  return (
+    <FeatureGate features="fraud_detection">
+      <section
+        className="dashboard-stat-section"
+        aria-labelledby="dashboard-fraud-statistics"
+      >
+        <div className="dashboard-section-heading">
+          <div>
+            <h3
+              id="dashboard-fraud-statistics"
+            >
+              Risk Monitoring
+            </h3>
+
+            <p>
+              Transaction risk indicators
+              available to authorized
+              users.
+            </p>
+          </div>
+        </div>
+
+        <div className="dashboard-stats-grid">
+          <Card className="dashboard-stat-card warning">
+            <div className="dashboard-stat-header">
+              <div
+                className="dashboard-stat-icon"
+                aria-hidden="true"
+              >
+                <AlertTriangle
+                  size={22}
+                />
+              </div>
+            </div>
+
+            <div className="dashboard-stat-body">
+              <h4>
+                Flagged Transactions
+              </h4>
+
+              <p
+                className="dashboard-stat-value"
+                aria-label={`${formatNumber(
+                  flagged
+                )} flagged transactions`}
+              >
+                {formatNumber(
+                  flagged
+                )}
+              </p>
+
+              <span className="dashboard-stat-description">
+                Transactions currently
+                flagged by the
+                authorized risk-monitoring
+                data source.
+              </span>
+            </div>
+          </Card>
+        </div>
+      </section>
+    </FeatureGate>
+  );
+}
+
+// ============================================================================
+// Tenant Information
+// ============================================================================
+
+function TenantInformation({
+  tenant,
+}) {
+  const tenantName =
+    tenant?.name ||
+    tenant?.displayName ||
+    "TITech Community Capital";
+
+  const tenantPlan =
+    tenant?.plan ||
+    DEFAULT_PLAN;
+
+  const tenantStatus =
+    tenant?.status ||
+    DEFAULT_TENANT_STATUS;
+
+  const featureCount =
+    Array.isArray(
+      tenant?.features
+    )
+      ? tenant.features.length
+      : toNonNegativeNumber(
+          tenant?.featureCount
+        );
+
+  return (
+    <section
+      className="dashboard-stat-section"
+      aria-labelledby="dashboard-tenant-information"
+    >
+      <Card className="dashboard-tenant-card">
+        <div className="dashboard-tenant-header">
+          <div
+            className="dashboard-stat-icon"
+            aria-hidden="true"
+          >
+            <Building2
+              size={20}
+            />
+          </div>
+
+          <div>
+            <h3
+              id="dashboard-tenant-information"
+            >
+              {tenantName}
+            </h3>
+
+            <p>
+              Tenant configuration
+              and service status.
+            </p>
+          </div>
+        </div>
+
+        <div className="dashboard-tenant-details">
+          <div>
+            <span>
+              Plan
+            </span>
+
+            <strong>
+              {tenantPlan}
+            </strong>
+          </div>
+
+          <div>
+            <span>
+              Features
+            </span>
+
+            <strong>
+              {formatNumber(
+                featureCount
+              )}
+            </strong>
+          </div>
+
+          <div>
+            <span>
+              Status
+            </span>
+
+            <strong>
+              {tenantStatus}
+            </strong>
+          </div>
+        </div>
+      </Card>
+    </section>
+  );
+}
+
+// ============================================================================
+// Dashboard Statistics
 // ============================================================================
 
 function DashboardStats({
@@ -117,340 +838,196 @@ function DashboardStats({
   loading = false,
   tenant = null,
 }) {
-  // ===========================================================================
-  // Statistics
-  // ===========================================================================
+  // ==========================================================================
+  // Defensive Metric Snapshot
+  // ==========================================================================
 
-  const stats =
-    useMemo(() => {
-      const savingsTrend =
-        calculateTrend(
-          metrics.totalSavings,
-          previousMetrics.totalSavings
-        );
+  const safeMetrics =
+    useMemo(
+      () => ({
+        totalSavings:
+          toNonNegativeNumber(
+            metrics?.totalSavings
+          ),
 
-      const membersTrend =
-        calculateTrend(
-          metrics.totalMembers,
-          previousMetrics.totalMembers
-        );
+        totalGroups:
+          toNonNegativeNumber(
+            metrics?.totalGroups
+          ),
 
-      const loansTrend =
-        calculateTrend(
-          metrics.activeLoans,
-          previousMetrics.activeLoans
-        );
+        totalMembers:
+          toNonNegativeNumber(
+            metrics?.totalMembers
+          ),
 
-      const groupsTrend =
-        calculateTrend(
-          metrics.totalGroups,
-          previousMetrics.totalGroups
-        );
+        activeLoans:
+          toNonNegativeNumber(
+            metrics?.activeLoans
+          ),
 
-      return [
-        {
-          key:
-            "totalSavings",
-          title:
-            "Total Savings",
-          icon:
-            PiggyBank,
-          value:
-            formatCurrency(
-              metrics.totalSavings
-            ),
-          trend:
-            savingsTrend,
-        },
-        {
-          key:
-            "groups",
-          title:
-            "Groups",
-          icon:
-            Building2,
-          value:
-            metrics.totalGroups ||
-            0,
-          trend:
-            groupsTrend,
-        },
-        {
-          key:
-            "members",
-          title:
-            "Members",
-          icon: Users,
-          value:
-            metrics.totalMembers ||
-            0,
-          trend:
-            membersTrend,
-        },
-        {
-          key:
-            "loans",
-          title:
-            "Active Loans",
-          icon:
-            CreditCard,
-          value:
-            metrics.activeLoans ||
-            0,
-          trend:
-            loansTrend,
-        },
-      ];
-    }, [
-      metrics,
-      previousMetrics,
-    ]);
+        portfolioValue:
+          toNonNegativeNumber(
+            metrics?.portfolioValue
+          ),
 
-  // ===========================================================================
-  // Loading
-  // ===========================================================================
+        revenue:
+          toNonNegativeNumber(
+            metrics?.revenue
+          ),
+
+        mobileMoneyVolume:
+          toNonNegativeNumber(
+            metrics?.mobileMoneyVolume
+          ),
+
+        flaggedTransactions:
+          toNonNegativeNumber(
+            metrics?.flaggedTransactions
+          ),
+      }),
+      [metrics]
+    );
+
+  const safePreviousMetrics =
+    useMemo(
+      () => ({
+        totalSavings:
+          toNonNegativeNumber(
+            previousMetrics?.totalSavings
+          ),
+
+        totalGroups:
+          toNonNegativeNumber(
+            previousMetrics?.totalGroups
+          ),
+
+        totalMembers:
+          toNonNegativeNumber(
+            previousMetrics?.totalMembers
+          ),
+
+        activeLoans:
+          toNonNegativeNumber(
+            previousMetrics?.activeLoans
+          ),
+      }),
+      [previousMetrics]
+    );
+
+  const coreStats =
+    useMemo(
+      () =>
+        buildCoreStats(
+          safeMetrics,
+          safePreviousMetrics
+        ),
+      [
+        safeMetrics,
+        safePreviousMetrics,
+      ]
+    );
+
+  // ==========================================================================
+  // Loading State
+  // ==========================================================================
 
   if (loading) {
     return (
-      <div className="dashboard-stats-grid">
-        {[1, 2, 3, 4].map(
-          item => (
-            <Card
-              key={item}
-              className="dashboard-stat-skeleton"
-            >
-              <div className="skeleton-icon" />
-              <div className="skeleton-line" />
-              <div className="skeleton-line short" />
-            </Card>
-          )
-        )}
-      </div>
+      <DashboardStatsSkeleton />
     );
   }
 
-  // ===========================================================================
+  // ==========================================================================
   // Render
-  // ===========================================================================
+  // ==========================================================================
 
   return (
-    <>
-      {/* =============================================================== */}
+    <section
+      className="dashboard-statistics"
+      aria-label="Dashboard statistics"
+    >
+      {/* ================================================================== */}
       {/* Core Statistics */}
-      {/* =============================================================== */}
+      {/* ================================================================== */}
 
-      <div className="dashboard-stats-grid">
-        {stats.map(
-          stat => {
-            const Icon =
-              stat.icon;
+      <section
+        className="dashboard-stat-section"
+        aria-labelledby="dashboard-core-statistics"
+      >
+        <div className="dashboard-section-heading">
+          <div>
+            <h2
+              id="dashboard-core-statistics"
+            >
+              Overview
+            </h2>
 
-            return (
-              <Card
-                key={
-                  stat.key
-                }
-                className="dashboard-stat-card"
-              >
-                <div className="dashboard-stat-header">
-                  <div className="dashboard-stat-icon">
-                    <Icon
-                      size={
-                        22
-                      }
-                    />
-                  </div>
+            <p>
+              Current operational
+              statistics for your
+              authorized scope.
+            </p>
+          </div>
+        </div>
 
-                  <TrendBadge
-                    value={
-                      stat.trend
-                    }
-                  />
-                </div>
+        <div className="dashboard-stats-grid">
+          {coreStats.map(
+            stat => (
+              <DashboardStatCard
+                key={stat.key}
+                stat={stat}
+              />
+            )
+          )}
+        </div>
+      </section>
 
-                <div className="dashboard-stat-body">
-                  <h4>
-                    {
-                      stat.title
-                    }
-                  </h4>
-
-                  <h2>
-                    {
-                      stat.value
-                    }
-                  </h2>
-                </div>
-              </Card>
-            );
-          }
-        )}
-      </div>
-
-      {/* =============================================================== */}
+      {/* ================================================================== */}
       {/* Executive Statistics */}
-      {/* =============================================================== */}
+      {/* ================================================================== */}
 
-      <FeatureGate features="executive_dashboard">
-        <div className="dashboard-stats-grid executive">
-          <Card className="dashboard-stat-card">
-            <div className="dashboard-stat-header">
-              <DollarSign
-                size={22}
-              />
-            </div>
+      <ExecutiveStatistics
+        metrics={
+          safeMetrics
+        }
+      />
 
-            <div className="dashboard-stat-body">
-              <h4>
-                Portfolio
-                Value
-              </h4>
-
-              <h2>
-                {formatCurrency(
-                  metrics.portfolioValue
-                )}
-              </h2>
-            </div>
-          </Card>
-
-          <Card className="dashboard-stat-card">
-            <div className="dashboard-stat-header">
-              <Wallet
-                size={22}
-              />
-            </div>
-
-            <div className="dashboard-stat-body">
-              <h4>
-                Revenue
-              </h4>
-
-              <h2>
-                {formatCurrency(
-                  metrics.revenue
-                )}
-              </h2>
-            </div>
-          </Card>
-        </div>
-      </FeatureGate>
-
-      {/* =============================================================== */}
+      {/* ================================================================== */}
       {/* Mobile Money */}
-      {/* =============================================================== */}
+      {/* ================================================================== */}
 
-      <FeatureGate features="mobile_money">
-        <div className="dashboard-stats-grid">
-          <Card className="dashboard-stat-card">
-            <div className="dashboard-stat-header">
-              <Smartphone
-                size={22}
-              />
-            </div>
+      <MobileMoneyStatistics
+        metrics={
+          safeMetrics
+        }
+      />
 
-            <div className="dashboard-stat-body">
-              <h4>
-                MoMo Volume
-              </h4>
+      {/* ================================================================== */}
+      {/* Fraud */}
+      {/* ================================================================== */}
 
-              <h2>
-                {formatCurrency(
-                  metrics.mobileMoneyVolume
-                )}
-              </h2>
-            </div>
-          </Card>
-        </div>
-      </FeatureGate>
+      <FraudStatistics
+        metrics={
+          safeMetrics
+        }
+      />
 
-      {/* =============================================================== */}
-      {/* Fraud Detection */}
-      {/* =============================================================== */}
-
-      <FeatureGate features="fraud_detection">
-        <div className="dashboard-stats-grid">
-          <Card className="dashboard-stat-card warning">
-            <div className="dashboard-stat-header">
-              <AlertTriangle
-                size={22}
-              />
-            </div>
-
-            <div className="dashboard-stat-body">
-              <h4>
-                Flagged
-                Transactions
-              </h4>
-
-              <h2>
-                {metrics.flaggedTransactions ||
-                  0}
-              </h2>
-            </div>
-          </Card>
-        </div>
-      </FeatureGate>
-
-      {/* =============================================================== */}
-      {/* Tenant Information */}
-      {/* =============================================================== */}
+      {/* ================================================================== */}
+      {/* Tenant */}
+      {/* ================================================================== */}
 
       {tenant && (
-        <Card className="dashboard-tenant-card">
-          <div className="dashboard-tenant-header">
-            <Building2
-              size={20}
-            />
-
-            <h3>
-              {
-                tenant.name
-              }
-            </h3>
-          </div>
-
-          <div className="dashboard-tenant-details">
-            <div>
-              <span>
-                Plan
-              </span>
-
-              <strong>
-                {tenant.plan ||
-                  "Standard"}
-              </strong>
-            </div>
-
-            <div>
-              <span>
-                Features
-              </span>
-
-              <strong>
-                {tenant
-                  ?.features
-                  ?.length ||
-                  0}
-              </strong>
-            </div>
-
-            <div>
-              <span>
-                Status
-              </span>
-
-              <strong>
-                {tenant.status ||
-                  "Active"}
-              </strong>
-            </div>
-          </div>
-        </Card>
+        <TenantInformation
+          tenant={tenant}
+        />
       )}
-    </>
+    </section>
   );
 }
+
+// ============================================================================
+// Export
+// ============================================================================
 
 export default memo(
   DashboardStats
